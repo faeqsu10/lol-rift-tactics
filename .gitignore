@@ -4,6 +4,7 @@ dist
 vite.config.js
 vite.config.d.ts
 .venv
+.venv-win
 __pycache__
 *.pyc
 build

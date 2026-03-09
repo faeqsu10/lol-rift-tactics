@@ -52,6 +52,7 @@
 - `PyInstaller` 기반 패키징 경로 추가
 - `native_game/runtime.py`로 일반 실행과 번들 실행의 리소스 경로를 통합
 - `release/rift-tactics` 단일 실행 파일 생성 및 헤드리스 스크린샷 검증 완료
+- Windows 러너용 `.exe` 빌드 스크립트와 GitHub Actions 워크플로 추가
 
 ### 챔피언 테마 사운드
 

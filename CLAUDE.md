@@ -17,6 +17,7 @@ This file provides guidance for working in this repository.
 - 네이티브 환경 준비: `npm run native:setup`
 - 네이티브 실행: `npm run native:play`
 - 네이티브 패키징: `npm run native:package`
+- 윈도우 빌드 스크립트: `scripts/build-windows.ps1`
 - 네이티브 테스트: `npm run native:test`
 - 네이티브 스모크: `npm run native:smoke`
 - 웹 개발 서버: `npm run dev`

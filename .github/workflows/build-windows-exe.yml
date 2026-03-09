@@ -1,0 +1,40 @@
+name: Build Windows EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/build-windows-exe.yml"
+      - "scripts/build-windows.ps1"
+      - "native_game/**"
+      - "assets/**"
+      - "requirements-native.txt"
+      - "run_native.py"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build EXE
+        shell: pwsh
+        run: .\scripts\build-windows.ps1
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rift-tactics-windows-exe
+          path: |
+            release/windows/rift-tactics-win.exe
+            release/windows/rift-tactics-win.zip
+          if-no-files-found: error

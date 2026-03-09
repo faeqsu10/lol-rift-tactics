@@ -50,6 +50,11 @@ npm run native:package
 
 빌드가 끝나면 실행 파일은 `release/rift-tactics`에 생성됩니다.
 
+윈도우 `.exe` 빌드:
+
+- 저장소의 GitHub Actions `Build Windows EXE` 워크플로가 `rift-tactics-win.exe`와 `rift-tactics-win.zip` 아티팩트를 생성합니다.
+- 로컬 Windows 환경에서도 [build-windows.ps1](/home/faeqsu10/projects/lol-rift-tactics/scripts/build-windows.ps1)로 같은 빌드를 재현할 수 있습니다.
+
 직접 Python으로 실행해도 됩니다.
 
 ```bash

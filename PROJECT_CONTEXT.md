@@ -53,6 +53,8 @@
 - Native run command: `.venv/bin/python -m native_game`
 - Native package command: `npm run native:package`
 - Native packaged executable: `release/rift-tactics`
+- Windows package workflow: `.github/workflows/build-windows-exe.yml`
+- Windows build script: `scripts/build-windows.ps1`
 - Native tests: `.venv/bin/python -m native_game.tests`
 - Screenshot capture command: `npm run native:capture`
 - Audio implementation: `native_game/audio.py`
