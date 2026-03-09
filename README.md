@@ -4,14 +4,14 @@
 
 이 프로젝트는 이제 브라우저 UI 중심 MVP보다, 실제로 움직이고 클릭해서 플레이하는 `Pygame` 네이티브 전투 클라이언트를 기본 방향으로 사용합니다.
 
-## 현재 방향
+## 현재 상태
 
-- 기본 실행 대상: `Pygame` 기반 네이티브 2D 전투 프로토타입
-- 목표: "게임처럼 보이고 움직이는 전투"를 먼저 만들고, 그 위에 시스템을 확장
-- 현재 전투: 3 대 3 자동 턴제 스커미시
+- 기본 플레이 빌드: `Pygame` 기반 네이티브 2D 전투 프로토타입
+- 현재 흐름: 챔피언 선택 -> 3 대 3 턴제 전투
 - 블루 팀은 플레이어 조작, 레드 팀은 AI 조작
+- 목표: "게임처럼 보이고 움직이는 전투"를 먼저 완성한 뒤 시스템 확장
 
-## 현재 구현된 것
+## 현재 구현 내용
 
 - 전투 시작 전 챔피언 선택 화면
 - 플레이어 7인 풀에서 3인 출전 조합 선택
@@ -28,9 +28,11 @@
 - 속도 기반 턴 순서
 - 쿨다운, 보호막, 기절, 간단한 적 AI
 
-## 빠른 실행
+## 실행 방법
 
-처음 한 번:
+### 개발 환경에서 바로 실행
+
+처음 한 번만:
 
 ```bash
 npm run native:setup
@@ -42,7 +44,15 @@ npm run native:setup
 npm run native:play
 ```
 
-실행 파일 빌드:
+직접 Python으로 실행:
+
+```bash
+.venv/bin/python -m native_game
+```
+
+### 리눅스 실행 파일 만들기
+
+로컬 Linux/WSL용 실행 파일 빌드:
 
 ```bash
 npm run native:package
@@ -50,19 +60,18 @@ npm run native:package
 
 빌드가 끝나면 실행 파일은 `release/rift-tactics`에 생성됩니다.
 
-윈도우 `.exe` 빌드:
+### 윈도우 `.exe` 받기
 
-- 저장소의 GitHub Actions `Build Windows EXE` 워크플로가 `rift-tactics-win.exe`와 `rift-tactics-win.zip` 아티팩트를 생성합니다.
-- 로컬 Windows 환경에서도 [build-windows.ps1](/home/faeqsu10/projects/lol-rift-tactics/scripts/build-windows.ps1)로 같은 빌드를 재현할 수 있습니다.
+- 이 저장소의 GitHub Actions `Build Windows EXE` 워크플로가 `rift-tactics-win.exe`와 `rift-tactics-win.zip` 아티팩트를 생성합니다.
+- GitHub 저장소의 `Actions` 탭에서 최신 `Build Windows EXE` 성공 실행을 연 뒤 `Artifacts`에서 받으면 됩니다.
+- 저장소에는 `.exe`를 커밋하지 않고, 액션 아티팩트로만 배포합니다.
+- 로컬 Windows 환경에서는 `scripts/build-windows.ps1`로 같은 빌드를 재현할 수 있습니다.
 
-직접 Python으로 실행해도 됩니다.
+### 현재 준비된 배포 형태
 
-```bash
-.venv/bin/python -m native_game
-```
-
-WSL/Linux 환경에서 시스템 `libpulse0`가 없어도, 저장소에 포함된 런타임 번들을 통해 `npm run native:play`는 소리가 나도록 구성했습니다.
-패키징된 실행 파일도 같은 번들 경로를 포함합니다.
+- Linux/WSL 실행 파일: `release/rift-tactics`
+- Windows 실행 파일: GitHub Actions 아티팩트 `rift-tactics-win.exe`
+- WSL/Linux 환경에서는 저장소에 포함된 PulseAudio 런타임 번들로 소리가 나도록 구성했습니다.
 
 ## 조작
 
@@ -101,12 +110,12 @@ npm run native:capture
 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./release/rift-tactics --headless --frames 2
 ```
 
-## 현재 챔피언
+## 현재 챔피언 풀
 
 - 블루 풀: 가렌, 아리, 징크스, 럭스, 바이, 이즈리얼, 레오나
 - 레드 풀: 다리우스, 애니, 케이틀린, 모르가나, 야스오, 제드, 리산드라
 
-## 남은 큰 작업
+## 다음 우선순위
 
 - 실제 스프라이트 시트와 캐릭터 아트 적용
 - 공격/피격/사망 전용 애니메이션 세분화
