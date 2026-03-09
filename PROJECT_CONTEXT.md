@@ -78,6 +78,7 @@
 - Task tracker: `tasks/todo.md`
 - Lessons log: `tasks/lessons.md`
 - Dev log: `docs/DEVLOG.md`
+- Tactics fun roadmap: `docs/TACTICS_FUN_ROADMAP.md`
 - Verified locally on March 9, 2026:
   - `python -m native_game.tests` passes
   - headless smoke run with SDL dummy drivers passes
@@ -85,11 +86,11 @@
 
 ## Recommended Next Steps
 
-1. Add champion select and roster customization to `native_tactics`.
-2. Add tile terrain, cover, and smarter pathfinding/AI to `native_tactics`.
-3. Replace shape-based placeholder characters with real sprite art or sprite sheets.
-4. Add distinct animation sets for attack, impact, defeat, and victory.
-5. Replace procedural champion motifs with higher-fidelity original audio assets if needed.
+1. Add champion select and deployment planning to `native_tactics`.
+2. Add champion-specific tactical passives and stronger skill differentiation.
+3. Add terrain, enemy intent UI, and smarter pathfinding/AI to `native_tactics`.
+4. Add post-battle reward selection to create a repeat-play loop.
+5. Replace shape-based placeholder characters with real sprite art or sprite sheets.
 
 ## Resume Prompt
 

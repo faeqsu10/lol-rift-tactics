@@ -75,6 +75,12 @@
 - `tactics:play`, `tactics:test`, `tactics:smoke`, `tactics:capture` 스크립트 추가
 - 헤드리스 스크린샷으로 첫 전술 맵 UI 결과 검증
 
+### 전술 재미 로드맵 정리
+
+- 전투 설계, 시스템, UX, 콘텐츠, 리텐션 관점으로 `native_tactics` 재미 요소를 재정리
+- 다음 핵심 우선순위를 `챔피언 선택 -> 시작 배치 -> 고유 패시브 -> 지형/의도 표시 -> 전투 후 보상`으로 고정
+- 로드맵 문서를 `docs/TACTICS_FUN_ROADMAP.md`로 추가
+
 ### 작업 운영 문서화
 
 - `CLAUDE.md` 추가
