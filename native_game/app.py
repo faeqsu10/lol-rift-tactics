@@ -32,6 +32,8 @@ CHAMPION_ART_FILES = {
     "blue-vi": "Vi.png",
     "blue-ezreal": "Ezreal.png",
     "blue-leona": "Leona.png",
+    "blue-ashe": "Ashe.png",
+    "blue-braum": "Braum.png",
     "red-darius": "Darius.png",
     "red-annie": "Annie.png",
     "red-caitlyn": "Caitlyn.png",
@@ -39,6 +41,8 @@ CHAMPION_ART_FILES = {
     "red-yasuo": "Yasuo.png",
     "red-zed": "Zed.png",
     "red-lissandra": "Lissandra.png",
+    "red-katarina": "Katarina.png",
+    "red-brand": "Brand.png",
 }
 
 
@@ -576,7 +580,15 @@ class GameApp:
 
     def _apply_resolved_action_fx(self, action: BattleAction) -> None:
         self.last_action_timer = 1.0
-        heavy_hit = action.ability_id in {"super-mega-death-rocket", "noxian-guillotine", "summon-tibbers"}
+        heavy_hit = action.ability_id in {
+            "super-mega-death-rocket",
+            "noxian-guillotine",
+            "summon-tibbers",
+            "enchanted-crystal-arrow",
+            "glacial-fissure",
+            "death-lotus",
+            "pyroclasm",
+        }
         any_damage = False
         any_shield = False
         any_stun = False

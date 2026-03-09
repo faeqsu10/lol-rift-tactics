@@ -34,6 +34,8 @@ CHAMPION_SOUND_PROFILES: dict[str, ChampionSoundProfile] = {
     "blue-vi": ChampionSoundProfile((180.0, 240.0), (130.0, 180.0, 260.0), (110.0, 160.0, 220.0), select_waveform="square", cast_waveform="square", cast_noise=0.16, cast_volume=0.2),
     "blue-ezreal": ChampionSoundProfile((330.0, 495.0), (494.0, 740.0), (659.0, 988.0), select_waveform="triangle", cast_waveform="sine", cast_noise=0.05, cast_volume=0.17),
     "blue-leona": ChampionSoundProfile((262.0, 392.0), (220.0, 330.0, 440.0), (294.0, 440.0, 587.0), cast_waveform="triangle", cast_volume=0.19),
+    "blue-ashe": ChampionSoundProfile((294.0, 440.0), (349.0, 523.0, 784.0), (392.0, 587.0, 880.0), select_waveform="sine", cast_waveform="triangle", cast_noise=0.02, cast_volume=0.17),
+    "blue-braum": ChampionSoundProfile((165.0, 247.0), (131.0, 196.0, 262.0), (147.0, 220.0, 294.0), select_waveform="triangle", cast_waveform="square", cast_noise=0.1, cast_volume=0.19),
     "red-darius": ChampionSoundProfile((146.0, 220.0), (98.0, 147.0, 196.0), (82.0, 123.0, 165.0), select_waveform="square", cast_waveform="square", cast_noise=0.12, cast_volume=0.2),
     "red-annie": ChampionSoundProfile((392.0, 523.0), (330.0, 494.0, 698.0), (392.0, 587.0, 880.0), select_waveform="triangle", cast_waveform="square", cast_noise=0.2, cast_volume=0.18),
     "red-caitlyn": ChampionSoundProfile((370.0, 555.0), (280.0, 420.0, 840.0), (350.0, 525.0, 1050.0), select_waveform="triangle", cast_waveform="triangle", cast_noise=0.08, cast_volume=0.17),
@@ -41,6 +43,8 @@ CHAMPION_SOUND_PROFILES: dict[str, ChampionSoundProfile] = {
     "red-yasuo": ChampionSoundProfile((247.0, 370.0), (294.0, 440.0, 660.0), (392.0, 587.0, 880.0), select_waveform="sine", cast_waveform="triangle", cast_noise=0.04, cast_volume=0.18),
     "red-zed": ChampionSoundProfile((155.0, 233.0), (138.0, 207.0, 311.0), (123.0, 185.0, 277.0), select_waveform="square", cast_waveform="saw", cast_noise=0.22, cast_volume=0.19),
     "red-lissandra": ChampionSoundProfile((349.0, 523.0), (392.0, 587.0, 880.0), (330.0, 494.0, 740.0), select_waveform="triangle", cast_waveform="sine", cast_noise=0.02, cast_volume=0.17),
+    "red-katarina": ChampionSoundProfile((311.0, 466.0), (247.0, 370.0, 740.0), (294.0, 440.0, 880.0), select_waveform="triangle", cast_waveform="saw", cast_noise=0.18, cast_volume=0.19),
+    "red-brand": ChampionSoundProfile((196.0, 294.0), (247.0, 370.0, 554.0), (294.0, 440.0, 659.0), select_waveform="square", cast_waveform="square", cast_noise=0.22, cast_volume=0.19),
 }
 
 
