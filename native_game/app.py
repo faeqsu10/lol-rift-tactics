@@ -21,6 +21,15 @@ HEADER_RECT = pygame.Rect(36, 28, WINDOW_WIDTH - 72, 70)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FONT_PATH = PROJECT_ROOT / "assets" / "fonts" / "NotoSansKR-Variable.ttf"
+CHAMPION_ART_DIR = PROJECT_ROOT / "assets" / "champions"
+CHAMPION_ART_FILES = {
+    "blue-garen": "Garen.png",
+    "blue-ahri": "Ahri.png",
+    "blue-jinx": "Jinx.png",
+    "red-darius": "Darius.png",
+    "red-annie": "Annie.png",
+    "red-caitlyn": "Caitlyn.png",
+}
 
 
 @dataclass
@@ -162,6 +171,7 @@ class GameApp:
         self.camera_offset = pygame.Vector2(0, 0)
         self.unit_hitboxes: dict[str, pygame.Rect] = {}
         self.reset_button = pygame.Rect(WINDOW_WIDTH - 214, 42, 162, 42)
+        self.champion_art = self._load_champion_art()
 
         self.background_cache = self._build_background_cache()
         self.arena_cache = self._build_arena_cache()
@@ -182,6 +192,33 @@ class GameApp:
         if screenshot_path:
             pygame.image.save(self.screen, screenshot_path)
         pygame.quit()
+
+    def _load_champion_art(self) -> dict[str, pygame.Surface]:
+        art: dict[str, pygame.Surface] = {}
+        for unit_id, filename in CHAMPION_ART_FILES.items():
+            path = CHAMPION_ART_DIR / filename
+            if path.exists():
+                art[unit_id] = pygame.image.load(path).convert_alpha()
+        return art
+
+    def _masked_art_surface(
+        self,
+        art: pygame.Surface,
+        size: tuple[int, int],
+        *,
+        circle: bool = False,
+        border_radius: int = 18,
+    ) -> pygame.Surface:
+        scaled = pygame.transform.smoothscale(art, size)
+        mask = pygame.Surface(size, pygame.SRCALPHA)
+        if circle:
+            pygame.draw.ellipse(mask, (255, 255, 255, 255), mask.get_rect())
+        else:
+            pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=border_radius)
+        output = pygame.Surface(size, pygame.SRCALPHA)
+        output.blit(scaled, (0, 0))
+        output.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        return output
 
     def _handle_events(self) -> None:
         for event in pygame.event.get():
@@ -872,6 +909,16 @@ class GameApp:
         team_color: tuple[int, int, int],
         state: UnitFxState,
     ) -> None:
+        art = self.champion_art.get(unit.id)
+        if art is not None:
+            canvas = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+            self._draw_art_standee(canvas, unit, art, accent, team_color, state)
+            if unit.hp <= 0:
+                canvas.set_alpha(105)
+                canvas = pygame.transform.rotate(canvas, -10 if unit.team == "blue" else 10)
+            self.screen.blit(canvas, canvas.get_rect(center=rect.center))
+            return
+
         canvas = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
         outline = (15, 21, 31)
         metal = (198, 207, 220)
@@ -915,11 +962,124 @@ class GameApp:
         pygame.draw.rect(panel, (236, 218, 176), panel.get_rect(), 1, border_radius=20)
         self.screen.blit(panel, rect.topleft)
 
+        art = self.champion_art.get(unit.id)
+        if art is not None:
+            portrait = self._masked_art_surface(art, (rect.width - 10, rect.height - 10), border_radius=18)
+            self.screen.blit(portrait, portrait.get_rect(center=rect.center))
+            return
+
         sprite = pygame.Surface((80, 100), pygame.SRCALPHA)
         dummy_state = UnitFxState()
         self._draw_champion_sprite_to_surface(sprite, unit, dummy_state)
         portrait = pygame.transform.smoothscale(sprite, (70, 88))
         self.screen.blit(portrait, portrait.get_rect(center=rect.center))
+
+    def _draw_art_standee(
+        self,
+        surface: pygame.Surface,
+        unit: CombatUnit,
+        art: pygame.Surface,
+        accent: tuple[int, int, int],
+        team_color: tuple[int, int, int],
+        state: UnitFxState,
+    ) -> None:
+        outline = (15, 21, 31)
+        frame_color = tinted(accent, 0.22)
+        shadow_color = shaded(accent, 0.65)
+
+        self._draw_glow(surface, accent, (74, 88), 54, 42)
+
+        if state.hit_timer > 0:
+            hit = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+            pygame.draw.circle(hit, (255, 112, 88, int(150 * state.hit_timer)), (74, 94), 70)
+            surface.blit(hit, (0, 0))
+
+        back_plate = pygame.Rect(24, 18, 100, 132)
+        pygame.draw.rect(surface, shadow_color, back_plate, border_radius=26)
+        pygame.draw.rect(surface, outline, back_plate, 3, border_radius=26)
+
+        portrait_rect = pygame.Rect(30, 24, 88, 88)
+        portrait = self._masked_art_surface(art, portrait_rect.size, circle=True)
+        self._draw_glow(surface, team_color, portrait_rect.center, 34, 34)
+        surface.blit(portrait, portrait_rect.topleft)
+        pygame.draw.ellipse(surface, frame_color, portrait_rect, 3)
+        pygame.draw.ellipse(surface, (248, 241, 223), portrait_rect.inflate(-8, -8), 1)
+
+        banner_rect = pygame.Rect(38, 110, 72, 22)
+        pygame.draw.rect(surface, team_color, banner_rect, border_radius=10)
+        pygame.draw.rect(surface, outline, banner_rect, 2, border_radius=10)
+
+        body_rect = pygame.Rect(43, 126, 62, 54)
+        pygame.draw.rect(surface, shaded(accent, 0.16), body_rect, border_radius=18)
+        pygame.draw.rect(surface, outline, body_rect, 3, border_radius=18)
+        emblem_rect = pygame.Rect(61, 140, 26, 24)
+        pygame.draw.rect(surface, team_color, emblem_rect, border_radius=7)
+        pygame.draw.rect(surface, outline, emblem_rect, 2, border_radius=7)
+
+        leg_left = pygame.Rect(50, 176, 14, 28)
+        leg_right = pygame.Rect(84, 176, 14, 28)
+        pygame.draw.rect(surface, shadow_color, leg_left, border_radius=6)
+        pygame.draw.rect(surface, shadow_color, leg_right, border_radius=6)
+        pygame.draw.rect(surface, outline, leg_left, 2, border_radius=6)
+        pygame.draw.rect(surface, outline, leg_right, 2, border_radius=6)
+
+        self._draw_unit_accessory(surface, unit.id, accent, team_color, outline)
+
+    def _draw_unit_accessory(
+        self,
+        surface: pygame.Surface,
+        unit_id: str,
+        accent: tuple[int, int, int],
+        team_color: tuple[int, int, int],
+        outline: tuple[int, int, int],
+    ) -> None:
+        metal = (198, 207, 220)
+        if unit_id == "blue-garen":
+            pygame.draw.rect(surface, metal, pygame.Rect(106, 64, 8, 86), border_radius=4)
+            pygame.draw.rect(surface, outline, pygame.Rect(106, 64, 8, 86), 2, border_radius=4)
+            pygame.draw.polygon(surface, (239, 216, 148), [(110, 42), (124, 70), (96, 70)])
+            pygame.draw.polygon(surface, outline, [(110, 42), (124, 70), (96, 70)], 2)
+        elif unit_id == "blue-ahri":
+            for x_offset in (-24, 24):
+                points = [(74 + x_offset, 130), (58 + x_offset, 182), (74 + x_offset, 172), (88 + x_offset, 182)]
+                pygame.draw.lines(surface, (248, 232, 240), False, points, 5)
+                pygame.draw.lines(surface, outline, False, points, 2)
+            pygame.draw.circle(surface, (112, 229, 255), (112, 86), 10)
+            pygame.draw.circle(surface, outline, (112, 86), 10, 2)
+        elif unit_id == "blue-jinx":
+            left_points = [(36, 120), (16, 198), (26, 198)]
+            right_points = [(112, 120), (132, 198), (122, 198)]
+            pygame.draw.lines(surface, (84, 214, 232), False, left_points, 7)
+            pygame.draw.lines(surface, (84, 214, 232), False, right_points, 7)
+            pygame.draw.lines(surface, outline, False, left_points, 2)
+            pygame.draw.lines(surface, outline, False, right_points, 2)
+            pygame.draw.rect(surface, tinted(accent, 0.18), pygame.Rect(108, 86, 24, 12), border_radius=5)
+            pygame.draw.rect(surface, outline, pygame.Rect(108, 86, 24, 12), 2, border_radius=5)
+        elif unit_id == "red-darius":
+            pygame.draw.rect(surface, metal, pygame.Rect(108, 58, 8, 96), border_radius=4)
+            pygame.draw.rect(surface, outline, pygame.Rect(108, 58, 8, 96), 2, border_radius=4)
+            axe_left = [(112, 66), (82, 90), (104, 108)]
+            axe_right = [(114, 78), (140, 104), (114, 110)]
+            pygame.draw.polygon(surface, metal, axe_left)
+            pygame.draw.polygon(surface, metal, axe_right)
+            pygame.draw.polygon(surface, outline, axe_left, 2)
+            pygame.draw.polygon(surface, outline, axe_right, 2)
+        elif unit_id == "red-annie":
+            pygame.draw.circle(surface, (88, 42, 36), (50, 56), 10)
+            pygame.draw.circle(surface, (88, 42, 36), (98, 56), 10)
+            pygame.draw.circle(surface, outline, (50, 56), 10, 2)
+            pygame.draw.circle(surface, outline, (98, 56), 10, 2)
+            pygame.draw.circle(surface, tinted(accent, 0.2), (112, 92), 12)
+            pygame.draw.circle(surface, (255, 198, 92), (112, 92), 7)
+            pygame.draw.circle(surface, outline, (112, 92), 12, 2)
+        elif unit_id == "red-caitlyn":
+            pygame.draw.rect(surface, shaded(accent, 0.48), pygame.Rect(48, 36, 52, 12), border_radius=6)
+            pygame.draw.rect(surface, outline, pygame.Rect(48, 36, 52, 12), 2, border_radius=6)
+            pygame.draw.polygon(surface, team_color, [(92, 38), (108, 22), (104, 46)])
+            pygame.draw.polygon(surface, outline, [(92, 38), (108, 22), (104, 46)], 2)
+            rifle = pygame.Rect(104, 130, 34, 8)
+            pygame.draw.rect(surface, metal, rifle, border_radius=4)
+            pygame.draw.rect(surface, outline, rifle, 2, border_radius=4)
 
     def _draw_champion_sprite_to_surface(self, surface: pygame.Surface, unit: CombatUnit, state: UnitFxState) -> None:
         accent = hex_to_rgb(unit.accent)

@@ -31,12 +31,14 @@
   - 3v3 combat
   - player-controlled blue team and AI-controlled red team
   - bundled Korean font rendering
-  - upgraded battlefield presentation, UI panels, and champion silhouettes
+  - champion icon art applied to battlefield units and side panels
+  - upgraded battlefield presentation, UI panels, and champion standees
   - animated unit idle/cast/hit states
   - projectile and ring effects
   - floating combat text
   - speed-based turn order
   - cooldowns, shields, stun, and simple enemy AI
+  - direct enemy target selection for single-target skills
 - Initial roster:
   - Blue team: Garen, Ahri, Jinx
   - Red team: Darius, Annie, Caitlyn
