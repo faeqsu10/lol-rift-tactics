@@ -1,0 +1,31 @@
+{
+  "name": "lol-rift-tactics",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit -p tsconfig.app.json && vite build",
+    "preview": "vite preview",
+    "test": "tsx --test src/**/*.test.ts",
+    "native:setup": "python3 -m venv .venv && .venv/bin/pip install -r requirements-native.txt",
+    "native:play": ".venv/bin/python -m native_game",
+    "native:test": ".venv/bin/python -m native_game.tests",
+    "native:smoke": "SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy .venv/bin/python -m native_game --headless --frames 10",
+    "native:capture": "SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy .venv/bin/python -m native_game --headless --frames 2 --screenshot /tmp/rift-tactics-native.png"
+  },
+  "dependencies": {
+    "phaser": "^3.90.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "@vitejs/plugin-react": "^4.3.4",
+    "tsx": "^4.20.6",
+    "typescript": "^5.7.3",
+    "vite": "^6.4.1"
+  }
+}
