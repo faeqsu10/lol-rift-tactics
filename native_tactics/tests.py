@@ -1,7 +1,15 @@
 from __future__ import annotations
 
+import os
 import unittest
 
+import pygame
+
+os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
+
+from .app import GameApp
+from .app import RUN_STAGE_COUNT
 from .engine import TacticsController
 
 
@@ -52,6 +60,37 @@ class TacticsControllerTests(unittest.TestCase):
         controller.end_turn()
         self.assertEqual(controller.get_active_unit().id, "blue-ahri")
         self.assertTrue(any("기절 상태로 턴을 넘긴다" in line for line in controller.state.log))
+
+
+class GameAppFlowTests(unittest.TestCase):
+    def tearDown(self) -> None:
+        pygame.quit()
+
+    def test_reward_selection_advances_run_to_next_deploy(self) -> None:
+        app = GameApp(headless=True)
+        app._start_deploy()
+        app._start_battle()
+        app._prepare_reward_phase()
+
+        self.assertEqual(app.screen_mode, "reward")
+        self.assertEqual(len(app.reward_option_ids), 3)
+
+        app._select_reward(app.reward_option_ids[0])
+        app._advance_after_reward()
+
+        self.assertEqual(app.screen_mode, "deploy")
+        self.assertEqual(app.run_stage, 2)
+        self.assertEqual(len(app.deploy_assignments), 3)
+
+    def test_final_victory_restart_resets_run_stage(self) -> None:
+        app = GameApp(headless=True)
+        app._start_deploy()
+        app.run_stage = RUN_STAGE_COUNT
+
+        app._start_run_with_current_lineup()
+
+        self.assertEqual(app.run_stage, 1)
+        self.assertEqual(app.screen_mode, "deploy")
 
 
 if __name__ == "__main__":

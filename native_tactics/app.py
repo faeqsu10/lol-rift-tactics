@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import random
 from dataclasses import dataclass
+from dataclasses import replace
 from typing import Literal
 
 import pygame
@@ -37,6 +38,24 @@ SELECT_RIGHT_PANEL = pygame.Rect(982, 120, 582, 784)
 PROJECT_ROOT = project_root()
 FONT_PATH = PROJECT_ROOT / "assets" / "fonts" / "NotoSansKR-Variable.ttf"
 CHAMPION_ART_DIR = PROJECT_ROOT / "assets" / "champions"
+RUN_STAGE_COUNT = 3
+RUN_STAGE_LABELS = {
+    1: "정찰전",
+    2: "교전",
+    3: "결전",
+}
+RUN_REWARDS = (
+    ("bonus-hp", "전장 보급", "아군 전원 체력 +10"),
+    ("bonus-damage", "날 선 무기", "아군 전원 피해 +3"),
+    ("bonus-speed", "속공 지휘", "아군 전원 속도 +5"),
+    ("bonus-move", "기동 훈련", "아군 전원 이동력 +1"),
+    ("bonus-shield", "수호 문장", "아군 전원 시작 보호막 +12"),
+)
+STAGE_RED_POOLS = {
+    1: ("red-annie", "red-caitlyn", "red-darius", "red-morgana", "red-brand"),
+    2: ("red-darius", "red-caitlyn", "red-morgana", "red-yasuo", "red-brand", "red-lissandra"),
+    3: ("red-darius", "red-yasuo", "red-zed", "red-brand", "red-katarina", "red-lissandra"),
+}
 
 
 @dataclass
@@ -46,6 +65,13 @@ class FloatingText:
     text: str
     color: tuple[int, int, int]
     lifetime: float = 0.8
+
+
+@dataclass(frozen=True)
+class RunReward:
+    id: str
+    name: str
+    description: str
 
 
 def clamp(value: float, low: float, high: float) -> float:
@@ -113,12 +139,18 @@ class GameApp:
         self.champion_art = self._load_champion_art()
         self.background_cache = self._build_background()
 
-        self.screen_mode: Literal["select", "deploy", "battle"] = "select"
+        self.screen_mode: Literal["select", "deploy", "battle", "reward"] = "select"
         self.mode = "move"
         self.status_text = ""
         self.selection_message = ""
         self.selected_blue_ids = list(DEFAULT_BLUE_IDS)
-        self.selected_red_ids = self._random_enemy_lineup()
+        self.run_stage = 1
+        self.run_rewards = {reward_id: RunReward(reward_id, name, description) for reward_id, name, description in RUN_REWARDS}
+        self.run_bonuses = {reward_id: 0 for reward_id in self.run_rewards}
+        self.reward_option_ids: list[str] = []
+        self.selected_reward_id: str | None = None
+        self.pending_red_ids: list[str] = []
+        self.selected_red_ids = self._random_enemy_lineup(self.run_stage)
         self.deploy_assignments: dict[tuple[int, int], str] = {}
         self.red_deploy_assignments: dict[tuple[int, int], str] = {}
         self.selected_deploy_champion_id: str | None = None
@@ -135,6 +167,7 @@ class GameApp:
         self.selection_card_rects: dict[str, pygame.Rect] = {}
         self.selection_slot_rects: list[pygame.Rect] = []
         self.deploy_roster_rects: dict[str, pygame.Rect] = {}
+        self.reward_card_rects: dict[str, pygame.Rect] = {}
         self.selection_message = "플레이어 팀 3명을 고른 뒤 배치 단계로 넘어가세요."
 
     def run(self, max_frames: int | None = None, screenshot_path: str | None = None) -> None:
@@ -172,8 +205,78 @@ class GameApp:
             surface.blit(circle, (index * 110 - 120, (index % 3) * 210 - 90))
         return surface
 
-    def _random_enemy_lineup(self) -> list[str]:
-        return random.sample(list(SELECTABLE_RED_IDS), 3)
+    def _current_stage_label(self) -> str:
+        return RUN_STAGE_LABELS.get(self.run_stage, f"{self.run_stage}전")
+
+    def _enemy_pool_for_stage(self, stage: int) -> tuple[str, ...]:
+        return STAGE_RED_POOLS.get(stage, tuple(SELECTABLE_RED_IDS))
+
+    def _random_enemy_lineup(self, stage: int | None = None) -> list[str]:
+        current_stage = stage or self.run_stage
+        return random.sample(list(self._enemy_pool_for_stage(current_stage)), 3)
+
+    def _reset_run_progress(self) -> None:
+        self.run_stage = 1
+        self.run_bonuses = {reward_id: 0 for reward_id in self.run_rewards}
+        self.reward_option_ids = []
+        self.selected_reward_id = None
+        self.pending_red_ids = []
+        self.selected_red_ids = self._random_enemy_lineup(self.run_stage)
+
+    def _run_bonus_lines(self) -> list[str]:
+        lines: list[str] = []
+        for reward_id, stacks in self.run_bonuses.items():
+            if stacks <= 0:
+                continue
+            reward = self.run_rewards[reward_id]
+            suffix = f" x{stacks}" if stacks > 1 else ""
+            lines.append(f"{reward.name}{suffix}")
+        return lines or ["아직 강화 없음"]
+
+    def _prepare_reward_phase(self) -> None:
+        available_ids = list(self.run_rewards)
+        self.reward_option_ids = random.sample(available_ids, 3)
+        self.selected_reward_id = None
+        self.pending_red_ids = self._random_enemy_lineup(self.run_stage + 1)
+        self.screen_mode = "reward"
+        self.selection_message = "보상 하나를 고른 뒤 다음 전투로 넘어가세요."
+
+    def _select_reward(self, reward_id: str) -> None:
+        if reward_id not in self.reward_option_ids:
+            return
+        self.selected_reward_id = reward_id
+        self.selection_message = f"{self.run_rewards[reward_id].name} 선택. 다음 전투 준비가 완료되었습니다."
+        self.audio.play("ui-confirm")
+
+    def _apply_selected_reward(self) -> None:
+        if self.selected_reward_id is None:
+            return
+        self.run_bonuses[self.selected_reward_id] += 1
+
+    def _start_run_with_current_lineup(self) -> None:
+        if len(self.selected_blue_ids) != 3:
+            self.selected_blue_ids = list(DEFAULT_BLUE_IDS)
+        self._reset_run_progress()
+        self._seed_deployment()
+        self.screen_mode = "deploy"
+        self.selection_message = f"{self._current_stage_label()} 시작 위치를 조정하세요."
+        self.audio.play("ui-confirm")
+
+    def _advance_after_reward(self) -> None:
+        if self.selected_reward_id is None:
+            self.selection_message = "먼저 전투 보상 하나를 선택해야 합니다."
+            self.audio.play("reset")
+            return
+        self._apply_selected_reward()
+        self.run_stage = min(RUN_STAGE_COUNT, self.run_stage + 1)
+        self.selected_red_ids = list(self.pending_red_ids or self._random_enemy_lineup(self.run_stage))
+        self.pending_red_ids = []
+        self.reward_option_ids = []
+        self.selected_reward_id = None
+        self._seed_deployment()
+        self.screen_mode = "deploy"
+        self.selection_message = f"{self._current_stage_label()} 시작 위치를 다시 배치하세요."
+        self.audio.play("ui-confirm")
 
     def _seed_deployment(self) -> None:
         self.deploy_assignments = {
@@ -194,6 +297,7 @@ class GameApp:
         return TacticsController(self.selected_blue_ids, self.selected_red_ids, blue_positions, red_positions)
 
     def _attach_controller(self, controller: TacticsController) -> None:
+        self._apply_run_modifiers(controller)
         self.controller = controller
         self.hit_flash = {unit.id: 0.0 for unit in controller.units}
         self.unit_visual_positions = {
@@ -204,14 +308,50 @@ class GameApp:
         self.last_active_id = None
         self.mode = "move"
 
+    def _boost_damage_effects(self, ability, bonus_damage: int, *, range_bonus: int = 0):
+        boosted_effects = tuple(
+            replace(effect, amount=effect.amount + bonus_damage) if effect.kind == "damage" else effect
+            for effect in ability.effects
+        )
+        return replace(ability, cast_range=ability.cast_range + range_bonus, effects=boosted_effects)
+
+    def _apply_run_modifiers(self, controller: TacticsController) -> None:
+        damage_bonus = self.run_bonuses["bonus-damage"] * 3
+        hp_bonus = self.run_bonuses["bonus-hp"] * 10
+        speed_bonus = self.run_bonuses["bonus-speed"] * 5
+        move_bonus = self.run_bonuses["bonus-move"]
+        shield_bonus = self.run_bonuses["bonus-shield"] * 12
+        enemy_tier = max(0, self.run_stage - 1)
+
+        for unit in controller.units:
+            if unit.team == "blue":
+                unit.max_hp += hp_bonus
+                unit.hp = unit.max_hp
+                unit.speed += speed_bonus
+                unit.move_range += move_bonus
+                unit.shield += shield_bonus
+                unit.basic_ability = self._boost_damage_effects(unit.basic_ability, damage_bonus)
+                unit.special_ability = self._boost_damage_effects(unit.special_ability, damage_bonus)
+            else:
+                unit.max_hp += enemy_tier * 8
+                unit.hp = unit.max_hp
+                unit.speed += enemy_tier * 2
+                unit.basic_ability = self._boost_damage_effects(unit.basic_ability, enemy_tier * 2)
+                unit.special_ability = self._boost_damage_effects(unit.special_ability, enemy_tier * 2)
+
+        controller.state.turn_queue = controller._build_turn_queue()
+        controller.state.active_unit_id = None
+        controller._prime_next_turn()
+
     def _start_deploy(self) -> None:
         if len(self.selected_blue_ids) != 3:
             self.selection_message = "플레이어 팀은 정확히 3명을 선택해야 합니다."
             self.audio.play("reset")
             return
+        self._reset_run_progress()
         self._seed_deployment()
         self.screen_mode = "deploy"
-        self.selection_message = "시작 위치를 조정한 뒤 전투를 시작하세요."
+        self.selection_message = f"{self._current_stage_label()} 시작 위치를 조정한 뒤 전투를 시작하세요."
         self.audio.play("ui-confirm")
 
     def _start_battle(self) -> None:
@@ -231,12 +371,16 @@ class GameApp:
         self.mode = "move"
         self.last_active_id = None
         self.selected_deploy_champion_id = None
+        self._reset_run_progress()
+        self.deploy_assignments.clear()
+        self.red_deploy_assignments.clear()
+        self.selection_message = "새 원정을 준비하세요. 현재 조합은 유지됩니다."
         self.audio.play("ui-select")
 
     def _reset_selection(self) -> None:
         self.screen_mode = "select"
         self.selected_blue_ids = list(DEFAULT_BLUE_IDS)
-        self.selected_red_ids = self._random_enemy_lineup()
+        self._reset_run_progress()
         self.deploy_assignments.clear()
         self.red_deploy_assignments.clear()
         self.selected_deploy_champion_id = None
@@ -310,6 +454,34 @@ class GameApp:
                 self._handle_click(event.pos)
 
     def _handle_keydown(self, key: int) -> None:
+        if self.screen_mode == "reward":
+            if key in {pygame.K_ESCAPE}:
+                self._return_to_select()
+                return
+            if key == pygame.K_r:
+                self._return_to_select()
+                return
+            if key in {pygame.K_RETURN, pygame.K_SPACE}:
+                self._advance_after_reward()
+                return
+
+        if self.screen_mode == "battle" and self.controller and self.controller.state.winner:
+            if key in {pygame.K_RETURN, pygame.K_SPACE}:
+                if self.controller.state.winner == "blue" and self.run_stage == RUN_STAGE_COUNT:
+                    self._start_run_with_current_lineup()
+                else:
+                    self._return_to_select()
+                return
+            if key == pygame.K_r:
+                if self.controller.state.winner == "blue" and self.run_stage == RUN_STAGE_COUNT:
+                    self._start_run_with_current_lineup()
+                else:
+                    self._reset_battle()
+                return
+            if key == pygame.K_ESCAPE:
+                self._return_to_select()
+                return
+
         if key == pygame.K_ESCAPE:
             if self.screen_mode == "battle":
                 self._return_to_select()
@@ -351,6 +523,8 @@ class GameApp:
         if header_action and header_action.collidepoint(position):
             if self.screen_mode == "battle":
                 self._reset_battle()
+            elif self.screen_mode == "reward":
+                self._return_to_select()
             elif self.screen_mode == "deploy":
                 self.screen_mode = "select"
                 self.audio.play("ui-select")
@@ -360,6 +534,10 @@ class GameApp:
 
         if self.screen_mode == "select":
             self._handle_select_click(position)
+            return
+
+        if self.screen_mode == "reward":
+            self._handle_reward_click(position)
             return
 
         if self.screen_mode == "deploy":
@@ -406,9 +584,35 @@ class GameApp:
         if tile and tile in DEFAULT_BLUE_DEPLOY_TILES:
             self._move_deploy_assignment(tile)
 
+    def _handle_reward_click(self, position: tuple[int, int]) -> None:
+        if self.button_rects.get("reward-next") and self.button_rects["reward-next"].collidepoint(position):
+            self._advance_after_reward()
+            return
+        if self.button_rects.get("reward-select") and self.button_rects["reward-select"].collidepoint(position):
+            self._return_to_select()
+            return
+        for reward_id, rect in self.reward_card_rects.items():
+            if rect.collidepoint(position):
+                self._select_reward(reward_id)
+                return
+
     def _handle_battle_click(self, position: tuple[int, int]) -> None:
         controller = self.controller
         if controller is None:
+            return
+
+        if controller.state.winner:
+            select_rect = self.button_rects.get("winner-select")
+            rematch_rect = self.button_rects.get("winner-rematch")
+            if select_rect and select_rect.collidepoint(position):
+                self._return_to_select()
+                return
+            if rematch_rect and rematch_rect.collidepoint(position):
+                if controller.state.winner == "blue" and self.run_stage == RUN_STAGE_COUNT:
+                    self._start_run_with_current_lineup()
+                else:
+                    self._reset_battle()
+                return
             return
 
         active = controller.get_active_unit()
@@ -569,17 +773,24 @@ class GameApp:
 
         if self.controller and self.controller.state.winner == "blue":
             self.audio.play("victory")
-            self.status_text = "블루 팀이 승리했습니다."
+            if self.run_stage < RUN_STAGE_COUNT:
+                self.status_text = f"{self._current_stage_label()} 승리. 전투 보상을 선택하세요."
+                self._prepare_reward_phase()
+            else:
+                self.status_text = "최종 결전을 승리했습니다."
         elif self.controller and self.controller.state.winner == "red":
             self.audio.play("defeat")
-            self.status_text = "레드 팀이 승리했습니다."
+            self.status_text = f"{self._current_stage_label()}에서 패배했습니다."
 
     def _draw(self) -> None:
         self.screen.blit(self.background_cache, (0, 0))
         self.button_rects.clear()
         self.tile_rects.clear()
+        self.reward_card_rects.clear()
         if self.screen_mode == "select":
             self._draw_selection_screen()
+        elif self.screen_mode == "reward":
+            self._draw_reward_screen()
         elif self.screen_mode == "deploy":
             self._draw_deploy_screen()
         else:
@@ -607,7 +818,7 @@ class GameApp:
         self.screen.blit(panel, rect.topleft)
 
     def _draw_selection_screen(self) -> None:
-        self._draw_header("리그 오브 레전드: 리프트 택틱스", "전술 팀 편성", "챔피언 선택", "ESC 종료")
+        self._draw_header("리그 오브 레전드: 리프트 택틱스", "3전 원정 준비", f"챔피언 선택 · 1/{RUN_STAGE_COUNT} 시작", "ESC 종료")
         self._draw_panel(SELECT_LEFT_PANEL, (74, 157, 214))
         self._draw_panel(SELECT_RIGHT_PANEL, (212, 105, 86))
         self._draw_text("플레이어 팀 선택", self.font_heading, (244, 239, 225), (SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 18))
@@ -684,8 +895,85 @@ class GameApp:
             card_rect = pygame.Rect(SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.y + 96 + index * 188, SELECT_RIGHT_PANEL.width - 44, 168)
             self._draw_champion_card(card_rect, champion_id, enemy=True)
 
+    def _draw_reward_screen(self) -> None:
+        self._draw_header(
+            "리그 오브 레전드: 리프트 택틱스",
+            "원정 보상 선택",
+            f"{self.run_stage}/{RUN_STAGE_COUNT} 전투 승리",
+            "선택으로",
+        )
+        self._draw_panel(SELECT_LEFT_PANEL, (74, 157, 214))
+        self._draw_panel(SELECT_RIGHT_PANEL, (214, 182, 112))
+        self._draw_text("다음 전투 브리핑", self.font_heading, (244, 239, 225), (SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 18))
+        self._draw_text(self.selection_message, self.font_small, (167, 192, 212), (SELECT_LEFT_PANEL.x + 24, SELECT_LEFT_PANEL.y + 52))
+        self._draw_text("전투 보상", self.font_heading, (244, 239, 225), (SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.y + 18))
+        self._draw_text("보상 하나를 고르면 다음 전투로 진입할 수 있습니다", self.font_small, (198, 176, 168), (SELECT_RIGHT_PANEL.x + 24, SELECT_RIGHT_PANEL.y + 52))
+
+        progress_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 96, SELECT_LEFT_PANEL.width - 44, 96)
+        pygame.draw.rect(self.screen, (13, 24, 37), progress_rect, border_radius=24)
+        pygame.draw.rect(self.screen, (236, 218, 176), progress_rect, 1, border_radius=24)
+        self._draw_text("원정 진행도", self.font_ui, (229, 210, 164), (progress_rect.x + 18, progress_rect.y + 14))
+        self._draw_text(
+            f"{self._current_stage_label()} 승리 · 다음은 {RUN_STAGE_LABELS.get(self.run_stage + 1, '결산')}",
+            self.font_heading,
+            (244, 239, 225),
+            (progress_rect.x + 18, progress_rect.y + 44),
+        )
+        self._draw_text(
+            f"{self.run_stage}승 달성 / 총 {RUN_STAGE_COUNT}전",
+            self.font_small,
+            (171, 193, 208),
+            (progress_rect.x + 18, progress_rect.y + 72),
+        )
+
+        bonus_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 216, SELECT_LEFT_PANEL.width - 44, 188)
+        pygame.draw.rect(self.screen, (11, 20, 31), bonus_rect, border_radius=24)
+        pygame.draw.rect(self.screen, (236, 218, 176), bonus_rect, 1, border_radius=24)
+        self._draw_text("현재 강화", self.font_ui, (229, 210, 164), (bonus_rect.x + 18, bonus_rect.y + 14))
+        for index, line in enumerate(self._run_bonus_lines()):
+            self._draw_text(line, self.font_small, (209, 220, 227), (bonus_rect.x + 18, bonus_rect.y + 50 + index * 28))
+
+        preview_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 432, SELECT_LEFT_PANEL.width - 44, 420)
+        pygame.draw.rect(self.screen, (11, 20, 31), preview_rect, border_radius=24)
+        pygame.draw.rect(self.screen, (236, 218, 176), preview_rect, 1, border_radius=24)
+        self._draw_text("다음 적 조합", self.font_ui, (229, 210, 164), (preview_rect.x + 18, preview_rect.y + 14))
+        for index, champion_id in enumerate(self.pending_red_ids):
+            card_rect = pygame.Rect(preview_rect.x + 18, preview_rect.y + 48 + index * 118, preview_rect.width - 36, 102)
+            self._draw_champion_card(card_rect, champion_id, compact=True, enemy=True)
+
+        for index, reward_id in enumerate(self.reward_option_ids):
+            card_rect = pygame.Rect(SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.y + 96 + index * 188, SELECT_RIGHT_PANEL.width - 44, 160)
+            self.reward_card_rects[reward_id] = card_rect
+            reward = self.run_rewards[reward_id]
+            selected = reward_id == self.selected_reward_id
+            top = (22, 46, 58) if selected else (15, 26, 39)
+            bottom = (26, 68, 76) if selected else (20, 32, 46)
+            card = pygame.Surface(card_rect.size, pygame.SRCALPHA)
+            draw_vertical_gradient(card, card.get_rect(), top, bottom)
+            pygame.draw.rect(card, (95, 222, 201, 36) if selected else (214, 182, 112, 18), card.get_rect(), border_radius=24)
+            pygame.draw.rect(card, (108, 224, 203) if selected else (236, 218, 176), card.get_rect(), 1, border_radius=24)
+            self.screen.blit(card, card_rect.topleft)
+            badge_rect = pygame.Rect(card_rect.x + 18, card_rect.y + 18, 70, 28)
+            pygame.draw.rect(self.screen, (214, 182, 112), badge_rect, border_radius=10)
+            pygame.draw.rect(self.screen, (10, 18, 29), badge_rect, 1, border_radius=10)
+            self._draw_text("보상", self.font_small, (10, 18, 29), badge_rect.center, center=True)
+            self._draw_text(reward.name, self.font_heading, (244, 239, 225), (card_rect.x + 18, card_rect.y + 58))
+            self._draw_wrapped_text(reward.description, self.font_ui, (208, 219, 226), pygame.Rect(card_rect.x + 18, card_rect.y + 96, card_rect.width - 36, 48), max_lines=2)
+
+        select_rect = pygame.Rect(SELECT_RIGHT_PANEL.x + 32, SELECT_RIGHT_PANEL.bottom - 118, 190, 48)
+        next_rect = pygame.Rect(SELECT_RIGHT_PANEL.right - 242, SELECT_RIGHT_PANEL.bottom - 118, 190, 48)
+        self.button_rects["reward-select"] = select_rect
+        self.button_rects["reward-next"] = next_rect
+        pygame.draw.rect(self.screen, (70, 80, 92), select_rect, border_radius=15)
+        pygame.draw.rect(self.screen, (255, 244, 217), select_rect, 1, border_radius=15)
+        self._draw_text("선택 화면으로", self.font_ui, (231, 236, 240), select_rect.center, center=True)
+        enabled = self.selected_reward_id is not None
+        pygame.draw.rect(self.screen, (214, 182, 112) if enabled else (76, 84, 96), next_rect, border_radius=15)
+        pygame.draw.rect(self.screen, (255, 244, 217), next_rect, 1, border_radius=15)
+        self._draw_text("다음 전투", self.font_ui, (12, 20, 31) if enabled else (188, 196, 204), next_rect.center, center=True)
+
     def _draw_deploy_screen(self) -> None:
-        self._draw_header("리그 오브 레전드: 리프트 택틱스", "전술 팀 편성", "시작 배치", "선택으로")
+        self._draw_header("리그 오브 레전드: 리프트 택틱스", "원정 전술 배치", f"{self._current_stage_label()} · {self.run_stage}/{RUN_STAGE_COUNT}", "선택으로")
         self._draw_panel(LEFT_PANEL, (74, 157, 214))
         self._draw_panel(RIGHT_PANEL, (212, 105, 86))
         self._draw_panel(BOTTOM_PANEL, (214, 182, 112))
@@ -768,7 +1056,7 @@ class GameApp:
         self._draw_text("파란 시작 칸을 눌러 위치를 바꾸세요", self.font_small, (184, 205, 221), (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 66))
 
     def _draw_battle_screen(self) -> None:
-        self._draw_header("리그 오브 레전드: 리프트 택틱스", "전술 실험 빌드", "8x6 그리드 · 이동 + 행동 턴제", "R 리셋")
+        self._draw_header("리그 오브 레전드: 리프트 택틱스", "원정 진행 중", f"{self._current_stage_label()} · {self.run_stage}/{RUN_STAGE_COUNT} · 8x6 전술 전투", "R 리셋")
         self._draw_panel(LEFT_PANEL, (59, 129, 191))
         self._draw_panel(RIGHT_PANEL, (189, 92, 82))
         self._draw_panel(BOTTOM_PANEL, (214, 182, 112))
@@ -895,7 +1183,8 @@ class GameApp:
             "2. 기본기 또는 특수기 선택",
             "3. 사거리 안 적을 클릭해 공격",
             "4. 이동과 행동을 모두 쓰면 자동 종료",
-            "5. E로 턴 종료, ESC로 선택 화면 복귀",
+            "5. 승리 시 보상 선택 후 다음 전투 진입",
+            "6. E로 턴 종료, ESC로 선택 화면 복귀",
         ]
         for index, line in enumerate(guides):
             self._draw_text(line, self.font_small, (201, 213, 221), (guide_rect.x + 18, guide_rect.y + 58 + index * 36))
@@ -1003,17 +1292,25 @@ class GameApp:
         pygame.draw.rect(card, (236, 218, 176) if not selected else (108, 224, 203), card.get_rect(), 1, border_radius=24)
         self.screen.blit(card, rect.topleft)
 
-        portrait_size = 96 if compact else 88
+        portrait_size = 72 if compact else 88
         portrait_rect = pygame.Rect(rect.x + 14, rect.y + 14, portrait_size, portrait_size)
         self._draw_portrait_art(champion_id, portrait_rect, accent)
         text_x = portrait_rect.right + 14
         text_width = rect.right - text_x - 14
-        self._draw_text(blueprint.name, self.font_ui, (244, 239, 225), (text_x, rect.y + 14))
-        self._draw_wrapped_text(blueprint.title, self.font_small, (176, 195, 208), pygame.Rect(text_x, rect.y + 42, text_width, 18), max_lines=1)
-        self._draw_text(blueprint.role, self.font_small, accent, (text_x, rect.y + 66))
-        self._draw_text(f"체력 {blueprint.max_hp} · 속도 {blueprint.speed}", self.font_tiny, (198, 209, 218), (text_x, rect.y + 88))
-        description = footer or f"대표 스킬: {blueprint.abilities[0].name}"
-        self._draw_wrapped_text(description, self.font_tiny, (214, 222, 229), pygame.Rect(text_x, rect.y + 108, text_width, rect.height - 120), max_lines=2 if not compact else 1)
+        if compact:
+            self._draw_text(blueprint.name, self.font_ui, (244, 239, 225), (text_x, rect.y + 14))
+            self._draw_wrapped_text(blueprint.title, self.font_small, (176, 195, 208), pygame.Rect(text_x, rect.y + 42, text_width, 18), max_lines=1)
+            self._draw_text(blueprint.role, self.font_small, accent, (text_x, rect.y + 64))
+            self._draw_text(f"체력 {blueprint.max_hp} · 속도 {blueprint.speed}", self.font_tiny, (198, 209, 218), (text_x, rect.y + 84))
+            if footer and rect.height >= 124:
+                self._draw_wrapped_text(footer, self.font_tiny, (214, 222, 229), pygame.Rect(text_x, rect.y + 102, text_width, rect.height - 112), max_lines=1)
+        else:
+            self._draw_text(blueprint.name, self.font_ui, (244, 239, 225), (text_x, rect.y + 14))
+            self._draw_wrapped_text(blueprint.title, self.font_small, (176, 195, 208), pygame.Rect(text_x, rect.y + 42, text_width, 18), max_lines=1)
+            self._draw_text(blueprint.role, self.font_small, accent, (text_x, rect.y + 66))
+            self._draw_text(f"체력 {blueprint.max_hp} · 속도 {blueprint.speed}", self.font_tiny, (198, 209, 218), (text_x, rect.y + 88))
+            description = footer or f"대표 스킬: {blueprint.abilities[0].name}"
+            self._draw_wrapped_text(description, self.font_tiny, (214, 222, 229), pygame.Rect(text_x, rect.y + 108, text_width, rect.height - 120), max_lines=2)
 
         if badge:
             badge_rect = pygame.Rect(rect.right - 44, rect.y + 14, 28, 28)
@@ -1067,9 +1364,32 @@ class GameApp:
         overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
         overlay.fill((5, 8, 13, 180))
         self.screen.blit(overlay, (0, 0))
-        title = "블루 팀 승리" if self.controller.state.winner == "blue" else "레드 팀 승리"
-        self._draw_text(title, self.font_title, (255, 244, 217), (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 20), center=True)
-        self._draw_text("R로 다시 시작하거나 ESC로 선택 화면 복귀", self.font_ui, (208, 219, 226), (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 34), center=True)
+        if self.controller.state.winner == "blue":
+            title = "원정 성공" if self.run_stage == RUN_STAGE_COUNT else "블루 팀 승리"
+            subtitle = "같은 조합으로 새 런을 시작하거나 챔피언 선택으로 돌아갈 수 있습니다." if self.run_stage == RUN_STAGE_COUNT else "다음 행동을 선택하세요."
+            rematch_label = "같은 조합 새 런" if self.run_stage == RUN_STAGE_COUNT else "같은 전투 재도전"
+        else:
+            title = "원정 실패"
+            subtitle = "같은 전투에 다시 도전하거나 챔피언 선택으로 돌아갈 수 있습니다."
+            rematch_label = "같은 전투 재도전"
+        self._draw_text(title, self.font_title, (255, 244, 217), (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 62), center=True)
+        self._draw_text(subtitle, self.font_ui, (208, 219, 226), (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 4), center=True)
+
+        rematch_rect = pygame.Rect(WINDOW_WIDTH // 2 - 238, WINDOW_HEIGHT // 2 + 44, 220, 56)
+        select_rect = pygame.Rect(WINDOW_WIDTH // 2 + 18, WINDOW_HEIGHT // 2 + 44, 220, 56)
+        self.button_rects["winner-rematch"] = rematch_rect
+        self.button_rects["winner-select"] = select_rect
+
+        pygame.draw.rect(self.screen, (70, 80, 92), rematch_rect, border_radius=18)
+        pygame.draw.rect(self.screen, (255, 244, 217), rematch_rect, 1, border_radius=18)
+        self._draw_text(rematch_label, self.font_ui, (231, 236, 240), rematch_rect.center, center=True)
+
+        pygame.draw.rect(self.screen, (214, 182, 112), select_rect, border_radius=18)
+        pygame.draw.rect(self.screen, (255, 244, 217), select_rect, 1, border_radius=18)
+        self._draw_text("캐릭터 다시 선택", self.font_ui, (13, 21, 31), select_rect.center, center=True)
+
+        shortcut_line = "Enter 또는 ESC로 선택 화면 복귀 · R로 즉시 새 런" if self.controller.state.winner == "blue" and self.run_stage == RUN_STAGE_COUNT else "Enter 또는 ESC로 선택 화면 복귀 · R로 즉시 재대결"
+        self._draw_text(shortcut_line, self.font_small, (208, 219, 226), (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 116), center=True)
 
     def _tile_center(self, tile: tuple[int, int]) -> tuple[int, int]:
         return (

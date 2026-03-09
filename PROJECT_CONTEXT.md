@@ -51,10 +51,13 @@
   - champion select before battle
   - manual blue-team starting deployment
   - 8x6 grid battlefield
+  - three-battle expedition structure: scout -> clash -> finale
   - movement plus action on each turn
   - obstacle tiles and movement range highlighting
   - role-based tactical ranges with champion-specific ability names
   - simple red-team AI movement and targeting
+  - post-victory reward pick with next-enemy preview
+  - post-battle overlay with direct return to champion select or rematch
   - headless screenshot capture and tests
 - Initial roster:
   - Blue team: Garen, Ahri, Jinx
@@ -81,6 +84,7 @@
 - Lessons log: `tasks/lessons.md`
 - Dev log: `docs/DEVLOG.md`
 - Tactics fun roadmap: `docs/TACTICS_FUN_ROADMAP.md`
+- Tactics UX research: `docs/TACTICS_UX_RESEARCH.md`
 - Verified locally on March 9, 2026:
   - `python -m native_game.tests` passes
   - headless smoke run with SDL dummy drivers passes
@@ -89,10 +93,10 @@
 ## Recommended Next Steps
 
 1. Add champion-specific tactical passives and stronger skill differentiation to `native_tactics`.
-2. Add terrain, enemy intent UI, and smarter pathfinding/AI to `native_tactics`.
-3. Add post-battle reward selection to create a repeat-play loop.
-4. Replace shape-based placeholder characters with real sprite art or sprite sheets.
-5. Consider a dedicated deployment screenshot or test path for `native_tactics` state transitions.
+2. Add enemy intent UI and clearer threat telegraphing to `native_tactics`.
+3. Add terrain, elite encounters, and smarter pathfinding/AI to `native_tactics`.
+4. Add post-battle recap and route selection on top of the current reward loop.
+5. Replace shape-based placeholder characters with real sprite art or sprite sheets.
 
 ## Resume Prompt
 
