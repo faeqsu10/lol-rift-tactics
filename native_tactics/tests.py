@@ -12,6 +12,22 @@ class TacticsControllerTests(unittest.TestCase):
         self.assertIn((3, 5), controller.get_reachable_tiles())
         self.assertNotIn((0, 3), controller.get_reachable_tiles())
 
+    def test_custom_start_positions_are_used_and_preserved_on_reset(self) -> None:
+        controller = TacticsController(
+            ("blue-garen", "blue-ahri", "blue-jinx"),
+            ("red-darius", "red-brand", "red-caitlyn"),
+            ((0, 0), (0, 2), (1, 1)),
+            ((7, 5), (7, 3), (6, 4)),
+        )
+        self.assertEqual(controller.get_unit("blue-garen").position, (0, 0))
+        self.assertEqual(controller.get_unit("red-brand").position, (7, 3))
+
+        controller.move_active((1, 0))
+        controller.reset()
+
+        self.assertEqual(controller.get_unit("blue-garen").position, (0, 0))
+        self.assertEqual(controller.get_unit("red-brand").position, (7, 3))
+
     def test_move_then_basic_attack_applies_damage(self) -> None:
         controller = TacticsController(("blue-jinx",), ("red-darius",))
         controller.blocked_tiles.clear()

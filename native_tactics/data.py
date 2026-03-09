@@ -7,6 +7,8 @@ from typing import Literal
 from native_game.data import BLUEPRINTS_BY_ID
 from native_game.data import DEFAULT_BLUE_IDS
 from native_game.data import DEFAULT_RED_IDS
+from native_game.data import SELECTABLE_BLUE_IDS
+from native_game.data import SELECTABLE_RED_IDS
 from native_game.data import AbilityEffect
 from native_game.data import ChampionBlueprint
 
@@ -16,6 +18,8 @@ TacticalTargetMode = Literal["enemy", "self"]
 GRID_WIDTH = 8
 GRID_HEIGHT = 6
 BLOCKED_TILES: tuple[GridPos, ...] = ((3, 0), (3, 5), (4, 1), (4, 4))
+DEFAULT_BLUE_DEPLOY_TILES: tuple[GridPos, ...] = ((0, 1), (0, 3), (0, 5))
+DEFAULT_RED_DEPLOY_TILES: tuple[GridPos, ...] = ((7, 1), (7, 3), (7, 5))
 
 ART_FILE_BY_UNIT_ID: dict[str, str] = {
     "blue-garen": "Garen.png",

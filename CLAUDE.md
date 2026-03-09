@@ -10,7 +10,7 @@ This file provides guidance for working in this repository.
 - Current primary build: native `Pygame` client
 - Current active native tracks:
   - `native_game`: 9인 풀에서 3인 선택 -> 3v3 battle
-  - `native_tactics`: 8x6 grid -> move + action turn battle
+  - `native_tactics`: 3인 선택 -> 시작 배치 -> 8x6 grid tactics battle
 - Current secondary build: legacy web prototype under `src/*`
 
 ## Commands
@@ -25,6 +25,7 @@ This file provides guidance for working in this repository.
 - 전술 실험 실행: `npm run tactics:play`
 - 전술 실험 테스트: `npm run tactics:test`
 - 전술 실험 스모크: `npm run tactics:smoke`
+- 전술 실험 캡처: `npm run tactics:capture`
 - 웹 개발 서버: `npm run dev`
 - 웹 테스트: `npm test`
 
@@ -83,6 +84,7 @@ src/
   - `npm run native:test`
   - `npm run native:smoke`
 - 필요하면 `--screenshot`으로 결과 캡처
+- 상태가 여러 단계인 흐름은 화면 진입뿐 아니라 실제 상태 전환까지 별도 검증
 
 ### Frequent Commits
 

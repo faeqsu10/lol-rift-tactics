@@ -19,8 +19,8 @@
 - [x] 기존 아레나 버전을 유지한 채 `native_tactics` 전술 실험 패키지 추가
 - [x] 헤드리스 스크린샷으로 비주얼 결과 확인
 - [x] `native_tactics` 재미 요소 우선순위 로드맵 정리
-- [ ] `native_tactics` 챔피언 선택 화면 추가
-- [ ] `native_tactics` 시작 배치 단계 추가
+- [x] `native_tactics` 챔피언 선택 화면 추가
+- [x] `native_tactics` 시작 배치 단계 추가
 - [ ] `native_tactics` 챔피언별 고유 패시브 추가
 - [ ] `native_tactics` 지형 효과와 더 나은 AI 추가
 - [ ] `native_tactics` 적 의도 표시와 사거리 예고 UI 추가
@@ -40,6 +40,7 @@
 - [x] `npm run tactics:test`
 - [x] `npm run tactics:smoke`
 - [x] `npm run tactics:capture`
+- [x] `GameApp` 선택 -> 배치 -> 전투 상태 전환 검증
 
 ## 리뷰 메모
 
@@ -48,3 +49,4 @@
 - 스크린샷 캡처 커맨드는 `npm run native:capture`
 - 전술 실험은 기존 아레나 버전 위에 덮어쓰지 말고 별도 패키지로 병행 유지
 - `native_tactics`의 다음 재미 포인트는 챔피언 수 확장보다 선택, 배치, 지형, 의도 표시, 보상 루프 순으로 붙이는 것이 효율적
+- `native_tactics`처럼 상태가 여러 단계로 나뉘는 화면은 단순 프레임-0 스모크만으로 끝내지 말고 상태 전환까지 직접 검증할 것

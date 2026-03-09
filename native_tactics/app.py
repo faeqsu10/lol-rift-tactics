@@ -1,14 +1,22 @@
 from __future__ import annotations
 
 import argparse
+import random
 from dataclasses import dataclass
+from typing import Literal
 
 import pygame
 
 from native_game.audio import SoundBank
+from native_game.data import BLUEPRINTS_BY_ID
+from native_game.data import DEFAULT_BLUE_IDS
+from native_game.data import SELECTABLE_BLUE_IDS
+from native_game.data import SELECTABLE_RED_IDS
 from native_game.runtime import project_root
 
 from .data import ART_FILE_BY_UNIT_ID
+from .data import DEFAULT_BLUE_DEPLOY_TILES
+from .data import DEFAULT_RED_DEPLOY_TILES
 from .data import GRID_HEIGHT
 from .data import GRID_WIDTH
 from .engine import TacticalActionResult
@@ -23,6 +31,8 @@ LEFT_PANEL = pygame.Rect(36, 120, 284, 694)
 RIGHT_PANEL = pygame.Rect(1180, 120, 384, 694)
 BOTTOM_PANEL = pygame.Rect(36, 832, WINDOW_WIDTH - 72, 92)
 HEADER_RECT = pygame.Rect(36, 28, WINDOW_WIDTH - 72, 72)
+SELECT_LEFT_PANEL = pygame.Rect(36, 120, 920, 784)
+SELECT_RIGHT_PANEL = pygame.Rect(982, 120, 582, 784)
 
 PROJECT_ROOT = project_root()
 FONT_PATH = PROJECT_ROOT / "assets" / "fonts" / "NotoSansKR-Variable.ttf"
@@ -98,22 +108,34 @@ class GameApp:
         self.font_large = load_font(34, bold=True)
         self.font_title = load_font(42, bold=True)
 
-        self.controller = TacticsController()
         self.audio = SoundBank()
         self.audio.start_ambient()
+        self.champion_art = self._load_champion_art()
+        self.background_cache = self._build_background()
+
+        self.screen_mode: Literal["select", "deploy", "battle"] = "select"
         self.mode = "move"
-        self.status_text = "이동할 칸을 고르거나 스킬을 선택하세요."
+        self.status_text = ""
+        self.selection_message = ""
+        self.selected_blue_ids = list(DEFAULT_BLUE_IDS)
+        self.selected_red_ids = self._random_enemy_lineup()
+        self.deploy_assignments: dict[tuple[int, int], str] = {}
+        self.red_deploy_assignments: dict[tuple[int, int], str] = {}
+        self.selected_deploy_champion_id: str | None = None
+
+        self.controller: TacticsController | None = None
         self.ai_timer = 0.55
         self.last_active_id: str | None = None
         self.floaters: list[FloatingText] = []
-        self.hit_flash: dict[str, float] = {unit.id: 0.0 for unit in self.controller.units}
+        self.hit_flash: dict[str, float] = {}
+        self.unit_visual_positions: dict[str, pygame.Vector2] = {}
+
         self.tile_rects: dict[tuple[int, int], pygame.Rect] = {}
         self.button_rects: dict[str, pygame.Rect] = {}
-        self.unit_visual_positions: dict[str, pygame.Vector2] = {
-            unit.id: pygame.Vector2(self._tile_center(unit.position)) for unit in self.controller.units
-        }
-        self.champion_art = self._load_champion_art()
-        self.background_cache = self._build_background()
+        self.selection_card_rects: dict[str, pygame.Rect] = {}
+        self.selection_slot_rects: list[pygame.Rect] = []
+        self.deploy_roster_rects: dict[str, pygame.Rect] = {}
+        self.selection_message = "플레이어 팀 3명을 고른 뒤 배치 단계로 넘어가세요."
 
     def run(self, max_frames: int | None = None, screenshot_path: str | None = None) -> None:
         frames = 0
@@ -150,78 +172,294 @@ class GameApp:
             surface.blit(circle, (index * 110 - 120, (index % 3) * 210 - 90))
         return surface
 
+    def _random_enemy_lineup(self) -> list[str]:
+        return random.sample(list(SELECTABLE_RED_IDS), 3)
+
+    def _seed_deployment(self) -> None:
+        self.deploy_assignments = {
+            tile: champion_id
+            for tile, champion_id in zip(DEFAULT_BLUE_DEPLOY_TILES, self.selected_blue_ids)
+        }
+        enemy_ids = list(self.selected_red_ids)
+        random.shuffle(enemy_ids)
+        self.red_deploy_assignments = {
+            tile: champion_id
+            for tile, champion_id in zip(DEFAULT_RED_DEPLOY_TILES, enemy_ids)
+        }
+        self.selected_deploy_champion_id = self.selected_blue_ids[0] if self.selected_blue_ids else None
+
+    def _build_controller_from_current_setup(self) -> TacticsController:
+        blue_positions = [self._tile_for_deployed_champion(champion_id, self.deploy_assignments) for champion_id in self.selected_blue_ids]
+        red_positions = [self._tile_for_deployed_champion(champion_id, self.red_deploy_assignments) for champion_id in self.selected_red_ids]
+        return TacticsController(self.selected_blue_ids, self.selected_red_ids, blue_positions, red_positions)
+
+    def _attach_controller(self, controller: TacticsController) -> None:
+        self.controller = controller
+        self.hit_flash = {unit.id: 0.0 for unit in controller.units}
+        self.unit_visual_positions = {
+            unit.id: pygame.Vector2(self._tile_center(unit.position)) for unit in controller.units
+        }
+        self.floaters.clear()
+        self.ai_timer = 0.55
+        self.last_active_id = None
+        self.mode = "move"
+
+    def _start_deploy(self) -> None:
+        if len(self.selected_blue_ids) != 3:
+            self.selection_message = "플레이어 팀은 정확히 3명을 선택해야 합니다."
+            self.audio.play("reset")
+            return
+        self._seed_deployment()
+        self.screen_mode = "deploy"
+        self.selection_message = "시작 위치를 조정한 뒤 전투를 시작하세요."
+        self.audio.play("ui-confirm")
+
+    def _start_battle(self) -> None:
+        if len(self.deploy_assignments) != 3:
+            self.selection_message = "세 챔피언 모두 시작 칸에 배치해야 합니다."
+            self.audio.play("reset")
+            return
+        controller = self._build_controller_from_current_setup()
+        self._attach_controller(controller)
+        self.screen_mode = "battle"
+        self.status_text = "이동할 칸을 고르거나 스킬을 선택하세요."
+        self.audio.play("ui-confirm")
+
+    def _return_to_select(self) -> None:
+        self.screen_mode = "select"
+        self.controller = None
+        self.mode = "move"
+        self.last_active_id = None
+        self.selected_deploy_champion_id = None
+        self.audio.play("ui-select")
+
+    def _reset_selection(self) -> None:
+        self.screen_mode = "select"
+        self.selected_blue_ids = list(DEFAULT_BLUE_IDS)
+        self.selected_red_ids = self._random_enemy_lineup()
+        self.deploy_assignments.clear()
+        self.red_deploy_assignments.clear()
+        self.selected_deploy_champion_id = None
+        self.selection_message = "기본 조합으로 되돌렸습니다."
+        self.audio.play("reset")
+
+    def _reset_battle(self) -> None:
+        if self.controller is None:
+            return
+        self.controller.reset()
+        self._attach_controller(self.controller)
+        self.status_text = "전술 전투를 다시 시작했습니다."
+        self.audio.play("reset")
+
+    def _toggle_blue_selection(self, champion_id: str) -> None:
+        blueprint = BLUEPRINTS_BY_ID[champion_id]
+        if champion_id in self.selected_blue_ids:
+            self.selected_blue_ids.remove(champion_id)
+            self.selection_message = f"{blueprint.name} 선택을 해제했습니다."
+            self.audio.play("ui-select", champion_id=champion_id)
+            return
+
+        if len(self.selected_blue_ids) >= 3:
+            self.selection_message = "플레이어 팀은 3명까지만 선택할 수 있습니다."
+            self.audio.play("reset")
+            return
+
+        self.selected_blue_ids.append(champion_id)
+        self.selection_message = f"{blueprint.name}을(를) 플레이어 팀에 추가했습니다."
+        self.audio.play("ui-confirm", champion_id=champion_id)
+
+    def _tile_for_deployed_champion(self, champion_id: str, assignments: dict[tuple[int, int], str]) -> tuple[int, int]:
+        for tile, deployed_id in assignments.items():
+            if deployed_id == champion_id:
+                return tile
+        raise KeyError(champion_id)
+
+    def _move_deploy_assignment(self, tile: tuple[int, int]) -> None:
+        occupant = self.deploy_assignments.get(tile)
+        if self.selected_deploy_champion_id is None:
+            if occupant:
+                self.selected_deploy_champion_id = occupant
+                self.selection_message = f"{BLUEPRINTS_BY_ID[occupant].name} 배치 칸을 바꿀 준비를 했습니다."
+                self.audio.play("ui-select", champion_id=occupant)
+            return
+
+        selected_id = self.selected_deploy_champion_id
+        previous_tile = self._tile_for_deployed_champion(selected_id, self.deploy_assignments)
+        if previous_tile == tile:
+            self.selected_deploy_champion_id = None
+            self.selection_message = "배치 선택을 해제했습니다."
+            self.audio.play("ui-select", champion_id=selected_id)
+            return
+
+        if occupant:
+            self.deploy_assignments[previous_tile] = occupant
+        else:
+            self.deploy_assignments.pop(previous_tile, None)
+        self.deploy_assignments[tile] = selected_id
+        self.selected_deploy_champion_id = None
+        self.selection_message = f"{BLUEPRINTS_BY_ID[selected_id].name}의 시작 위치를 변경했습니다."
+        self.audio.play("ui-confirm", champion_id=selected_id)
+
     def _handle_events(self) -> None:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
             elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    self.running = False
-                elif event.key == pygame.K_r:
-                    self._reset()
-                elif event.key == pygame.K_m:
-                    self.mode = "move"
-                elif event.key == pygame.K_1:
-                    self.mode = "basic"
-                elif event.key == pygame.K_2:
-                    self._choose_special_mode()
-                elif event.key == pygame.K_e:
-                    self._end_turn()
+                self._handle_keydown(event.key)
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 self._handle_click(event.pos)
 
+    def _handle_keydown(self, key: int) -> None:
+        if key == pygame.K_ESCAPE:
+            if self.screen_mode == "battle":
+                self._return_to_select()
+            elif self.screen_mode == "deploy":
+                self.screen_mode = "select"
+                self.audio.play("ui-select")
+            else:
+                self.running = False
+            return
+
+        if key == pygame.K_r:
+            if self.screen_mode == "battle":
+                self._reset_battle()
+            else:
+                self._reset_selection()
+            return
+
+        if self.screen_mode == "select":
+            if key in {pygame.K_RETURN, pygame.K_SPACE}:
+                self._start_deploy()
+            return
+
+        if self.screen_mode == "deploy":
+            if key == pygame.K_RETURN:
+                self._start_battle()
+            return
+
+        if key == pygame.K_m:
+            self.mode = "move"
+        elif key == pygame.K_1:
+            self.mode = "basic"
+        elif key == pygame.K_2:
+            self._choose_special_mode()
+        elif key == pygame.K_e:
+            self._end_turn()
+
     def _handle_click(self, position: tuple[int, int]) -> None:
-        if self.button_rects.get("reset") and self.button_rects["reset"].collidepoint(position):
-            self._reset()
+        header_action = self.button_rects.get("header-action")
+        if header_action and header_action.collidepoint(position):
+            if self.screen_mode == "battle":
+                self._reset_battle()
+            elif self.screen_mode == "deploy":
+                self.screen_mode = "select"
+                self.audio.play("ui-select")
+            else:
+                self.running = False
             return
 
-        active = self.controller.get_active_unit()
-        if active is None:
+        if self.screen_mode == "select":
+            self._handle_select_click(position)
             return
 
-        if active.team == "blue":
-            for key in ("move", "basic", "special", "end"):
-                rect = self.button_rects.get(key)
-                if rect and rect.collidepoint(position):
-                    if key == "move":
-                        self.mode = "move"
-                        self.status_text = "도달 가능한 칸을 클릭해 이동하세요."
-                    elif key == "basic":
-                        self.mode = "basic"
-                        self.status_text = "사거리 안 적을 클릭해 기본 공격을 사용하세요."
-                    elif key == "special":
-                        self._choose_special_mode()
-                    elif key == "end":
-                        self._end_turn()
-                    return
+        if self.screen_mode == "deploy":
+            self._handle_deploy_click(position)
+            return
 
-            clicked_tile = self._tile_from_screen(position)
-            if clicked_tile is None:
+        self._handle_battle_click(position)
+
+    def _handle_select_click(self, position: tuple[int, int]) -> None:
+        if self.button_rects.get("selection-start") and self.button_rects["selection-start"].collidepoint(position):
+            self._start_deploy()
+            return
+        if self.button_rects.get("selection-reroll") and self.button_rects["selection-reroll"].collidepoint(position):
+            self.selected_red_ids = self._random_enemy_lineup()
+            self.selection_message = "적 조합을 다시 섞었습니다."
+            self.audio.play("ui-select")
+            return
+
+        for champion_id, rect in self.selection_card_rects.items():
+            if rect.collidepoint(position):
+                self._toggle_blue_selection(champion_id)
                 return
 
-            if self.mode == "move" and clicked_tile in self.controller.get_reachable_tiles():
-                result = self.controller.move_active(clicked_tile)
-                if result:
-                    self._apply_action_result(result)
+        for index, rect in enumerate(self.selection_slot_rects):
+            if rect.collidepoint(position) and index < len(self.selected_blue_ids):
+                champion_id = self.selected_blue_ids.pop(index)
+                self.selection_message = f"{BLUEPRINTS_BY_ID[champion_id].name} 선택을 해제했습니다."
+                self.audio.play("ui-select", champion_id=champion_id)
                 return
 
-            target = self._unit_at_tile(clicked_tile)
-            if target is None or target.team == active.team:
+    def _handle_deploy_click(self, position: tuple[int, int]) -> None:
+        if self.button_rects.get("deploy-start") and self.button_rects["deploy-start"].collidepoint(position):
+            self._start_battle()
+            return
+
+        for champion_id, rect in self.deploy_roster_rects.items():
+            if rect.collidepoint(position):
+                self.selected_deploy_champion_id = champion_id
+                self.selection_message = f"{BLUEPRINTS_BY_ID[champion_id].name}의 시작 위치를 고르세요."
+                self.audio.play("ui-select", champion_id=champion_id)
                 return
 
-            if self.mode == "basic" and target.id in self.controller.get_valid_targets("basic"):
-                result = self.controller.use_basic(target.id)
-                if result:
-                    self._apply_action_result(result)
+        tile = self._tile_from_screen(position)
+        if tile and tile in DEFAULT_BLUE_DEPLOY_TILES:
+            self._move_deploy_assignment(tile)
+
+    def _handle_battle_click(self, position: tuple[int, int]) -> None:
+        controller = self.controller
+        if controller is None:
+            return
+
+        active = controller.get_active_unit()
+        if active is None or active.team != "blue":
+            return
+
+        for key in ("move", "basic", "special", "end"):
+            rect = self.button_rects.get(key)
+            if rect and rect.collidepoint(position):
+                if key == "move":
+                    self.mode = "move"
+                    self.status_text = "도달 가능한 칸을 클릭해 이동하세요."
+                elif key == "basic":
+                    self.mode = "basic"
+                    self.status_text = "사거리 안 적을 클릭해 기본 공격을 사용하세요."
+                elif key == "special":
+                    self._choose_special_mode()
+                elif key == "end":
+                    self._end_turn()
                 return
 
-            if self.mode == "special" and target.id in self.controller.get_valid_targets("special"):
-                result = self.controller.use_special(target.id)
-                if result:
-                    self._apply_action_result(result)
+        clicked_tile = self._tile_from_screen(position)
+        if clicked_tile is None:
+            return
+
+        if self.mode == "move" and clicked_tile in controller.get_reachable_tiles():
+            result = controller.move_active(clicked_tile)
+            if result:
+                self._apply_action_result(result)
+            return
+
+        target = self._unit_at_tile(clicked_tile)
+        if target is None or target.team == active.team:
+            return
+
+        if self.mode == "basic" and target.id in controller.get_valid_targets("basic"):
+            result = controller.use_basic(target.id)
+            if result:
+                self._apply_action_result(result)
+            return
+
+        if self.mode == "special" and target.id in controller.get_valid_targets("special"):
+            result = controller.use_special(target.id)
+            if result:
+                self._apply_action_result(result)
 
     def _choose_special_mode(self) -> None:
-        active = self.controller.get_active_unit()
+        controller = self.controller
+        if controller is None:
+            return
+        active = controller.get_active_unit()
         if active is None:
             return
         ability = active.special_ability
@@ -230,7 +468,7 @@ class GameApp:
             self.audio.play("reset")
             return
         if ability.target_mode == "self":
-            result = self.controller.use_special(active.id)
+            result = controller.use_special(active.id)
             if result:
                 self._apply_action_result(result)
             return
@@ -238,24 +476,19 @@ class GameApp:
         self.status_text = f"사거리 안 적을 클릭해 {ability.name}을(를) 사용하세요."
 
     def _end_turn(self) -> None:
-        result = self.controller.end_turn()
+        controller = self.controller
+        if controller is None:
+            return
+        result = controller.end_turn()
         if result:
             self.mode = "move"
             self.status_text = "턴을 넘겼습니다."
             self.audio.play("ui-confirm")
 
-    def _reset(self) -> None:
-        self.controller.reset()
-        self.mode = "move"
-        self.status_text = "전술 전투를 다시 시작했습니다."
-        self.floaters.clear()
-        self.hit_flash = {unit.id: 0.0 for unit in self.controller.units}
-        self.unit_visual_positions = {unit.id: pygame.Vector2(self._tile_center(unit.position)) for unit in self.controller.units}
-        self.last_active_id = None
-        self.ai_timer = 0.55
-        self.audio.play("reset")
-
     def _update(self, dt: float) -> None:
+        if self.screen_mode != "battle" or self.controller is None:
+            return
+
         active = self.controller.get_active_unit()
         active_id = active.id if active else None
         if active_id != self.last_active_id:
@@ -305,6 +538,8 @@ class GameApp:
         any_shield = False
         any_stun = False
         for impact in result.impacts:
+            if self.controller is None:
+                continue
             unit = self.controller.get_unit(impact.target_id)
             if unit is None:
                 continue
@@ -330,44 +565,39 @@ class GameApp:
         if any_stun:
             self.audio.play("stun")
 
-        if result.kind == "basic":
-            self.status_text = "기본 공격 사용 완료."
-        else:
-            self.status_text = f"{result.ability_name} 사용 완료."
+        self.status_text = "기본 공격 사용 완료." if result.kind == "basic" else f"{result.ability_name} 사용 완료."
 
-        if self.controller.state.winner == "blue":
+        if self.controller and self.controller.state.winner == "blue":
             self.audio.play("victory")
             self.status_text = "블루 팀이 승리했습니다."
-        elif self.controller.state.winner == "red":
+        elif self.controller and self.controller.state.winner == "red":
             self.audio.play("defeat")
             self.status_text = "레드 팀이 승리했습니다."
 
     def _draw(self) -> None:
         self.screen.blit(self.background_cache, (0, 0))
-        self._draw_header()
-        self._draw_panel(LEFT_PANEL, (59, 129, 191))
-        self._draw_panel(RIGHT_PANEL, (189, 92, 82))
-        self._draw_panel(BOTTOM_PANEL, (214, 182, 112))
-        self._draw_grid()
-        self._draw_left_panel()
-        self._draw_right_panel()
-        self._draw_bottom_panel()
-        self._draw_floaters()
-        self._draw_winner_overlay()
+        self.button_rects.clear()
+        self.tile_rects.clear()
+        if self.screen_mode == "select":
+            self._draw_selection_screen()
+        elif self.screen_mode == "deploy":
+            self._draw_deploy_screen()
+        else:
+            self._draw_battle_screen()
 
-    def _draw_header(self) -> None:
+    def _draw_header(self, title: str, subtitle: str, center_text: str, action_label: str) -> None:
         panel = pygame.Surface(HEADER_RECT.size, pygame.SRCALPHA)
         draw_vertical_gradient(panel, panel.get_rect(), (15, 24, 37), (19, 31, 47))
         pygame.draw.rect(panel, (236, 218, 176), panel.get_rect(), 1, border_radius=24)
         self.screen.blit(panel, HEADER_RECT.topleft)
-        self._draw_text("리그 오브 레전드: 리프트 택틱스", self.font_title, (244, 239, 225), (56, 38))
-        self._draw_text("전술 실험 빌드", self.font_ui, (226, 204, 156), (58, 80))
-        self._draw_text("8x6 그리드 · 이동 + 행동 턴제", self.font_ui, (158, 185, 207), (WINDOW_WIDTH // 2, 48), center=True)
-        reset_rect = pygame.Rect(WINDOW_WIDTH - 234, 42, 154, 42)
-        self.button_rects["reset"] = reset_rect
-        pygame.draw.rect(self.screen, (214, 182, 112), reset_rect, border_radius=14)
-        pygame.draw.rect(self.screen, (255, 244, 217), reset_rect, 1, border_radius=14)
-        self._draw_text("R 리셋", self.font_ui, (13, 21, 31), reset_rect.center, center=True)
+        self._draw_text(title, self.font_title, (244, 239, 225), (56, 38))
+        self._draw_text(subtitle, self.font_ui, (226, 204, 156), (58, 80))
+        self._draw_text(center_text, self.font_ui, (158, 185, 207), (WINDOW_WIDTH // 2, 48), center=True)
+        action_rect = pygame.Rect(WINDOW_WIDTH - 250, 42, 170, 42)
+        self.button_rects["header-action"] = action_rect
+        pygame.draw.rect(self.screen, (214, 182, 112), action_rect, border_radius=14)
+        pygame.draw.rect(self.screen, (255, 244, 217), action_rect, 1, border_radius=14)
+        self._draw_text(action_label, self.font_ui, (13, 21, 31), action_rect.center, center=True)
 
     def _draw_panel(self, rect: pygame.Rect, glow_color: tuple[int, int, int]) -> None:
         panel = pygame.Surface(rect.size, pygame.SRCALPHA)
@@ -376,7 +606,183 @@ class GameApp:
         pygame.draw.rect(panel, (236, 218, 176), panel.get_rect(), 1, border_radius=26)
         self.screen.blit(panel, rect.topleft)
 
-    def _draw_grid(self) -> None:
+    def _draw_selection_screen(self) -> None:
+        self._draw_header("리그 오브 레전드: 리프트 택틱스", "전술 팀 편성", "챔피언 선택", "ESC 종료")
+        self._draw_panel(SELECT_LEFT_PANEL, (74, 157, 214))
+        self._draw_panel(SELECT_RIGHT_PANEL, (212, 105, 86))
+        self._draw_text("플레이어 팀 선택", self.font_heading, (244, 239, 225), (SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 18))
+        self._draw_text("3명을 골라 배치 단계로 넘어가세요", self.font_small, (150, 182, 201), (SELECT_LEFT_PANEL.x + 24, SELECT_LEFT_PANEL.y + 52))
+        self._draw_text("적 조합 미리보기", self.font_heading, (244, 239, 225), (SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.y + 18))
+        self._draw_text("전술 상대를 재추첨할 수 있습니다", self.font_small, (198, 176, 168), (SELECT_RIGHT_PANEL.x + 24, SELECT_RIGHT_PANEL.y + 52))
+        self._draw_selection_slots()
+        self._draw_selection_pool()
+        self._draw_selection_enemy_preview()
+
+    def _draw_selection_slots(self) -> None:
+        rect = pygame.Rect(SELECT_LEFT_PANEL.x + 18, SELECT_LEFT_PANEL.y + 86, SELECT_LEFT_PANEL.width - 36, 168)
+        self.selection_slot_rects = []
+        self._draw_text("출전 라인업", self.font_ui, (229, 210, 164), (rect.x, rect.y))
+        self._draw_text(f"{len(self.selected_blue_ids)}/3 선택", self.font_small, (128, 164, 188), (rect.right, rect.y + 4), align_right=True)
+        slot_width = 266
+        gap = 18
+        for index in range(3):
+            slot_rect = pygame.Rect(rect.x + index * (slot_width + gap), rect.y + 40, slot_width, 108)
+            self.selection_slot_rects.append(slot_rect)
+            pygame.draw.rect(self.screen, (13, 24, 37), slot_rect, border_radius=22)
+            pygame.draw.rect(self.screen, (236, 218, 176), slot_rect, 1, border_radius=22)
+            if index < len(self.selected_blue_ids):
+                champion_id = self.selected_blue_ids[index]
+                blueprint = BLUEPRINTS_BY_ID[champion_id]
+                self._draw_champion_card(slot_rect, champion_id, compact=True, badge=str(index + 1), footer="클릭해서 제거")
+                self._draw_text(blueprint.role, self.font_tiny, hex_to_rgb(blueprint.accent), (slot_rect.x + 112, slot_rect.y + 60))
+            else:
+                self._draw_text("+", self.font_large, (119, 154, 178), slot_rect.center, center=True)
+                self._draw_text("빈 슬롯", self.font_ui, (180, 192, 204), (slot_rect.centerx, slot_rect.y + 74), center=True)
+
+    def _draw_selection_pool(self) -> None:
+        rect = pygame.Rect(SELECT_LEFT_PANEL.x + 18, SELECT_LEFT_PANEL.y + 280, SELECT_LEFT_PANEL.width - 36, SELECT_LEFT_PANEL.height - 352)
+        self.selection_card_rects.clear()
+        columns = 3
+        gap_x = 18
+        gap_y = 18
+        rows = max(1, len(SELECTABLE_BLUE_IDS) // columns)
+        card_width = (rect.width - gap_x * (columns - 1)) // columns
+        card_height = (rect.height - gap_y * (rows - 1)) // rows
+        for index, champion_id in enumerate(SELECTABLE_BLUE_IDS):
+            col = index % columns
+            row = index // columns
+            card_rect = pygame.Rect(
+                rect.x + col * (card_width + gap_x),
+                rect.y + row * (card_height + gap_y),
+                card_width,
+                card_height,
+            )
+            self.selection_card_rects[champion_id] = card_rect
+            selected = champion_id in self.selected_blue_ids
+            order = str(self.selected_blue_ids.index(champion_id) + 1) if selected else None
+            self._draw_champion_card(card_rect, champion_id, selected=selected, badge=order)
+
+        footer = pygame.Rect(rect.x, SELECT_LEFT_PANEL.bottom - 54, rect.width, 36)
+        self._draw_text(self.selection_message, self.font_small, (208, 219, 226), (footer.x + 4, footer.y + 6))
+
+    def _draw_selection_enemy_preview(self) -> None:
+        reroll_rect = pygame.Rect(SELECT_RIGHT_PANEL.x + 100, SELECT_RIGHT_PANEL.bottom - 118, 180, 48)
+        start_rect = pygame.Rect(SELECT_RIGHT_PANEL.right - 280, SELECT_RIGHT_PANEL.bottom - 118, 180, 48)
+        self.button_rects["selection-reroll"] = reroll_rect
+        self.button_rects["selection-start"] = start_rect
+        pygame.draw.rect(self.screen, (214, 182, 112), reroll_rect, border_radius=15)
+        pygame.draw.rect(self.screen, (255, 244, 217), reroll_rect, 1, border_radius=15)
+        self._draw_text("적 재추첨", self.font_ui, (12, 20, 31), reroll_rect.center, center=True)
+        enabled = len(self.selected_blue_ids) == 3
+        fill = (214, 182, 112) if enabled else (76, 84, 96)
+        text_color = (12, 20, 31) if enabled else (188, 196, 204)
+        pygame.draw.rect(self.screen, fill, start_rect, border_radius=15)
+        pygame.draw.rect(self.screen, (255, 244, 217), start_rect, 1, border_radius=15)
+        self._draw_text("배치 시작", self.font_ui, text_color, start_rect.center, center=True)
+
+        for index, champion_id in enumerate(self.selected_red_ids):
+            card_rect = pygame.Rect(SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.y + 96 + index * 188, SELECT_RIGHT_PANEL.width - 44, 168)
+            self._draw_champion_card(card_rect, champion_id, enemy=True)
+
+    def _draw_deploy_screen(self) -> None:
+        self._draw_header("리그 오브 레전드: 리프트 택틱스", "전술 팀 편성", "시작 배치", "선택으로")
+        self._draw_panel(LEFT_PANEL, (74, 157, 214))
+        self._draw_panel(RIGHT_PANEL, (212, 105, 86))
+        self._draw_panel(BOTTOM_PANEL, (214, 182, 112))
+        self._draw_deploy_grid()
+        self._draw_deploy_left_panel()
+        self._draw_deploy_right_panel()
+        self._draw_deploy_bottom_panel()
+
+    def _draw_deploy_grid(self) -> None:
+        grid_surface = pygame.Surface(GRID_RECT.size, pygame.SRCALPHA)
+        draw_vertical_gradient(grid_surface, grid_surface.get_rect(), (7, 16, 26), (10, 22, 36))
+        self.screen.blit(grid_surface, GRID_RECT.topleft)
+
+        for y in range(GRID_HEIGHT):
+            for x in range(GRID_WIDTH):
+                rect = pygame.Rect(GRID_RECT.x + x * GRID_CELL, GRID_RECT.y + y * GRID_CELL, GRID_CELL, GRID_CELL)
+                self.tile_rects[(x, y)] = rect
+                base = (18, 31, 49) if (x + y) % 2 == 0 else (15, 26, 41)
+                pygame.draw.rect(self.screen, base, rect)
+                pygame.draw.rect(self.screen, (255, 255, 255, 18), rect, 1)
+
+                tile = (x, y)
+                if tile in DEFAULT_BLUE_DEPLOY_TILES:
+                    overlay = pygame.Surface(rect.size, pygame.SRCALPHA)
+                    overlay.fill((78, 170, 225, 52))
+                    self.screen.blit(overlay, rect.topleft)
+                elif tile in DEFAULT_RED_DEPLOY_TILES:
+                    overlay = pygame.Surface(rect.size, pygame.SRCALPHA)
+                    overlay.fill((224, 108, 92, 42))
+                    self.screen.blit(overlay, rect.topleft)
+
+        for tile, champion_id in self.red_deploy_assignments.items():
+            self._draw_static_unit(champion_id, tile, selected=False)
+        for tile, champion_id in self.deploy_assignments.items():
+            selected = champion_id == self.selected_deploy_champion_id
+            self._draw_static_unit(champion_id, tile, selected=selected)
+
+        pygame.draw.rect(self.screen, (236, 218, 176), GRID_RECT, 1, border_radius=26)
+
+    def _draw_deploy_left_panel(self) -> None:
+        self._draw_text("배치 브리핑", self.font_heading, (244, 239, 225), (LEFT_PANEL.x + 18, LEFT_PANEL.y + 18))
+        self._draw_text(self.selection_message, self.font_small, (167, 192, 212), (LEFT_PANEL.x + 18, LEFT_PANEL.y + 54))
+        self._draw_text("선택한 챔피언", self.font_ui, (229, 210, 164), (LEFT_PANEL.x + 18, LEFT_PANEL.y + 108))
+        self.deploy_roster_rects.clear()
+        for index, champion_id in enumerate(self.selected_blue_ids):
+            rect = pygame.Rect(LEFT_PANEL.x + 18, LEFT_PANEL.y + 142 + index * 116, LEFT_PANEL.width - 36, 98)
+            self.deploy_roster_rects[champion_id] = rect
+            self._draw_champion_card(rect, champion_id, compact=True, selected=champion_id == self.selected_deploy_champion_id)
+
+        guide_rect = pygame.Rect(LEFT_PANEL.x + 18, LEFT_PANEL.bottom - 194, LEFT_PANEL.width - 36, 166)
+        pygame.draw.rect(self.screen, (11, 20, 31), guide_rect, border_radius=22)
+        pygame.draw.rect(self.screen, (236, 218, 176), guide_rect, 1, border_radius=22)
+        self._draw_text("배치 규칙", self.font_ui, (229, 210, 164), (guide_rect.x + 16, guide_rect.y + 14))
+        guides = [
+            "1. 왼쪽 챔피언 카드를 클릭",
+            "2. 파란 시작 칸을 클릭해 위치 변경",
+            "3. 같은 칸을 클릭하면 선택 해제",
+            "4. 배치가 끝나면 전투 시작",
+        ]
+        for index, line in enumerate(guides):
+            self._draw_text(line, self.font_small, (201, 213, 221), (guide_rect.x + 16, guide_rect.y + 48 + index * 28))
+
+    def _draw_deploy_right_panel(self) -> None:
+        self._draw_text("적 시작 위치", self.font_heading, (244, 239, 225), (RIGHT_PANEL.x + 18, RIGHT_PANEL.y + 18))
+        self._draw_text("적은 자동으로 배치되며 순서가 바뀔 수 있습니다", self.font_small, (198, 176, 168), (RIGHT_PANEL.x + 18, RIGHT_PANEL.y + 52))
+        for index, champion_id in enumerate(self.selected_red_ids):
+            rect = pygame.Rect(RIGHT_PANEL.x + 18, RIGHT_PANEL.y + 98 + index * 172, RIGHT_PANEL.width - 36, 150)
+            tile = self._tile_for_deployed_champion(champion_id, self.red_deploy_assignments)
+            self._draw_champion_card(rect, champion_id, compact=True, enemy=True, footer=f"시작 칸 {tile}")
+
+    def _draw_deploy_bottom_panel(self) -> None:
+        start_rect = pygame.Rect(BOTTOM_PANEL.x + 26, BOTTOM_PANEL.y + 18, 220, 56)
+        self.button_rects["deploy-start"] = start_rect
+        pygame.draw.rect(self.screen, (214, 182, 112), start_rect, border_radius=18)
+        pygame.draw.rect(self.screen, (255, 244, 217), start_rect, 1, border_radius=18)
+        self._draw_text("전투 시작", self.font_ui, (13, 21, 31), start_rect.center, center=True)
+        self._draw_text("현재 선택", self.font_small, (223, 206, 164), (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 18))
+        champion_name = BLUEPRINTS_BY_ID[self.selected_deploy_champion_id].name if self.selected_deploy_champion_id else "없음"
+        self._draw_text(champion_name, self.font_heading, (244, 239, 225), (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 38))
+        self._draw_text("파란 시작 칸을 눌러 위치를 바꾸세요", self.font_small, (184, 205, 221), (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 66))
+
+    def _draw_battle_screen(self) -> None:
+        self._draw_header("리그 오브 레전드: 리프트 택틱스", "전술 실험 빌드", "8x6 그리드 · 이동 + 행동 턴제", "R 리셋")
+        self._draw_panel(LEFT_PANEL, (59, 129, 191))
+        self._draw_panel(RIGHT_PANEL, (189, 92, 82))
+        self._draw_panel(BOTTOM_PANEL, (214, 182, 112))
+        self._draw_battle_grid()
+        self._draw_battle_left_panel()
+        self._draw_battle_right_panel()
+        self._draw_battle_bottom_panel()
+        self._draw_floaters()
+        self._draw_winner_overlay()
+
+    def _draw_battle_grid(self) -> None:
+        if self.controller is None:
+            return
+
         grid_surface = pygame.Surface(GRID_RECT.size, pygame.SRCALPHA)
         draw_vertical_gradient(grid_surface, grid_surface.get_rect(), (7, 16, 26), (10, 22, 36))
         self.screen.blit(grid_surface, GRID_RECT.topleft)
@@ -386,7 +792,6 @@ class GameApp:
         special_targets = set(self.controller.get_valid_targets("special")) if self.mode == "special" else set()
         active = self.controller.get_active_unit()
 
-        self.tile_rects.clear()
         for y in range(GRID_HEIGHT):
             for x in range(GRID_WIDTH):
                 rect = pygame.Rect(GRID_RECT.x + x * GRID_CELL, GRID_RECT.y + y * GRID_CELL, GRID_CELL, GRID_CELL)
@@ -415,11 +820,11 @@ class GameApp:
         for unit in self.controller.units:
             if unit.hp <= 0:
                 continue
-            self._draw_unit(unit, active.id == unit.id if active else False)
+            self._draw_battle_unit(unit, active.id == unit.id if active else False)
 
         pygame.draw.rect(self.screen, (236, 218, 176), GRID_RECT, 1, border_radius=26)
 
-    def _draw_unit(self, unit, is_active: bool) -> None:
+    def _draw_battle_unit(self, unit, is_active: bool) -> None:
         center = self.unit_visual_positions[unit.id]
         tile_rect = self.tile_rects[unit.position]
         accent = hex_to_rgb(unit.accent)
@@ -453,8 +858,8 @@ class GameApp:
             self._draw_text("기절", self.font_tiny, (255, 228, 150), (frame_rect.right - 28, frame_rect.bottom + 6))
         self._draw_text(unit.name, self.font_small, (244, 239, 225), (frame_rect.centerx, frame_rect.bottom + 18), center=True)
 
-    def _draw_left_panel(self) -> None:
-        active = self.controller.get_active_unit()
+    def _draw_battle_left_panel(self) -> None:
+        active = self.controller.get_active_unit() if self.controller else None
         self._draw_text("전술 브리핑", self.font_heading, (244, 239, 225), (LEFT_PANEL.x + 18, LEFT_PANEL.y + 18))
         self._draw_text(self.status_text, self.font_small, (167, 192, 212), (LEFT_PANEL.x + 18, LEFT_PANEL.y + 54))
 
@@ -490,12 +895,14 @@ class GameApp:
             "2. 기본기 또는 특수기 선택",
             "3. 사거리 안 적을 클릭해 공격",
             "4. 이동과 행동을 모두 쓰면 자동 종료",
-            "5. E로 턴 종료, R로 전투 리셋",
+            "5. E로 턴 종료, ESC로 선택 화면 복귀",
         ]
         for index, line in enumerate(guides):
             self._draw_text(line, self.font_small, (201, 213, 221), (guide_rect.x + 18, guide_rect.y + 58 + index * 36))
 
-    def _draw_right_panel(self) -> None:
+    def _draw_battle_right_panel(self) -> None:
+        if self.controller is None:
+            return
         self._draw_text("전장 현황", self.font_heading, (244, 239, 225), (RIGHT_PANEL.x + 18, RIGHT_PANEL.y + 18))
         self._draw_text(f"라운드 {self.controller.state.round}", self.font_small, (189, 200, 208), (RIGHT_PANEL.right - 24, RIGHT_PANEL.y + 22), align_right=True)
 
@@ -533,13 +940,10 @@ class GameApp:
             status.append("전투불능")
         self._draw_text(" · ".join(status) if status else unit.role, self.font_tiny, accent, (row_rect.right - 12, row_rect.y + 18), align_right=True)
 
-    def _draw_bottom_panel(self) -> None:
+    def _draw_battle_bottom_panel(self) -> None:
+        if self.controller is None:
+            return
         active = self.controller.get_active_unit()
-        self.button_rects.pop("move", None)
-        self.button_rects.pop("basic", None)
-        self.button_rects.pop("special", None)
-        self.button_rects.pop("end", None)
-
         if active is None:
             return
 
@@ -575,6 +979,81 @@ class GameApp:
         else:
             self._draw_text("적 AI가 경로와 타겟을 계산 중", self.font_small, (214, 191, 184), (info_x, BOTTOM_PANEL.y + 66))
 
+    def _draw_champion_card(
+        self,
+        rect: pygame.Rect,
+        champion_id: str,
+        *,
+        selected: bool = False,
+        enemy: bool = False,
+        compact: bool = False,
+        badge: str | None = None,
+        footer: str | None = None,
+    ) -> None:
+        blueprint = BLUEPRINTS_BY_ID[champion_id]
+        accent = hex_to_rgb(blueprint.accent)
+        top = (14, 24, 37) if not enemy else (28, 18, 18)
+        bottom = (20, 32, 46) if not enemy else (40, 23, 22)
+        if selected:
+            top = (20, 43, 56)
+            bottom = (22, 60, 70)
+        card = pygame.Surface(rect.size, pygame.SRCALPHA)
+        draw_vertical_gradient(card, card.get_rect(), top, bottom)
+        pygame.draw.rect(card, (*accent, 22 if not selected else 42), card.get_rect(), border_radius=24)
+        pygame.draw.rect(card, (236, 218, 176) if not selected else (108, 224, 203), card.get_rect(), 1, border_radius=24)
+        self.screen.blit(card, rect.topleft)
+
+        portrait_size = 96 if compact else 88
+        portrait_rect = pygame.Rect(rect.x + 14, rect.y + 14, portrait_size, portrait_size)
+        self._draw_portrait_art(champion_id, portrait_rect, accent)
+        text_x = portrait_rect.right + 14
+        text_width = rect.right - text_x - 14
+        self._draw_text(blueprint.name, self.font_ui, (244, 239, 225), (text_x, rect.y + 14))
+        self._draw_wrapped_text(blueprint.title, self.font_small, (176, 195, 208), pygame.Rect(text_x, rect.y + 42, text_width, 18), max_lines=1)
+        self._draw_text(blueprint.role, self.font_small, accent, (text_x, rect.y + 66))
+        self._draw_text(f"체력 {blueprint.max_hp} · 속도 {blueprint.speed}", self.font_tiny, (198, 209, 218), (text_x, rect.y + 88))
+        description = footer or f"대표 스킬: {blueprint.abilities[0].name}"
+        self._draw_wrapped_text(description, self.font_tiny, (214, 222, 229), pygame.Rect(text_x, rect.y + 108, text_width, rect.height - 120), max_lines=2 if not compact else 1)
+
+        if badge:
+            badge_rect = pygame.Rect(rect.right - 44, rect.y + 14, 28, 28)
+            pygame.draw.rect(self.screen, (95, 222, 201) if selected else accent, badge_rect, border_radius=10)
+            pygame.draw.rect(self.screen, (10, 18, 29), badge_rect, 1, border_radius=10)
+            self._draw_text(badge, self.font_small, (10, 18, 29), badge_rect.center, center=True)
+
+    def _draw_static_unit(self, champion_id: str, tile: tuple[int, int], *, selected: bool) -> None:
+        center = self._tile_center(tile)
+        rect = self.tile_rects[tile]
+        blueprint = BLUEPRINTS_BY_ID[champion_id]
+        accent = hex_to_rgb(blueprint.accent)
+        shadow_rect = pygame.Rect(0, 0, 64, 18)
+        shadow_rect.center = (center[0], center[1] + 28)
+        pygame.draw.ellipse(self.screen, (0, 0, 0, 90), shadow_rect)
+        if selected:
+            pygame.draw.rect(self.screen, (95, 222, 201), rect.inflate(-12, -12), 3, border_radius=18)
+
+        frame_rect = pygame.Rect(0, 0, 74, 74)
+        frame_rect.center = (center[0], center[1] - 2)
+        pygame.draw.rect(self.screen, accent, frame_rect, border_radius=22)
+        pygame.draw.rect(self.screen, (245, 239, 224), frame_rect, 2, border_radius=22)
+        art = self.champion_art.get(champion_id)
+        if art is not None:
+            portrait = self._masked_art_surface(art, (66, 66), border_radius=18)
+            self.screen.blit(portrait, portrait.get_rect(center=frame_rect.center))
+        self._draw_text(blueprint.name, self.font_small, (244, 239, 225), (frame_rect.centerx, frame_rect.bottom + 18), center=True)
+
+    def _draw_portrait_art(self, champion_id: str, rect: pygame.Rect, accent: tuple[int, int, int]) -> None:
+        panel = pygame.Surface(rect.size, pygame.SRCALPHA)
+        draw_vertical_gradient(panel, panel.get_rect(), (12, 21, 31), (16, 28, 42))
+        pygame.draw.rect(panel, (*accent, 26), panel.get_rect(), border_radius=20)
+        pygame.draw.rect(panel, (236, 218, 176), panel.get_rect(), 1, border_radius=20)
+        self.screen.blit(panel, rect.topleft)
+        art = self.champion_art.get(champion_id)
+        if art is None:
+            return
+        portrait = self._masked_art_surface(art, (rect.width - 8, rect.height - 8), border_radius=18)
+        self.screen.blit(portrait, portrait.get_rect(center=rect.center))
+
     def _draw_floaters(self) -> None:
         for floater in self.floaters:
             alpha = int(255 * clamp(floater.lifetime / 0.8, 0.0, 1.0))
@@ -583,14 +1062,14 @@ class GameApp:
             self.screen.blit(rendered, rendered.get_rect(center=(int(floater.x), int(floater.y))))
 
     def _draw_winner_overlay(self) -> None:
-        if not self.controller.state.winner:
+        if self.controller is None or not self.controller.state.winner:
             return
         overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
         overlay.fill((5, 8, 13, 180))
         self.screen.blit(overlay, (0, 0))
         title = "블루 팀 승리" if self.controller.state.winner == "blue" else "레드 팀 승리"
         self._draw_text(title, self.font_title, (255, 244, 217), (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 20), center=True)
-        self._draw_text("R로 다시 시작하거나 ESC로 종료", self.font_ui, (208, 219, 226), (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 34), center=True)
+        self._draw_text("R로 다시 시작하거나 ESC로 선택 화면 복귀", self.font_ui, (208, 219, 226), (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 34), center=True)
 
     def _tile_center(self, tile: tuple[int, int]) -> tuple[int, int]:
         return (
@@ -607,6 +1086,8 @@ class GameApp:
         return tile if tile in self.tile_rects else None
 
     def _unit_at_tile(self, tile: tuple[int, int]):
+        if self.controller is None:
+            return None
         for unit in self.controller.units:
             if unit.hp > 0 and unit.position == tile:
                 return unit

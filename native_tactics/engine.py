@@ -10,6 +10,8 @@ from native_game.data import AbilityEffect
 from native_game.data import TeamId
 
 from .data import BLOCKED_TILES
+from .data import DEFAULT_BLUE_DEPLOY_TILES
+from .data import DEFAULT_RED_DEPLOY_TILES
 from .data import GRID_HEIGHT
 from .data import GRID_WIDTH
 from .data import GridPos
@@ -100,15 +102,19 @@ class TacticsController:
         self,
         blue_ids: Iterable[str] | None = None,
         red_ids: Iterable[str] | None = None,
+        blue_positions: Iterable[GridPos] | None = None,
+        red_positions: Iterable[GridPos] | None = None,
     ) -> None:
         self.initial_blue_ids = tuple(blue_ids or ())
         self.initial_red_ids = tuple(red_ids or ())
+        self.initial_blue_positions = tuple(blue_positions or ())
+        self.initial_red_positions = tuple(red_positions or ())
         blue_lineup = tuple(self.initial_blue_ids or ("blue-garen", "blue-ahri", "blue-jinx"))
         red_lineup = tuple(self.initial_red_ids or ("red-darius", "red-annie", "red-caitlyn"))
         blueprints = build_tactical_blueprints(blue_lineup, red_lineup)
-        blue_positions: tuple[GridPos, ...] = ((0, 1), (0, 3), (0, 5))
-        red_positions: tuple[GridPos, ...] = ((7, 1), (7, 3), (7, 5))
-        positions = (*blue_positions[: len(blue_lineup)], *red_positions[: len(red_lineup)])
+        resolved_blue_positions = tuple(self.initial_blue_positions or DEFAULT_BLUE_DEPLOY_TILES)[: len(blue_lineup)]
+        resolved_red_positions = tuple(self.initial_red_positions or DEFAULT_RED_DEPLOY_TILES)[: len(red_lineup)]
+        positions = (*resolved_blue_positions, *resolved_red_positions)
         self.units = [unit_from_blueprint(blueprint, position) for blueprint, position in zip(blueprints, positions)]
         self.blocked_tiles = set(BLOCKED_TILES)
         self.state = TacticalState(
@@ -122,7 +128,12 @@ class TacticsController:
         self._prime_next_turn()
 
     def reset(self) -> None:
-        self.__init__(self.initial_blue_ids or None, self.initial_red_ids or None)
+        self.__init__(
+            self.initial_blue_ids or None,
+            self.initial_red_ids or None,
+            self.initial_blue_positions or None,
+            self.initial_red_positions or None,
+        )
 
     def get_unit(self, unit_id: str | None) -> TacticalUnit | None:
         if not unit_id:

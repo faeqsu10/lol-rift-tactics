@@ -48,6 +48,8 @@
   - cooldowns, shields, stun, and simple enemy AI
   - direct enemy target selection for single-target skills
 - The tactics build opens a separate real game window and supports:
+  - champion select before battle
+  - manual blue-team starting deployment
   - 8x6 grid battlefield
   - movement plus action on each turn
   - obstacle tiles and movement range highlighting
@@ -86,11 +88,11 @@
 
 ## Recommended Next Steps
 
-1. Add champion select and deployment planning to `native_tactics`.
-2. Add champion-specific tactical passives and stronger skill differentiation.
-3. Add terrain, enemy intent UI, and smarter pathfinding/AI to `native_tactics`.
-4. Add post-battle reward selection to create a repeat-play loop.
-5. Replace shape-based placeholder characters with real sprite art or sprite sheets.
+1. Add champion-specific tactical passives and stronger skill differentiation to `native_tactics`.
+2. Add terrain, enemy intent UI, and smarter pathfinding/AI to `native_tactics`.
+3. Add post-battle reward selection to create a repeat-play loop.
+4. Replace shape-based placeholder characters with real sprite art or sprite sheets.
+5. Consider a dedicated deployment screenshot or test path for `native_tactics` state transitions.
 
 ## Resume Prompt
 
