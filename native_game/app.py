@@ -4,13 +4,13 @@ import argparse
 import math
 import random
 from dataclasses import dataclass
-from pathlib import Path
 
 import pygame
 
 from .audio import SoundBank
 from .combat import BattleAction, BattleController, CombatUnit
 from .data import BLUEPRINTS_BY_ID, DEFAULT_BLUE_IDS, SELECTABLE_BLUE_IDS, SELECTABLE_RED_IDS
+from .runtime import project_root
 
 WINDOW_WIDTH = 1600
 WINDOW_HEIGHT = 960
@@ -21,7 +21,7 @@ ACTION_PANEL = pygame.Rect(298, 738, 1004, 188)
 LOG_PANEL = pygame.Rect(1332, 738, 232, 188)
 HEADER_RECT = pygame.Rect(36, 28, WINDOW_WIDTH - 72, 70)
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = project_root()
 FONT_PATH = PROJECT_ROOT / "assets" / "fonts" / "NotoSansKR-Variable.ttf"
 CHAMPION_ART_DIR = PROJECT_ROOT / "assets" / "champions"
 CHAMPION_ART_FILES = {
@@ -300,7 +300,7 @@ class GameApp:
                 removed = self.selected_blue_ids.pop(index)
                 removed_name = BLUEPRINTS_BY_ID[removed].name
                 self.selection_message = f"{removed_name} 선택을 해제했습니다."
-                self.audio.play("ui-select")
+                self.audio.play("ui-select", champion_id=removed)
                 return
 
     def _toggle_blue_selection(self, champion_id: str) -> None:
@@ -308,7 +308,7 @@ class GameApp:
         if champion_id in self.selected_blue_ids:
             self.selected_blue_ids.remove(champion_id)
             self.selection_message = f"{blueprint.name} 선택을 해제했습니다."
-            self.audio.play("ui-select")
+            self.audio.play("ui-select", champion_id=champion_id)
             return
 
         if len(self.selected_blue_ids) >= 3:
@@ -318,7 +318,7 @@ class GameApp:
 
         self.selected_blue_ids.append(champion_id)
         self.selection_message = f"{blueprint.name}을(를) 플레이어 팀에 추가했습니다."
-        self.audio.play("ui-confirm")
+        self.audio.play("ui-confirm", champion_id=champion_id)
 
     def _handle_events(self) -> None:
         for event in pygame.event.get():
@@ -454,7 +454,7 @@ class GameApp:
         if ability is None or active.cooldowns[ability.id] > 0:
             return
 
-        self.audio.play("ui-select")
+        self.audio.play("ui-select", champion_id=active.id)
 
         if ability.target_type == "enemy":
             self.selected_ability_id = None if self.selected_ability_id == ability.id else ability.id
@@ -472,8 +472,9 @@ class GameApp:
             return
 
         ability_id = self.selected_ability_id
+        active = self.controller.get_active_unit()
         self.selected_ability_id = None
-        self.audio.play("ui-confirm")
+        self.audio.play("ui-confirm", champion_id=active.id if active else None)
         self._begin_preview(ability_id, target_id)
 
     def _begin_preview(self, ability_id: str, target_id: str | None) -> None:
@@ -490,7 +491,7 @@ class GameApp:
             actor_state.cast_timer = self.preview_timer
             actor_state.flare_timer = 0.42
 
-        self.audio.play("cast")
+        self.audio.play("cast", champion_id=preview.actor_id)
         self._spawn_preview_fx(preview)
 
     def _spawn_preview_fx(self, action: BattleAction) -> None:

@@ -16,6 +16,7 @@ This file provides guidance for working in this repository.
 - 의존성 설치: `npm install`
 - 네이티브 환경 준비: `npm run native:setup`
 - 네이티브 실행: `npm run native:play`
+- 네이티브 패키징: `npm run native:package`
 - 네이티브 테스트: `npm run native:test`
 - 네이티브 스모크: `npm run native:smoke`
 - 웹 개발 서버: `npm run dev`
@@ -29,6 +30,7 @@ native_game/
 ├── audio.py        # 절차형 효과음과 앰비언트 오디오
 ├── combat.py       # 턴제 전투 상태와 해석
 ├── data.py         # 챔피언/스킬 정의
+├── runtime.py      # 번들/일반 실행 공통 리소스 경로
 ├── tests.py        # 전투 규칙 테스트
 └── __main__.py     # 런타임 부트스트랩과 실행 진입점
 

@@ -35,6 +35,7 @@
   - champion icon art applied to battlefield units and side panels
   - upgraded battlefield presentation, UI panels, and champion standees
   - procedural sound effects and ambient audio
+  - champion-themed original selection and cast sounds
   - vendored PulseAudio runtime fallback for WSL/Linux environments missing `libpulse0`
   - animated unit idle/cast/hit states
   - projectile and ring effects
@@ -50,10 +51,13 @@
   - Red pool: Darius, Annie, Caitlyn, Morgana, Yasuo, Zed, Lissandra
 - Native dependency file: `requirements-native.txt`
 - Native run command: `.venv/bin/python -m native_game`
+- Native package command: `npm run native:package`
+- Native packaged executable: `release/rift-tactics`
 - Native tests: `.venv/bin/python -m native_game.tests`
 - Screenshot capture command: `npm run native:capture`
 - Audio implementation: `native_game/audio.py`
 - Runtime bootstrap: `native_game/__main__.py`
+- Runtime path helper: `native_game/runtime.py`
 - Vendored WSL audio libs: `.vendor/pulse/extracted/usr/lib/x86_64-linux-gnu`
 - Task tracker: `tasks/todo.md`
 - Lessons log: `tasks/lessons.md`
@@ -67,7 +71,7 @@
 
 1. Replace shape-based placeholder characters with real sprite art or sprite sheets.
 2. Add distinct animation sets for attack, impact, defeat, and victory.
-3. Add sound effects, music stubs, and stronger camera feedback.
+3. Replace procedural champion motifs with higher-fidelity original audio assets if needed.
 4. Improve battlefield presentation with tile art, lane markers, and scene dressing.
 5. Re-evaluate long-term engine choice only after the native combat feel is validated.
 

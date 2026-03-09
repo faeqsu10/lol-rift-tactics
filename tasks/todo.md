@@ -12,6 +12,8 @@
 - [x] 전투 시작 전 챔피언 선택 화면 추가
 - [x] 블루/레드 로스터 풀 확장 및 커스텀 라인업 전투 반영
 - [x] 블루/레드 로스터를 7인 풀로 2차 확장하고 선택 카드 레이아웃 보정
+- [x] `PyInstaller` 기반 실행 파일 패키징 경로 추가 및 산출물 검증
+- [x] 챔피언별 선택/시전 테마 사운드 추가
 - [x] 헤드리스 스크린샷으로 비주얼 결과 확인
 - [ ] 실제 스프라이트 기반 캐릭터 아트 도입 여부 결정
 - [ ] 공격, 피격, 사망, 승리 전용 애니메이션 세분화
@@ -23,6 +25,8 @@
 - [x] `npm run native:test`
 - [x] `npm run native:smoke`
 - [x] `--screenshot` 출력 확인
+- [x] `npm run native:package`
+- [x] `./release/rift-tactics --headless --frames 2 --screenshot ...`
 
 ## 리뷰 메모
 

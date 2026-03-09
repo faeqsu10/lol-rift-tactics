@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import os
 import sys
-from pathlib import Path
 
+from .runtime import project_root
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = project_root()
 VENDORED_AUDIO_LIB_DIR = PROJECT_ROOT / ".vendor" / "pulse" / "extracted" / "usr" / "lib" / "x86_64-linux-gnu"
 VENDORED_AUDIO_PLUGIN_DIR = VENDORED_AUDIO_LIB_DIR / "pulseaudio"
 

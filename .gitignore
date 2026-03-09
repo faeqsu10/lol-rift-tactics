@@ -6,6 +6,8 @@ vite.config.d.ts
 .venv
 __pycache__
 *.pyc
+build
+release
 스크린샷 *.png
 .vendor/pulse/*.deb
 .vendor/pulse/extracted/etc

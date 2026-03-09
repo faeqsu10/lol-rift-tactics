@@ -22,6 +22,7 @@
 - 챔피언 배치, 대기 모션, 시전 모션, 피격 반응
 - 투사체, 링 이펙트, 화면 흔들림, 떠오르는 피해 텍스트
 - 버튼, 시전, 피격, 보호막, 승패에 대한 기본 효과음과 앰비언트 오디오
+- 챔피언 선택과 시전에 반응하는 챔피언별 테마 효과음
 - 헤드리스 스크린샷 캡처로 비주얼 결과 확인 가능
 - 스킬 버튼 클릭 및 적 유닛 직접 타겟팅
 - 속도 기반 턴 순서
@@ -41,6 +42,14 @@ npm run native:setup
 npm run native:play
 ```
 
+실행 파일 빌드:
+
+```bash
+npm run native:package
+```
+
+빌드가 끝나면 실행 파일은 `release/rift-tactics`에 생성됩니다.
+
 직접 Python으로 실행해도 됩니다.
 
 ```bash
@@ -48,6 +57,7 @@ npm run native:play
 ```
 
 WSL/Linux 환경에서 시스템 `libpulse0`가 없어도, 저장소에 포함된 런타임 번들을 통해 `npm run native:play`는 소리가 나도록 구성했습니다.
+패키징된 실행 파일도 같은 번들 경로를 포함합니다.
 
 ## 조작
 
@@ -80,6 +90,12 @@ npm run native:smoke
 npm run native:capture
 ```
 
+패키징된 실행 파일 검증:
+
+```bash
+SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./release/rift-tactics --headless --frames 2
+```
+
 ## 현재 챔피언
 
 - 블루 풀: 가렌, 아리, 징크스, 럭스, 바이, 이즈리얼, 레오나
@@ -97,4 +113,5 @@ npm run native:capture
 
 - 기존 `Vite + React + Phaser` 웹 프로토타입도 저장소에 남아 있습니다.
 - 하지만 현재 우선순위는 네이티브 `Pygame` 클라이언트를 더 게임답게 만드는 것입니다.
+- 챔피언 테마 효과음은 공식 Riot 음원을 가져오지 않고, 각 챔피언 성격을 반영한 오리지널 신스 모티프로 구성했습니다.
 - 작업 추적은 `tasks/todo.md`, 교정 기록은 `tasks/lessons.md`, 개발 기록은 `docs/DEVLOG.md`를 사용합니다.
