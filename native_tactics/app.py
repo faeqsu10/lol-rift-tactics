@@ -20,7 +20,9 @@ from .data import DEFAULT_BLUE_DEPLOY_TILES
 from .data import DEFAULT_RED_DEPLOY_TILES
 from .data import GRID_HEIGHT
 from .data import GRID_WIDTH
+from .data import STAGE_TERRAIN_TILES
 from .data import TACTICAL_BLUEPRINTS_BY_ID
+from .data import TERRAIN_BY_ID
 from .engine import TacticalActionResult
 from .engine import TacticsController
 
@@ -42,7 +44,7 @@ CHAMPION_ART_DIR = PROJECT_ROOT / "assets" / "champions"
 RUN_STAGE_COUNT = 3
 RUN_STAGE_LABELS = {
     1: "정찰전",
-    2: "교전",
+    2: "엘리트전",
     3: "결전",
 }
 RUN_REWARDS = (
@@ -212,6 +214,21 @@ class GameApp:
     def _enemy_pool_for_stage(self, stage: int) -> tuple[str, ...]:
         return STAGE_RED_POOLS.get(stage, tuple(SELECTABLE_RED_IDS))
 
+    def _terrain_tiles_for_stage(self, stage: int | None = None) -> dict[tuple[int, int], str]:
+        return dict(STAGE_TERRAIN_TILES.get(stage or self.run_stage, {}))
+
+    def _elite_enemy_ids_for_stage(self, stage: int | None = None, lineup: list[str] | None = None) -> tuple[str, ...]:
+        current_stage = stage or self.run_stage
+        enemy_ids = tuple(lineup or self.selected_red_ids)
+        if current_stage <= 1 or not enemy_ids:
+            return ()
+        leader = max(enemy_ids, key=lambda champion_id: (TACTICAL_BLUEPRINTS_BY_ID[champion_id].max_hp, TACTICAL_BLUEPRINTS_BY_ID[champion_id].speed))
+        if current_stage == 2 or len(enemy_ids) == 1:
+            return (leader,)
+        lieutenant_candidates = [champion_id for champion_id in enemy_ids if champion_id != leader]
+        lieutenant = max(lieutenant_candidates, key=lambda champion_id: TACTICAL_BLUEPRINTS_BY_ID[champion_id].speed) if lieutenant_candidates else leader
+        return tuple(dict.fromkeys((leader, lieutenant)))
+
     def _random_enemy_lineup(self, stage: int | None = None) -> list[str]:
         current_stage = stage or self.run_stage
         return random.sample(list(self._enemy_pool_for_stage(current_stage)), 3)
@@ -295,7 +312,14 @@ class GameApp:
     def _build_controller_from_current_setup(self) -> TacticsController:
         blue_positions = [self._tile_for_deployed_champion(champion_id, self.deploy_assignments) for champion_id in self.selected_blue_ids]
         red_positions = [self._tile_for_deployed_champion(champion_id, self.red_deploy_assignments) for champion_id in self.selected_red_ids]
-        return TacticsController(self.selected_blue_ids, self.selected_red_ids, blue_positions, red_positions)
+        return TacticsController(
+            self.selected_blue_ids,
+            self.selected_red_ids,
+            blue_positions,
+            red_positions,
+            terrain_tiles=self._terrain_tiles_for_stage(),
+            elite_unit_ids=self._elite_enemy_ids_for_stage(),
+        )
 
     def _attach_controller(self, controller: TacticsController) -> None:
         self._apply_run_modifiers(controller)
@@ -323,6 +347,7 @@ class GameApp:
         move_bonus = self.run_bonuses["bonus-move"]
         shield_bonus = self.run_bonuses["bonus-shield"] * 12
         enemy_tier = max(0, self.run_stage - 1)
+        elite_ids = self._elite_enemy_ids_for_stage(lineup=[unit.id for unit in controller.units if unit.team == "red"])
 
         for unit in controller.units:
             if unit.team == "blue":
@@ -339,6 +364,14 @@ class GameApp:
                 unit.speed += enemy_tier * 2
                 unit.basic_ability = self._boost_damage_effects(unit.basic_ability, enemy_tier * 2)
                 unit.special_ability = self._boost_damage_effects(unit.special_ability, enemy_tier * 2)
+                if unit.id in elite_ids:
+                    unit.is_elite = True
+                    unit.max_hp += 16 if self.run_stage == 2 else 24
+                    unit.hp = unit.max_hp
+                    unit.speed += 2
+                    unit.move_range += 1 if self.run_stage == 3 else 0
+                    unit.basic_ability = self._boost_damage_effects(unit.basic_ability, 3 if self.run_stage == 2 else 5)
+                    unit.special_ability = self._boost_damage_effects(unit.special_ability, 3 if self.run_stage == 2 else 5)
 
         controller.state.turn_queue = controller._build_turn_queue()
         controller.state.active_unit_id = None
@@ -686,9 +719,7 @@ class GameApp:
             return
         result = controller.end_turn()
         if result:
-            self.mode = "move"
-            self.status_text = "턴을 넘겼습니다."
-            self.audio.play("ui-confirm")
+            self._apply_action_result(result)
 
     def _update(self, dt: float) -> None:
         if self.screen_mode != "battle" or self.controller is None:
@@ -732,13 +763,11 @@ class GameApp:
     def _apply_action_result(self, result: TacticalActionResult) -> None:
         if result.kind == "move":
             self.audio.play("ui-confirm", champion_id=result.actor_id)
-            self.status_text = "이동 완료. 행동을 선택하거나 턴을 끝낼 수 있습니다."
-            return
+        elif result.kind == "end":
+            self.audio.play("ui-confirm")
+        else:
+            self.audio.play("cast", champion_id=result.actor_id)
 
-        if result.kind == "end":
-            return
-
-        self.audio.play("cast", champion_id=result.actor_id)
         any_damage = False
         any_shield = False
         any_stun = False
@@ -770,7 +799,17 @@ class GameApp:
         if any_stun:
             self.audio.play("stun")
 
-        self.status_text = "기본 공격 사용 완료." if result.kind == "basic" else f"{result.ability_name} 사용 완료."
+        if result.kind == "move":
+            self.status_text = "이동 완료. 행동을 선택하거나 턴을 끝낼 수 있습니다."
+            if result.notes:
+                self.status_text = " ".join(result.notes)
+        elif result.kind == "end":
+            self.mode = "move"
+            self.status_text = "턴을 넘겼습니다."
+        else:
+            self.status_text = "기본 공격 사용 완료." if result.kind == "basic" else f"{result.ability_name} 사용 완료."
+            if result.notes:
+                self.status_text = f"{self.status_text} {' '.join(result.notes)}"
 
         if self.controller and self.controller.state.winner == "blue":
             self.audio.play("victory")
@@ -987,6 +1026,7 @@ class GameApp:
         grid_surface = pygame.Surface(GRID_RECT.size, pygame.SRCALPHA)
         draw_vertical_gradient(grid_surface, grid_surface.get_rect(), (7, 16, 26), (10, 22, 36))
         self.screen.blit(grid_surface, GRID_RECT.topleft)
+        terrain_tiles = self._terrain_tiles_for_stage()
 
         for y in range(GRID_HEIGHT):
             for x in range(GRID_WIDTH):
@@ -995,6 +1035,7 @@ class GameApp:
                 base = (18, 31, 49) if (x + y) % 2 == 0 else (15, 26, 41)
                 pygame.draw.rect(self.screen, base, rect)
                 pygame.draw.rect(self.screen, (255, 255, 255, 18), rect, 1)
+                self._draw_terrain_tile((x, y), rect, terrain_tiles)
 
                 tile = (x, y)
                 if tile in DEFAULT_BLUE_DEPLOY_TILES:
@@ -1032,7 +1073,8 @@ class GameApp:
             "1. 왼쪽 챔피언 카드를 클릭",
             "2. 파란 시작 칸을 클릭해 위치 변경",
             "3. 같은 칸을 클릭하면 선택 해제",
-            "4. 배치가 끝나면 전투 시작",
+            "4. 수풀/룬/화염 지대를 보고 배치",
+            "5. 배치가 끝나면 전투 시작",
         ]
         for index, line in enumerate(guides):
             self._draw_text(line, self.font_small, (201, 213, 221), (guide_rect.x + 16, guide_rect.y + 48 + index * 28))
@@ -1040,10 +1082,12 @@ class GameApp:
     def _draw_deploy_right_panel(self) -> None:
         self._draw_text("적 시작 위치", self.font_heading, (244, 239, 225), (RIGHT_PANEL.x + 18, RIGHT_PANEL.y + 18))
         self._draw_text("적은 자동으로 배치되며 순서가 바뀔 수 있습니다", self.font_small, (198, 176, 168), (RIGHT_PANEL.x + 18, RIGHT_PANEL.y + 52))
+        elite_ids = set(self._elite_enemy_ids_for_stage())
         for index, champion_id in enumerate(self.selected_red_ids):
             rect = pygame.Rect(RIGHT_PANEL.x + 18, RIGHT_PANEL.y + 98 + index * 172, RIGHT_PANEL.width - 36, 150)
             tile = self._tile_for_deployed_champion(champion_id, self.red_deploy_assignments)
-            self._draw_champion_card(rect, champion_id, compact=True, enemy=True, footer=f"시작 칸 {tile}")
+            footer = f"{'엘리트 · ' if champion_id in elite_ids else ''}시작 칸 {tile}"
+            self._draw_champion_card(rect, champion_id, compact=True, enemy=True, footer=footer)
 
     def _draw_deploy_bottom_panel(self) -> None:
         start_rect = pygame.Rect(BOTTOM_PANEL.x + 26, BOTTOM_PANEL.y + 18, 220, 56)
@@ -1054,7 +1098,8 @@ class GameApp:
         self._draw_text("현재 선택", self.font_small, (223, 206, 164), (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 18))
         champion_name = BLUEPRINTS_BY_ID[self.selected_deploy_champion_id].name if self.selected_deploy_champion_id else "없음"
         self._draw_text(champion_name, self.font_heading, (244, 239, 225), (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 38))
-        self._draw_text("파란 시작 칸을 눌러 위치를 바꾸세요", self.font_small, (184, 205, 221), (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 66))
+        self._draw_text("파란 시작 칸을 눌러 위치를 바꾸세요", self.font_small, (184, 205, 221), (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 46))
+        self._draw_text("수풀=보호막 · 룬=피해 +3 · 화염=이동 피해", self.font_small, (174, 208, 235), (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 68))
 
     def _draw_battle_screen(self) -> None:
         self._draw_header("리그 오브 레전드: 리프트 택틱스", "원정 진행 중", f"{self._current_stage_label()} · {self.run_stage}/{RUN_STAGE_COUNT} · 8x6 전술 전투", "R 리셋")
@@ -1081,6 +1126,7 @@ class GameApp:
         special_targets = set(self.controller.get_valid_targets("special")) if self.mode == "special" else set()
         active = self.controller.get_active_unit()
         intent = self.controller.preview_ai_intent() if active and active.team == "red" else None
+        terrain_tiles = self.controller.terrain_tiles
 
         for y in range(GRID_HEIGHT):
             for x in range(GRID_WIDTH):
@@ -1089,6 +1135,7 @@ class GameApp:
                 base = (18, 31, 49) if (x + y) % 2 == 0 else (15, 26, 41)
                 pygame.draw.rect(self.screen, base, rect)
                 pygame.draw.rect(self.screen, (255, 255, 255, 18), rect, 1)
+                self._draw_terrain_tile((x, y), rect, terrain_tiles)
 
                 if (x, y) in self.controller.blocked_tiles:
                     pygame.draw.rect(self.screen, (47, 57, 68), rect.inflate(-18, -18), border_radius=18)
@@ -1108,6 +1155,11 @@ class GameApp:
             pygame.draw.rect(self.screen, color, rect.inflate(-8, -8), 3, border_radius=18)
 
         if intent is not None:
+            for threat_tile in intent.threat_tiles:
+                rect = self.tile_rects[threat_tile]
+                overlay = pygame.Surface(rect.size, pygame.SRCALPHA)
+                overlay.fill((255, 86, 86, 38))
+                self.screen.blit(overlay, rect.topleft)
             if intent.move_to is not None:
                 move_rect = self.tile_rects[intent.move_to]
                 pygame.draw.rect(self.screen, (140, 196, 255), move_rect.inflate(-14, -14), 3, border_radius=18)
@@ -1145,13 +1197,16 @@ class GameApp:
 
         frame_rect = pygame.Rect(0, 0, 74, 74)
         frame_rect.center = (int(center.x), int(center.y - 2))
-        pygame.draw.rect(self.screen, mix(accent, (255, 255, 255), pulse), frame_rect, border_radius=22)
-        pygame.draw.rect(self.screen, (245, 239, 224), frame_rect, 2, border_radius=22)
+        frame_fill = (214, 182, 112) if unit.is_elite else mix(accent, (255, 255, 255), pulse)
+        pygame.draw.rect(self.screen, frame_fill, frame_rect, border_radius=22)
+        pygame.draw.rect(self.screen, (255, 244, 217), frame_rect, 2 if unit.is_elite else 1, border_radius=22)
 
         art = self.champion_art.get(unit.id)
         if art is not None:
             portrait = self._masked_art_surface(art, (66, 66), border_radius=18)
             self.screen.blit(portrait, portrait.get_rect(center=frame_rect.center))
+        if unit.is_elite:
+            self._draw_text("E", self.font_tiny, (13, 21, 31), (frame_rect.centerx, frame_rect.y + 8), center=True)
 
         hp_ratio = unit.hp / unit.max_hp
         hp_rect = pygame.Rect(frame_rect.x, frame_rect.y - 14, frame_rect.width, 8)
@@ -1206,9 +1261,10 @@ class GameApp:
         if intent is not None:
             self._draw_wrapped_text(intent.summary, self.font_small, (214, 191, 184), pygame.Rect(intent_rect.x + 18, intent_rect.y + 52, intent_rect.width - 36, 54), max_lines=2)
             if intent.move_to is not None:
-                self._draw_text(f"이동 칸: {intent.move_to}", self.font_small, (174, 208, 235), (intent_rect.x + 18, intent_rect.y + 104))
+                self._draw_text(f"이동 칸: {intent.move_to}", self.font_small, (174, 208, 235), (intent_rect.x + 18, intent_rect.y + 94))
             if intent.target_tile is not None:
-                self._draw_text(f"공격 대상 칸: {intent.target_tile}", self.font_small, (238, 162, 145), (intent_rect.x + 18, intent_rect.y + 126))
+                self._draw_text(f"공격 대상 칸: {intent.target_tile}", self.font_small, (238, 162, 145), (intent_rect.x + 18, intent_rect.y + 114))
+            self._draw_text(f"예상 피해: {intent.predicted_damage}", self.font_small, (255, 213, 150), (intent_rect.x + 18, intent_rect.y + 134))
         else:
             self._draw_wrapped_text("현재는 플레이어 턴입니다. 적 차례가 오면 이동 칸과 공격 대상을 미리 보여 줍니다.", self.font_small, (208, 219, 226), pygame.Rect(intent_rect.x + 18, intent_rect.y + 52, intent_rect.width - 36, 64), max_lines=3)
 
@@ -1253,7 +1309,8 @@ class GameApp:
     def _draw_roster_row(self, unit, x: int, y: int) -> None:
         row_rect = pygame.Rect(x, y, RIGHT_PANEL.width - 36, 52)
         pygame.draw.rect(self.screen, (15, 26, 39), row_rect, border_radius=16)
-        pygame.draw.rect(self.screen, (236, 218, 176), row_rect, 1, border_radius=16)
+        border_color = (214, 182, 112) if unit.is_elite else (236, 218, 176)
+        pygame.draw.rect(self.screen, border_color, row_rect, 1, border_radius=16)
         accent = hex_to_rgb(unit.accent)
         pygame.draw.circle(self.screen, accent, (row_rect.x + 22, row_rect.y + 26), 10)
         self._draw_text(unit.name, self.font_small, (244, 239, 225), (row_rect.x + 44, row_rect.y + 8))
@@ -1265,6 +1322,8 @@ class GameApp:
             status.append("기절")
         if unit.hp <= 0:
             status.append("전투불능")
+        if unit.is_elite:
+            status.append("Elite")
         self._draw_text(" · ".join(status) if status else unit.role, self.font_tiny, accent, (row_rect.right - 12, row_rect.y + 18), align_right=True)
 
     def _draw_battle_bottom_panel(self) -> None:
@@ -1302,9 +1361,11 @@ class GameApp:
         if active.team == "blue":
             move_state = "완료" if active.has_moved else "가능"
             action_state = "완료" if active.has_acted else "가능"
-            self._draw_text(f"이동 {move_state} · 행동 {action_state}", self.font_small, (184, 205, 221), (info_x, BOTTOM_PANEL.y + 66))
+            self._draw_text(f"이동 {move_state} · 행동 {action_state}", self.font_small, (184, 205, 221), (info_x, BOTTOM_PANEL.y + 48))
+            self._draw_text("수풀=보호막 · 룬=피해 +3 · 화염=이동 피해", self.font_small, (174, 208, 235), (info_x, BOTTOM_PANEL.y + 70))
         else:
-            self._draw_text("적 AI가 경로와 타겟을 계산 중", self.font_small, (214, 191, 184), (info_x, BOTTOM_PANEL.y + 66))
+            self._draw_text("적 AI가 경로와 타겟을 계산 중", self.font_small, (214, 191, 184), (info_x, BOTTOM_PANEL.y + 48))
+            self._draw_text("위협 칸과 예상 피해를 보고 대응하세요", self.font_small, (255, 213, 150), (info_x, BOTTOM_PANEL.y + 70))
 
     def _draw_champion_card(
         self,
@@ -1356,11 +1417,30 @@ class GameApp:
             pygame.draw.rect(self.screen, (10, 18, 29), badge_rect, 1, border_radius=10)
             self._draw_text(badge, self.font_small, (10, 18, 29), badge_rect.center, center=True)
 
+    def _draw_terrain_tile(
+        self,
+        tile: tuple[int, int],
+        rect: pygame.Rect,
+        terrain_tiles: dict[tuple[int, int], str],
+    ) -> None:
+        terrain_id = terrain_tiles.get(tile)
+        if terrain_id is None:
+            return
+        terrain = TERRAIN_BY_ID[terrain_id]
+        overlay = pygame.Surface(rect.size, pygame.SRCALPHA)
+        overlay.fill((*hex_to_rgb(terrain.color), 34))
+        self.screen.blit(overlay, rect.topleft)
+        icon_rect = rect.inflate(-48, -48)
+        pygame.draw.rect(self.screen, hex_to_rgb(terrain.color), icon_rect, 2, border_radius=14)
+        initial = terrain.name[0]
+        self._draw_text(initial, self.font_small, hex_to_rgb(terrain.color), rect.center, center=True)
+
     def _draw_static_unit(self, champion_id: str, tile: tuple[int, int], *, selected: bool) -> None:
         center = self._tile_center(tile)
         rect = self.tile_rects[tile]
         blueprint = BLUEPRINTS_BY_ID[champion_id]
         accent = hex_to_rgb(blueprint.accent)
+        is_elite = champion_id in self._elite_enemy_ids_for_stage()
         shadow_rect = pygame.Rect(0, 0, 64, 18)
         shadow_rect.center = (center[0], center[1] + 28)
         pygame.draw.ellipse(self.screen, (0, 0, 0, 90), shadow_rect)
@@ -1369,12 +1449,15 @@ class GameApp:
 
         frame_rect = pygame.Rect(0, 0, 74, 74)
         frame_rect.center = (center[0], center[1] - 2)
-        pygame.draw.rect(self.screen, accent, frame_rect, border_radius=22)
-        pygame.draw.rect(self.screen, (245, 239, 224), frame_rect, 2, border_radius=22)
+        frame_fill = (214, 182, 112) if is_elite else accent
+        pygame.draw.rect(self.screen, frame_fill, frame_rect, border_radius=22)
+        pygame.draw.rect(self.screen, (255, 244, 217), frame_rect, 2 if is_elite else 1, border_radius=22)
         art = self.champion_art.get(champion_id)
         if art is not None:
             portrait = self._masked_art_surface(art, (66, 66), border_radius=18)
             self.screen.blit(portrait, portrait.get_rect(center=frame_rect.center))
+        if is_elite:
+            self._draw_text("E", self.font_tiny, (13, 21, 31), (frame_rect.centerx, frame_rect.y + 8), center=True)
         self._draw_text(blueprint.name, self.font_small, (244, 239, 225), (frame_rect.centerx, frame_rect.bottom + 18), center=True)
 
     def _draw_portrait_art(self, champion_id: str, rect: pygame.Rect, accent: tuple[int, int, int]) -> None:

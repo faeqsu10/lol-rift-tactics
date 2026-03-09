@@ -96,6 +96,40 @@ class TacticsControllerTests(unittest.TestCase):
         self.assertEqual(intent.target_id, "blue-garen")
         self.assertIn(intent.action_kind, {"basic", "special"})
         self.assertIn("예정", intent.summary)
+        self.assertGreater(intent.predicted_damage, 0)
+        self.assertIn((0, 2), intent.threat_tiles)
+
+    def test_hazard_tile_deals_damage_on_move(self) -> None:
+        controller = TacticsController(
+            ("blue-garen",),
+            ("red-darius",),
+            ((0, 1),),
+            ((7, 1),),
+            terrain_tiles={(1, 1): "hazard"},
+        )
+        controller.blocked_tiles.clear()
+
+        result = controller.move_active((1, 1))
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.impacts[0].damage, 6)
+        self.assertEqual(controller.get_unit("blue-garen").hp, 92)
+
+    def test_rune_tile_boosts_damage_for_turn(self) -> None:
+        controller = TacticsController(
+            ("blue-garen",),
+            ("red-darius",),
+            ((0, 1),),
+            ((1, 1),),
+            terrain_tiles={(0, 1): "rune"},
+        )
+        controller.blocked_tiles.clear()
+
+        result = controller.use_basic("red-darius")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.impacts[0].damage, 25)
+        self.assertTrue(any("룬 지대 강화 발동." in note for note in result.notes))
 
 
 class GameAppFlowTests(unittest.TestCase):
@@ -127,6 +161,20 @@ class GameAppFlowTests(unittest.TestCase):
 
         self.assertEqual(app.run_stage, 1)
         self.assertEqual(app.screen_mode, "deploy")
+
+    def test_stage_two_marks_elite_enemy(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
+        app.selected_red_ids = ["red-darius", "red-annie", "red-caitlyn"]
+        app.run_stage = 2
+        app._seed_deployment()
+
+        controller = app._build_controller_from_current_setup()
+        app._attach_controller(controller)
+
+        elite_units = [unit for unit in app.controller.units if unit.team == "red" and unit.is_elite]
+        self.assertEqual(len(elite_units), 1)
+        self.assertGreater(elite_units[0].max_hp, 102)
 
 
 if __name__ == "__main__":

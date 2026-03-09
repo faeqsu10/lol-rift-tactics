@@ -14,6 +14,7 @@ from native_game.data import ChampionBlueprint
 
 GridPos = tuple[int, int]
 TacticalTargetMode = Literal["enemy", "self"]
+TerrainId = Literal["brush", "rune", "hazard"]
 
 GRID_WIDTH = 8
 GRID_HEIGHT = 6
@@ -54,6 +55,52 @@ ROLE_BASIC_RANGE: dict[str, int] = {
     "Mage": 3,
     "Marksman": 4,
     "Assassin": 1,
+}
+
+
+@dataclass(frozen=True)
+class TacticalTerrain:
+    id: TerrainId
+    name: str
+    description: str
+    color: str
+
+
+TERRAIN_BY_ID: dict[TerrainId, TacticalTerrain] = {
+    "brush": TacticalTerrain("brush", "수풀", "턴 시작 시 보호막 4를 얻습니다.", "#5f9f78"),
+    "rune": TacticalTerrain("rune", "룬 지대", "턴 시작 시 이번 턴 피해가 3 증가합니다.", "#6fa9d8"),
+    "hazard": TacticalTerrain("hazard", "화염 지대", "이동해 들어오면 즉시 피해 6을 받습니다.", "#d46d4f"),
+}
+
+STAGE_TERRAIN_TILES: dict[int, dict[GridPos, TerrainId]] = {
+    1: {
+        (1, 1): "brush",
+        (1, 4): "brush",
+        (6, 1): "brush",
+        (6, 4): "brush",
+        (3, 2): "rune",
+        (4, 3): "rune",
+    },
+    2: {
+        (1, 2): "brush",
+        (1, 3): "brush",
+        (6, 2): "brush",
+        (6, 3): "brush",
+        (2, 1): "rune",
+        (5, 4): "rune",
+        (2, 4): "hazard",
+        (5, 1): "hazard",
+    },
+    3: {
+        (1, 2): "brush",
+        (6, 3): "brush",
+        (2, 1): "rune",
+        (5, 4): "rune",
+        (3, 2): "hazard",
+        (4, 2): "hazard",
+        (3, 3): "hazard",
+        (4, 3): "hazard",
+    },
 }
 
 
