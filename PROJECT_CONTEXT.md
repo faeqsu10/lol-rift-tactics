@@ -56,10 +56,10 @@
   - obstacle tiles and movement range highlighting
   - role-based tactical ranges with champion-specific ability names
   - champion-specific passive traits
-  - enemy intent preview during red turns with predicted damage and threat tiles
+  - enemy intent preview during red turns with predicted damage, threat tiles, and next-enemy warning
   - stage-based terrain tiles: brush, rune, hazard
   - elite enemies in later expedition stages
-  - route selection between battles with temporary next-battle modifiers
+  - route selection between battles with three risk/reward options and temporary next-battle modifiers
   - battle recap summary before choosing the next route
   - terrain-aware red-team AI movement and targeting
   - post-victory reward pick with next-enemy preview
@@ -99,9 +99,9 @@
 ## Recommended Next Steps
 
 1. Add stronger champion-specific passive differentiation and more unique tactical triggers to `native_tactics`.
-2. Expand enemy intent UI from one-action preview to multi-target or sequence preview.
-3. Add richer route branching and post-battle recap depth on top of the current reward loop.
-4. Improve AI further around elite focus fire and terrain denial.
+2. Expand enemy intent UI from next-enemy warning to fuller multi-target or sequence preview.
+3. Add route-specific events, encounter variants, and map objectives on top of the current reward loop.
+4. Improve AI further around elite focus fire, terrain denial, and route-aware pathing.
 5. Replace shape-based placeholder characters with real sprite art or sprite sheets.
 
 ## Resume Prompt

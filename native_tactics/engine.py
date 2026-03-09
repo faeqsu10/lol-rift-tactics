@@ -84,6 +84,13 @@ class TacticalIntent:
     summary: str
     predicted_damage: int = 0
     threat_tiles: list[GridPos] = field(default_factory=list)
+    follow_up_actor_id: str | None = None
+    follow_up_actor_name: str | None = None
+    follow_up_summary: str | None = None
+    follow_up_move_to: GridPos | None = None
+    follow_up_target_tile: GridPos | None = None
+    follow_up_predicted_damage: int = 0
+    follow_up_threat_tiles: list[GridPos] = field(default_factory=list)
 
 
 @dataclass
@@ -320,8 +327,25 @@ class TacticsController:
         actor = self.get_active_unit()
         if actor is None or actor.team != "red" or self.state.winner:
             return None
+        intent = self._preview_actor_intent(actor)
+        next_actor = self._next_red_actor_after(actor.id)
+        if next_actor is None:
+            return intent
 
-        special_targets = self.get_valid_targets("special")
+        follow_up_intent = self._preview_actor_intent(next_actor)
+        intent.follow_up_actor_id = next_actor.id
+        intent.follow_up_actor_name = next_actor.name
+        intent.follow_up_summary = f"다음 적 차례 예상: {follow_up_intent.summary}"
+        intent.follow_up_move_to = follow_up_intent.move_to
+        intent.follow_up_target_tile = follow_up_intent.target_tile
+        intent.follow_up_predicted_damage = follow_up_intent.predicted_damage
+        intent.follow_up_threat_tiles = follow_up_intent.threat_tiles
+        return intent
+
+    def _preview_actor_intent(self, actor: TacticalUnit) -> TacticalIntent:
+        special_targets = []
+        if actor.cooldowns.get(actor.special_ability.id, 0) <= 0:
+            special_targets = self._get_valid_targets_for_position(actor, actor.special_ability, actor.position)
         should_open_with_special = special_targets and (
             actor.special_ability.target_mode != "self" or actor.hp / actor.max_hp <= 0.65
         )
@@ -342,7 +366,7 @@ class TacticsController:
                 threat_tiles=threat_tiles,
             )
 
-        basic_targets = self.get_valid_targets("basic")
+        basic_targets = self._get_valid_targets_for_position(actor, actor.basic_ability, actor.position)
         if basic_targets:
             target_id = self._pick_ai_target(actor, basic_targets)
             target = self.get_unit(target_id)
@@ -401,6 +425,34 @@ class TacticsController:
             target_tile=None,
             summary=f"{actor.name}가 {destination}로 이동 예정",
         )
+
+    def _next_red_actor_after(self, current_actor_id: str) -> TacticalUnit | None:
+        queued_after_current = [
+            unit_id
+            for unit_id in self.state.turn_queue[1:]
+            if (unit := self.get_unit(unit_id)) is not None and unit.hp > 0
+        ]
+        next_red_id = next(
+            (
+                unit_id
+                for unit_id in queued_after_current
+                if (unit := self.get_unit(unit_id)) is not None and unit.team == "red"
+            ),
+            None,
+        )
+        if next_red_id is None:
+            next_round_queue = self._build_turn_queue()
+            next_red_id = next(
+                (
+                    unit_id
+                    for unit_id in next_round_queue
+                    if (unit := self.get_unit(unit_id)) is not None and unit.team == "red"
+                ),
+                None,
+            )
+        if next_red_id is None:
+            return None
+        return self.get_unit(next_red_id)
 
     def distance(self, a: GridPos, b: GridPos) -> int:
         return abs(a[0] - b[0]) + abs(a[1] - b[1])

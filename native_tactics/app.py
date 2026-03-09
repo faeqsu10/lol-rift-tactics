@@ -60,19 +60,57 @@ STAGE_RED_POOLS = {
     3: ("red-darius", "red-yasuo", "red-zed", "red-brand", "red-katarina", "red-lissandra"),
 }
 ROUTE_OPTIONS = (
-    ("supply-line", "보급로", "다음 전투에서 아군 전원 시작 보호막 +8"),
-    ("assault-line", "돌격로", "다음 전투에서 아군 전원 피해 +2"),
-    ("hidden-trail", "은폐로", "다음 전투에 추가 수풀 2개 생성"),
-    ("rune-path", "룬 회랑", "다음 전투에 추가 룬 지대 2개 생성"),
+    ("supply-line", "보급로", "안정적으로 다음 전투를 버티는 방어 경로"),
+    ("assault-line", "돌격로", "빠른 킬각을 노리는 공격 경로"),
+    ("hidden-trail", "은폐로", "수풀 지형을 늘려 포지셔닝을 꼬는 경로"),
+    ("rune-path", "룬 회랑", "폭딜 턴을 노리는 증폭 경로"),
+    ("rapid-flank", "측면 질주로", "선턴 압박을 크게 키우는 고속 경로"),
+    ("scorched-march", "초토화 행군", "위험 지형을 감수하고 화력을 높이는 경로"),
 )
+ROUTE_STYLE_BY_ID = {
+    "supply-line": "안정 운영형",
+    "assault-line": "교전 압박형",
+    "hidden-trail": "포지션 교란형",
+    "rune-path": "폭딜 준비형",
+    "rapid-flank": "선턴 압박형",
+    "scorched-march": "하이리스크 화력형",
+}
+ROUTE_REWARD_BY_ID = {
+    "supply-line": "아군 전원 시작 보호막 +8",
+    "assault-line": "아군 전원 피해 +2",
+    "hidden-trail": "추가 수풀 2개 생성",
+    "rune-path": "추가 룬 지대 2개 생성",
+    "rapid-flank": "아군 전원 속도 +5",
+    "scorched-march": "아군 전원 피해 +4",
+}
+ROUTE_RISK_BY_ID = {
+    "supply-line": "추가 위험 없음",
+    "assault-line": "적 전원 피해 +1",
+    "hidden-trail": "적 전원 속도 +2",
+    "rune-path": "추가 화염 지대 1개 생성",
+    "rapid-flank": "적 전원 속도 +2",
+    "scorched-march": "추가 화염 지대 2개 + 적 피해 +1",
+}
+ROUTE_BONUSES = {
+    "supply-line": {"blue_shield": 8},
+    "assault-line": {"blue_damage": 2, "enemy_damage": 1},
+    "hidden-trail": {"enemy_speed": 2},
+    "rune-path": {},
+    "rapid-flank": {"blue_speed": 5, "enemy_speed": 2},
+    "scorched-march": {"blue_damage": 4, "enemy_damage": 1},
+}
 ROUTE_EXTRA_TERRAIN = {
     "hidden-trail": {
         2: {(2, 2): "brush", (5, 3): "brush"},
         3: {(2, 4): "brush", (5, 1): "brush"},
     },
     "rune-path": {
-        2: {(2, 3): "rune", (5, 2): "rune"},
-        3: {(2, 1): "rune", (5, 4): "rune"},
+        2: {(2, 3): "rune", (5, 2): "rune", (4, 2): "hazard"},
+        3: {(2, 1): "rune", (5, 4): "rune", (4, 1): "hazard"},
+    },
+    "scorched-march": {
+        2: {(3, 1): "hazard", (4, 4): "hazard"},
+        3: {(2, 2): "hazard", (5, 3): "hazard"},
     },
 }
 
@@ -326,7 +364,7 @@ class GameApp:
         self.selection_message = "보상 하나를 고른 뒤 다음 전투로 넘어가세요."
 
     def _prepare_route_phase(self) -> None:
-        self.route_option_ids = random.sample(list(self.route_options), 2)
+        self.route_option_ids = random.sample(list(self.route_options), 3)
         self.selected_route_id = None
         self.screen_mode = "route"
         self.selection_message = "전투 요약을 확인하고 다음 경로 하나를 선택하세요."
@@ -454,14 +492,19 @@ class GameApp:
         shield_bonus = self.run_bonuses["bonus-shield"] * 12
         enemy_tier = max(0, self.run_stage - 1)
         elite_ids = self._elite_enemy_ids_for_stage(lineup=[unit.id for unit in controller.units if unit.team == "red"])
-        route_damage_bonus = 2 if self.current_route_id == "assault-line" else 0
-        route_shield_bonus = 8 if self.current_route_id == "supply-line" else 0
+        route_bonuses = ROUTE_BONUSES.get(self.current_route_id or "", {})
+        route_damage_bonus = route_bonuses.get("blue_damage", 0)
+        route_shield_bonus = route_bonuses.get("blue_shield", 0)
+        route_speed_bonus = route_bonuses.get("blue_speed", 0)
+        enemy_route_damage_bonus = route_bonuses.get("enemy_damage", 0)
+        enemy_route_speed_bonus = route_bonuses.get("enemy_speed", 0)
+        enemy_route_shield_bonus = route_bonuses.get("enemy_shield", 0)
 
         for unit in controller.units:
             if unit.team == "blue":
                 unit.max_hp += hp_bonus
                 unit.hp = unit.max_hp
-                unit.speed += speed_bonus
+                unit.speed += speed_bonus + route_speed_bonus
                 unit.move_range += move_bonus
                 unit.shield += shield_bonus + route_shield_bonus
                 unit.basic_ability = self._boost_damage_effects(unit.basic_ability, damage_bonus + route_damage_bonus)
@@ -469,9 +512,10 @@ class GameApp:
             else:
                 unit.max_hp += enemy_tier * 8
                 unit.hp = unit.max_hp
-                unit.speed += enemy_tier * 2
-                unit.basic_ability = self._boost_damage_effects(unit.basic_ability, enemy_tier * 2)
-                unit.special_ability = self._boost_damage_effects(unit.special_ability, enemy_tier * 2)
+                unit.speed += enemy_tier * 2 + enemy_route_speed_bonus
+                unit.shield += enemy_route_shield_bonus
+                unit.basic_ability = self._boost_damage_effects(unit.basic_ability, enemy_tier * 2 + enemy_route_damage_bonus)
+                unit.special_ability = self._boost_damage_effects(unit.special_ability, enemy_tier * 2 + enemy_route_damage_bonus)
                 if unit.id in elite_ids:
                     unit.is_elite = True
                     unit.max_hp += 16 if self.run_stage == 2 else 24
@@ -1176,7 +1220,7 @@ class GameApp:
         self._draw_text("전투 요약", self.font_heading, (244, 239, 225), (SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 18))
         self._draw_text(self.selection_message, self.font_small, (167, 192, 212), (SELECT_LEFT_PANEL.x + 24, SELECT_LEFT_PANEL.y + 52))
         self._draw_text("다음 경로 선택", self.font_heading, (244, 239, 225), (SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.y + 18))
-        self._draw_text("다음 전투에 적용할 경로 보정을 하나 선택하세요", self.font_small, (198, 176, 168), (SELECT_RIGHT_PANEL.x + 24, SELECT_RIGHT_PANEL.y + 52))
+        self._draw_text("3안 중 하나를 골라 다음 전투에 적용하세요", self.font_small, (198, 176, 168), (SELECT_RIGHT_PANEL.x + 24, SELECT_RIGHT_PANEL.y + 52))
 
         recap = self.last_battle_recap
         overview_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 96, SELECT_LEFT_PANEL.width - 44, 120)
@@ -1214,6 +1258,9 @@ class GameApp:
         selected_route = self.selected_route_id or self.current_route_id
         route_hint = "현재 경로 없음" if selected_route is None else f"선택 경로: {self.route_options[selected_route].name}"
         self._draw_text(route_hint, self.font_small, (171, 193, 208), (stage_rect.x + 18, stage_rect.y + 84))
+        if selected_route is not None:
+            self._draw_text(f"보상: {ROUTE_REWARD_BY_ID[selected_route]}", self.font_small, (228, 214, 167), (stage_rect.x + 18, stage_rect.y + 108))
+            self._draw_text(f"위험: {ROUTE_RISK_BY_ID[selected_route]}", self.font_small, (233, 156, 140), (stage_rect.x + 18, stage_rect.y + 132))
         terrain_lines = []
         terrain_counts: dict[str, int] = {}
         preview_route_id = self.selected_route_id or self.current_route_id
@@ -1221,14 +1268,16 @@ class GameApp:
             terrain_counts[terrain_id] = terrain_counts.get(terrain_id, 0) + 1
         for terrain_id, count in terrain_counts.items():
             terrain_lines.append(f"{TERRAIN_BY_ID[terrain_id].name} {count}칸")
-        self._draw_text("지형 구성", self.font_ui, (223, 206, 164), (stage_rect.x + 18, stage_rect.y + 126))
+        terrain_y = 164 if selected_route is not None else 126
+        enemy_y = 290 if selected_route is not None else 252
+        self._draw_text("지형 구성", self.font_ui, (223, 206, 164), (stage_rect.x + 18, terrain_y))
         for index, line in enumerate(terrain_lines or ["특수 지형 없음"]):
-            self._draw_text(line, self.font_small, hex_to_rgb(TERRAIN_BY_ID[list(terrain_counts)[index]].color) if terrain_counts and index < len(terrain_counts) else (209, 220, 227), (stage_rect.x + 18, stage_rect.y + 160 + index * 26))
+            self._draw_text(line, self.font_small, hex_to_rgb(TERRAIN_BY_ID[list(terrain_counts)[index]].color) if terrain_counts and index < len(terrain_counts) else (209, 220, 227), (stage_rect.x + 18, stage_rect.y + terrain_y + 34 + index * 26))
         enemy_line = " · ".join(BLUEPRINTS_BY_ID[champion_id].name for champion_id in self.selected_red_ids)
-        self._draw_wrapped_text(f"적 조합: {enemy_line}", self.font_small, (209, 220, 227), pygame.Rect(stage_rect.x + 18, stage_rect.y + 252, stage_rect.width - 36, 40), max_lines=2)
+        self._draw_wrapped_text(f"적 조합: {enemy_line}", self.font_small, (209, 220, 227), pygame.Rect(stage_rect.x + 18, stage_rect.y + enemy_y, stage_rect.width - 36, 40), max_lines=2)
 
         for index, route_id in enumerate(self.route_option_ids):
-            rect = pygame.Rect(SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.y + 96 + index * 236, SELECT_RIGHT_PANEL.width - 44, 208)
+            rect = pygame.Rect(SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.y + 96 + index * 188, SELECT_RIGHT_PANEL.width - 44, 176)
             self.route_card_rects[route_id] = rect
             option = self.route_options[route_id]
             selected = route_id == self.selected_route_id
@@ -1238,14 +1287,10 @@ class GameApp:
             pygame.draw.rect(card, (108, 224, 203) if selected else (236, 218, 176), card.get_rect(), 1, border_radius=24)
             self.screen.blit(card, rect.topleft)
             self._draw_text(option.name, self.font_heading, (244, 239, 225), (rect.x + 18, rect.y + 22))
-            self._draw_wrapped_text(option.description, self.font_ui, (208, 219, 226), pygame.Rect(rect.x + 18, rect.y + 66, rect.width - 36, 54), max_lines=2)
-            extras = {
-                "supply-line": "안정적 운영용 경로",
-                "assault-line": "빠른 킬 압박용 경로",
-                "hidden-trail": "수풀 활용용 경로",
-                "rune-path": "폭딜 연계용 경로",
-            }
-            self._draw_text(extras.get(route_id, ""), self.font_small, (223, 206, 164), (rect.x + 18, rect.y + 142))
+            self._draw_text(ROUTE_STYLE_BY_ID[route_id], self.font_small, (223, 206, 164), (rect.x + 18, rect.y + 58))
+            self._draw_wrapped_text(option.description, self.font_tiny, (208, 219, 226), pygame.Rect(rect.x + 18, rect.y + 84, rect.width - 36, 28), max_lines=2)
+            self._draw_wrapped_text(f"보상: {ROUTE_REWARD_BY_ID[route_id]}", self.font_tiny, (221, 215, 178), pygame.Rect(rect.x + 18, rect.y + 118, rect.width - 36, 22), max_lines=1)
+            self._draw_wrapped_text(f"위험: {ROUTE_RISK_BY_ID[route_id]}", self.font_tiny, (231, 168, 152), pygame.Rect(rect.x + 18, rect.y + 140, rect.width - 36, 26), max_lines=2)
 
         select_rect = pygame.Rect(SELECT_RIGHT_PANEL.x + 32, SELECT_RIGHT_PANEL.bottom - 118, 190, 48)
         next_rect = pygame.Rect(SELECT_RIGHT_PANEL.right - 242, SELECT_RIGHT_PANEL.bottom - 118, 190, 48)
@@ -1407,9 +1452,17 @@ class GameApp:
                 overlay = pygame.Surface(rect.size, pygame.SRCALPHA)
                 overlay.fill((255, 86, 86, 38))
                 self.screen.blit(overlay, rect.topleft)
+            for threat_tile in intent.follow_up_threat_tiles:
+                rect = self.tile_rects[threat_tile]
+                overlay = pygame.Surface(rect.size, pygame.SRCALPHA)
+                overlay.fill((255, 196, 92, 26))
+                self.screen.blit(overlay, rect.topleft)
             if intent.move_to is not None:
                 move_rect = self.tile_rects[intent.move_to]
                 pygame.draw.rect(self.screen, (140, 196, 255), move_rect.inflate(-14, -14), 3, border_radius=18)
+            if intent.follow_up_move_to is not None:
+                follow_rect = self.tile_rects[intent.follow_up_move_to]
+                pygame.draw.rect(self.screen, (240, 205, 120), follow_rect.inflate(-20, -20), 2, border_radius=16)
             if intent.target_tile is not None:
                 target_rect = self.tile_rects[intent.target_tile]
                 pygame.draw.rect(self.screen, (255, 122, 122), target_rect.inflate(-8, -8), 3, border_radius=18)
@@ -1421,6 +1474,9 @@ class GameApp:
                     self._tile_center(intent.target_tile),
                     3,
                 )
+            if intent.follow_up_target_tile is not None:
+                target_rect = self.tile_rects[intent.follow_up_target_tile]
+                pygame.draw.rect(self.screen, (255, 204, 117), target_rect.inflate(-16, -16), 2, border_radius=16)
 
         for unit in self.controller.units:
             if unit.hp <= 0:
@@ -1507,11 +1563,19 @@ class GameApp:
         self._draw_text("적 의도", self.font_ui, (229, 210, 164), (intent_rect.x + 18, intent_rect.y + 18))
         if intent is not None:
             self._draw_wrapped_text(intent.summary, self.font_small, (214, 191, 184), pygame.Rect(intent_rect.x + 18, intent_rect.y + 52, intent_rect.width - 36, 54), max_lines=2)
+            current_parts = []
             if intent.move_to is not None:
-                self._draw_text(f"이동 칸: {intent.move_to}", self.font_small, (174, 208, 235), (intent_rect.x + 18, intent_rect.y + 94))
+                current_parts.append(f"이동 {intent.move_to}")
             if intent.target_tile is not None:
-                self._draw_text(f"공격 대상 칸: {intent.target_tile}", self.font_small, (238, 162, 145), (intent_rect.x + 18, intent_rect.y + 114))
-            self._draw_text(f"예상 피해: {intent.predicted_damage}", self.font_small, (255, 213, 150), (intent_rect.x + 18, intent_rect.y + 134))
+                current_parts.append(f"대상 {intent.target_tile}")
+            current_parts.append(f"피해 {intent.predicted_damage}")
+            self._draw_text("이번 적 차례 · " + " / ".join(current_parts), self.font_tiny, (255, 213, 150), (intent_rect.x + 18, intent_rect.y + 108))
+            if intent.follow_up_actor_name:
+                next_parts = [f"다음 {intent.follow_up_actor_name}"]
+                if intent.follow_up_target_tile is not None:
+                    next_parts.append(f"대상 {intent.follow_up_target_tile}")
+                next_parts.append(f"피해 {intent.follow_up_predicted_damage}")
+                self._draw_text(" / ".join(next_parts), self.font_tiny, (242, 201, 133), (intent_rect.x + 18, intent_rect.y + 128))
         else:
             self._draw_wrapped_text("현재는 플레이어 턴입니다. 적 차례가 오면 이동 칸과 공격 대상을 미리 보여 줍니다.", self.font_small, (208, 219, 226), pygame.Rect(intent_rect.x + 18, intent_rect.y + 52, intent_rect.width - 36, 64), max_lines=3)
 

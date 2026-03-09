@@ -10,6 +10,7 @@ os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 
 from .app import GameApp
 from .app import RUN_STAGE_COUNT
+from .data import TACTICAL_BLUEPRINTS_BY_ID
 from .engine import TacticsController
 
 
@@ -99,6 +100,22 @@ class TacticsControllerTests(unittest.TestCase):
         self.assertGreater(intent.predicted_damage, 0)
         self.assertIn((0, 2), intent.threat_tiles)
 
+    def test_preview_ai_intent_includes_follow_up_enemy_warning(self) -> None:
+        controller = TacticsController(("blue-garen",), ("red-brand", "red-caitlyn"))
+        controller.blocked_tiles.clear()
+        controller.get_unit("blue-garen").position = (0, 2)
+        controller.get_unit("red-brand").position = (4, 2)
+        controller.get_unit("red-caitlyn").position = (6, 2)
+        controller.state.active_unit_id = "red-brand"
+        controller.state.turn_queue = ["red-brand", "red-caitlyn"]
+
+        intent = controller.preview_ai_intent()
+
+        self.assertIsNotNone(intent)
+        self.assertEqual(intent.follow_up_actor_id, "red-caitlyn")
+        self.assertIsNotNone(intent.follow_up_summary)
+        self.assertIn("다음 적 차례 예상", intent.follow_up_summary)
+
     def test_hazard_tile_deals_damage_on_move(self) -> None:
         controller = TacticsController(
             ("blue-garen",),
@@ -166,7 +183,7 @@ class GameAppFlowTests(unittest.TestCase):
 
         self.assertEqual(app.screen_mode, "route")
         self.assertEqual(app.run_stage, 2)
-        self.assertEqual(len(app.route_option_ids), 2)
+        self.assertEqual(len(app.route_option_ids), 3)
 
     def test_final_victory_restart_resets_run_stage(self) -> None:
         app = GameApp(headless=True)
@@ -201,7 +218,7 @@ class GameAppFlowTests(unittest.TestCase):
         app._advance_after_reward()
 
         self.assertEqual(app.screen_mode, "route")
-        self.assertEqual(len(app.route_option_ids), 2)
+        self.assertEqual(len(app.route_option_ids), 3)
 
         app._select_route(app.route_option_ids[0])
         app._advance_after_route()
@@ -236,6 +253,35 @@ class GameAppFlowTests(unittest.TestCase):
         )
 
         self.assertGreater(preview_brush_count, base_brush_count)
+
+    def test_rapid_flank_increases_both_team_speed(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
+        app.selected_red_ids = ["red-darius", "red-annie", "red-caitlyn"]
+        app.run_stage = 1
+        app.current_route_id = "rapid-flank"
+        app._seed_deployment()
+
+        controller = app._build_controller_from_current_setup()
+        app._attach_controller(controller)
+
+        blue_speed = app.controller.get_unit("blue-garen").speed
+        red_speed = app.controller.get_unit("red-darius").speed
+        self.assertEqual(blue_speed, TACTICAL_BLUEPRINTS_BY_ID["blue-garen"].speed + 5)
+        self.assertEqual(red_speed, TACTICAL_BLUEPRINTS_BY_ID["red-darius"].speed + 2)
+
+    def test_scorched_march_preview_adds_hazard_tiles(self) -> None:
+        app = GameApp(headless=True)
+        app.run_stage = 2
+
+        base_hazard_count = sum(1 for terrain_id in app._terrain_tiles_for_stage().values() if terrain_id == "hazard")
+        preview_hazard_count = sum(
+            1
+            for terrain_id in app._terrain_tiles_for_stage(route_id="scorched-march").values()
+            if terrain_id == "hazard"
+        )
+
+        self.assertGreater(preview_hazard_count, base_hazard_count)
 
 
 if __name__ == "__main__":
