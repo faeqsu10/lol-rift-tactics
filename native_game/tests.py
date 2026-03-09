@@ -10,6 +10,18 @@ class BattleControllerTests(unittest.TestCase):
         controller = BattleController()
         self.assertEqual(controller.get_active_unit().name, "징크스")
 
+    def test_enemy_targeting_returns_all_living_enemies(self) -> None:
+        controller = BattleController()
+        self.assertEqual(
+            controller.get_valid_target_ids("zap"),
+            ["red-darius", "red-annie", "red-caitlyn"],
+        )
+        controller.resolve_active_turn("flame-chompers", "red-caitlyn")
+        self.assertEqual(
+            controller.get_valid_target_ids("orb-of-deception"),
+            ["red-darius", "red-annie", "red-caitlyn"],
+        )
+
     def test_stun_skips_enemy_turn(self) -> None:
         controller = BattleController()
         action = controller.resolve_active_turn("flame-chompers", "red-caitlyn")

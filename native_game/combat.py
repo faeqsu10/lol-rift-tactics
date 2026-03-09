@@ -294,6 +294,9 @@ class BattleController:
         if ability.target_type == "all-enemies":
             return [unit.id for unit in self.units if unit.team != actor.team and unit.hp > 0]
 
+        if ability.target_type == "enemy" and target_id is None:
+            return [unit.id for unit in self.units if unit.team != actor.team and unit.hp > 0]
+
         if target_id:
             target = self.get_unit(target_id)
             if target and target.team != actor.team and target.hp > 0:
