@@ -29,6 +29,8 @@ class TacticalUnit:
     title: str
     team: TeamId
     role: str
+    passive_name: str
+    passive_description: str
     max_hp: int
     speed: int
     accent: str
@@ -63,6 +65,19 @@ class TacticalActionResult:
     end: GridPos | None = None
     impacts: list[TacticalImpact] = field(default_factory=list)
     target_ids: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+
+
+@dataclass
+class TacticalIntent:
+    actor_id: str
+    actor_name: str
+    move_to: GridPos | None
+    action_kind: ActionKind | None
+    action_name: str | None
+    target_id: str | None
+    target_tile: GridPos | None
+    summary: str
 
 
 @dataclass
@@ -81,6 +96,8 @@ def unit_from_blueprint(blueprint: TacticalBlueprint, position: GridPos) -> Tact
         title=blueprint.title,
         team=blueprint.team,
         role=blueprint.role,
+        passive_name=blueprint.passive_name,
+        passive_description=blueprint.passive_description,
         max_hp=blueprint.max_hp,
         speed=blueprint.speed,
         accent=blueprint.accent,
@@ -275,6 +292,82 @@ class TacticsController:
             results.append(self.end_turn())
         return [result for result in results if result is not None]
 
+    def preview_ai_intent(self) -> TacticalIntent | None:
+        actor = self.get_active_unit()
+        if actor is None or actor.team != "red" or self.state.winner:
+            return None
+
+        special_targets = self.get_valid_targets("special")
+        should_open_with_special = special_targets and (
+            actor.special_ability.target_mode != "self" or actor.hp / actor.max_hp <= 0.65
+        )
+        if should_open_with_special:
+            target_id = self._pick_ai_target(actor, special_targets, special=True)
+            target = self.get_unit(target_id)
+            return TacticalIntent(
+                actor_id=actor.id,
+                actor_name=actor.name,
+                move_to=None,
+                action_kind="special",
+                action_name=actor.special_ability.name,
+                target_id=target_id,
+                target_tile=target.position if target else None,
+                summary=f"{actor.name}가 {target.name if target else '대상'}에게 {actor.special_ability.name} 사용 예정",
+            )
+
+        basic_targets = self.get_valid_targets("basic")
+        if basic_targets:
+            target_id = self._pick_ai_target(actor, basic_targets)
+            target = self.get_unit(target_id)
+            return TacticalIntent(
+                actor_id=actor.id,
+                actor_name=actor.name,
+                move_to=None,
+                action_kind="basic",
+                action_name=actor.basic_ability.name,
+                target_id=target_id,
+                target_tile=target.position if target else None,
+                summary=f"{actor.name}가 {target.name if target else '대상'}에게 {actor.basic_ability.name} 사용 예정",
+            )
+
+        destination = self._choose_ai_move(actor)
+        if destination is None:
+            return TacticalIntent(
+                actor_id=actor.id,
+                actor_name=actor.name,
+                move_to=None,
+                action_kind="end",
+                action_name="대기",
+                target_id=None,
+                target_tile=None,
+                summary=f"{actor.name}가 이동 없이 턴 종료 예정",
+            )
+
+        action_kind, action_name, target_id, target_tile = self._predict_follow_up_from_position(actor, destination)
+        if action_name and target_id:
+            target = self.get_unit(target_id)
+            return TacticalIntent(
+                actor_id=actor.id,
+                actor_name=actor.name,
+                move_to=destination,
+                action_kind=action_kind,
+                action_name=action_name,
+                target_id=target_id,
+                target_tile=target_tile,
+                summary=f"{actor.name}가 {destination}로 이동 후 {target.name if target else '대상'}에게 {action_name} 사용 예정",
+            )
+
+        return TacticalIntent(
+            actor_id=actor.id,
+            actor_name=actor.name,
+            move_to=destination,
+            action_kind="move",
+            action_name="이동",
+            target_id=None,
+            target_tile=None,
+            summary=f"{actor.name}가 {destination}로 이동 예정",
+        )
+
     def distance(self, a: GridPos, b: GridPos) -> int:
         return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
@@ -292,13 +385,24 @@ class TacticsController:
             return None
 
         target_ids = self._resolve_targets(actor, ability, target_id)
-        impacts = [self._apply_effects(target_unit_id, ability.effects) for target_unit_id in target_ids]
+        impacts: list[TacticalImpact] = []
+        notes: list[str] = []
+        for target_unit_id in target_ids:
+            target = self.get_unit(target_unit_id)
+            modified_effects, passive_notes = self._modified_effects(actor, target, ability_kind, ability.effects)
+            impact = self._apply_effects(target_unit_id, modified_effects)
+            impacts.append(impact)
+            notes.extend(passive_notes)
         actor.has_acted = True
         if ability_kind == "special":
             actor.cooldowns[ability.id] = ability.cooldown
+        notes.extend(self._apply_post_action_passives(actor, ability_kind, impacts))
 
         summary = " ".join(self._format_impact_text(self.get_unit(target_unit_id), impact) for target_unit_id, impact in zip(target_ids, impacts))
-        self._push_log(f"{actor.name}, {ability.name} 사용. {summary}".strip())
+        log_line = f"{actor.name}, {ability.name} 사용. {summary}".strip()
+        if notes:
+            log_line = f"{log_line} {' '.join(notes)}".strip()
+        self._push_log(log_line)
         self._check_winner()
         result = TacticalActionResult(
             actor_id=actor.id,
@@ -306,6 +410,7 @@ class TacticsController:
             ability_name=ability.name,
             impacts=impacts,
             target_ids=target_ids,
+            notes=notes,
         )
         self._auto_finish_turn_if_needed()
         return result
@@ -326,6 +431,42 @@ class TacticsController:
             for unit in self.living_units()
             if unit.team != actor.team and self.distance(primary.position, unit.position) <= ability.area_radius
         ]
+
+    def _get_valid_targets_for_position(
+        self,
+        actor: TacticalUnit,
+        ability: TacticalAbility,
+        position: GridPos,
+    ) -> list[str]:
+        if ability.target_mode == "self":
+            return [actor.id]
+        return [
+            unit.id
+            for unit in self.living_units()
+            if unit.team != actor.team and self.distance(position, unit.position) <= ability.cast_range
+        ]
+
+    def _predict_follow_up_from_position(
+        self,
+        actor: TacticalUnit,
+        position: GridPos,
+    ) -> tuple[ActionKind | None, str | None, str | None, GridPos | None]:
+        special_targets = self._get_valid_targets_for_position(actor, actor.special_ability, position)
+        should_use_special = special_targets and (
+            actor.special_ability.target_mode != "self" or actor.hp / actor.max_hp <= 0.65
+        )
+        if should_use_special:
+            target_id = self._pick_ai_target_from_position(actor, position, special_targets, special=True)
+            target = self.get_unit(target_id)
+            return ("special", actor.special_ability.name, target_id, target.position if target else None)
+
+        basic_targets = self._get_valid_targets_for_position(actor, actor.basic_ability, position)
+        if basic_targets:
+            target_id = self._pick_ai_target_from_position(actor, position, basic_targets)
+            target = self.get_unit(target_id)
+            return ("basic", actor.basic_ability.name, target_id, target.position if target else None)
+
+        return (None, None, None, None)
 
     def _apply_effects(self, target_id: str, effects: tuple[AbilityEffect, ...]) -> TacticalImpact:
         target = self.get_unit(target_id)
@@ -350,6 +491,104 @@ class TacticsController:
 
         impact.defeated = target.hp <= 0
         return impact
+
+    def _modified_effects(
+        self,
+        actor: TacticalUnit,
+        target: TacticalUnit | None,
+        ability_kind: Literal["basic", "special"],
+        effects: tuple[AbilityEffect, ...],
+    ) -> tuple[tuple[AbilityEffect, ...], list[str]]:
+        if target is None:
+            return effects, []
+
+        bonus_damage = 0
+        notes: list[str] = []
+        distance = self.distance(actor.position, target.position)
+
+        if actor.id == "blue-garen" and not actor.has_moved:
+            bonus_damage += 4
+            notes.append("선봉 결의 발동.")
+        elif actor.id == "blue-ahri" and target.hp == target.max_hp:
+            bonus_damage += 5
+            notes.append("매혹의 사냥 발동.")
+        elif actor.id == "blue-vi" and actor.has_moved:
+            bonus_damage += 4
+            notes.append("추격 압박 발동.")
+        elif actor.id == "blue-ezreal" and distance >= 3:
+            bonus_damage += 4
+            notes.append("원거리 조준 발동.")
+        elif actor.id == "blue-ashe" and distance >= 3:
+            bonus_damage += 3
+            notes.append("서리 노출 발동.")
+        elif actor.id == "red-darius" and target.hp <= target.max_hp // 2:
+            bonus_damage += 5
+            notes.append("학살 본능 발동.")
+        elif actor.id == "red-annie" and ability_kind == "special" and target.shield <= 0:
+            bonus_damage += 4
+            notes.append("화염 점화 발동.")
+        elif actor.id == "red-caitlyn" and ability_kind == "basic" and distance >= 4:
+            bonus_damage += 4
+            notes.append("헤드샷 발동.")
+        elif actor.id == "red-yasuo" and actor.has_moved:
+            bonus_damage += 4
+            notes.append("질풍 발동.")
+        elif actor.id == "red-zed" and self._is_isolated(target):
+            bonus_damage += 6
+            notes.append("그림자 암살 발동.")
+        elif actor.id == "red-lissandra" and target.stun_turns > 0:
+            bonus_damage += 5
+            notes.append("냉기 균열 발동.")
+        elif actor.id == "red-brand" and ability_kind == "special":
+            bonus_damage += 3
+            notes.append("확산 화염 발동.")
+
+        if bonus_damage <= 0:
+            return effects, notes
+
+        boosted_effects = tuple(
+            AbilityEffect(kind=effect.kind, amount=effect.amount + bonus_damage, turns=effect.turns)
+            if effect.kind == "damage"
+            else effect
+            for effect in effects
+        )
+        return boosted_effects, notes
+
+    def _apply_post_action_passives(
+        self,
+        actor: TacticalUnit,
+        ability_kind: Literal["basic", "special"],
+        impacts: list[TacticalImpact],
+    ) -> list[str]:
+        notes: list[str] = []
+        defeated_any = any(impact.defeated for impact in impacts)
+
+        if actor.id in {"blue-jinx", "red-katarina"} and defeated_any:
+            actor.shield += 10
+            notes.append(f"{actor.passive_name} 발동.")
+        if actor.id == "blue-lux" and ability_kind == "special":
+            actor.shield += 8
+            notes.append("광채 잔향 발동.")
+        if actor.id == "red-morgana" and ability_kind == "special":
+            actor.shield += 10
+            notes.append("칠흑 보호 발동.")
+        return notes
+
+    def _apply_turn_start_passives(self, actor: TacticalUnit) -> None:
+        if actor.id == "blue-leona":
+            actor.shield += 8
+            self._push_log(f"{actor.name}, {actor.passive_name}으로 보호막 8 획득.")
+        elif actor.id == "blue-braum":
+            actor.shield += 12
+            self._push_log(f"{actor.name}, {actor.passive_name}으로 보호막 12 획득.")
+
+    def _is_isolated(self, target: TacticalUnit) -> bool:
+        for unit in self.living_units():
+            if unit.id == target.id or unit.team != target.team:
+                continue
+            if self.distance(unit.position, target.position) == 1:
+                return False
+        return True
 
     def _format_impact_text(self, target: TacticalUnit | None, impact: TacticalImpact) -> str:
         if target is None:
@@ -420,6 +659,7 @@ class TacticsController:
                 self._push_log(f"{actor.name}, 기절 상태로 턴을 넘긴다.")
                 continue
 
+            self._apply_turn_start_passives(actor)
             self.state.active_unit_id = actor.id
             return
 
@@ -440,6 +680,25 @@ class TacticsController:
             low_hp_bonus = max(0, target.max_hp - target.hp)
             speed_bonus = target.speed
             return (stun_bonus + low_hp_bonus, speed_bonus, -self.distance(actor.position, target.position))
+
+        return max(target_ids, key=score)
+
+    def _pick_ai_target_from_position(
+        self,
+        actor: TacticalUnit,
+        position: GridPos,
+        target_ids: list[str],
+        *,
+        special: bool = False,
+    ) -> str:
+        def score(target_id: str) -> tuple[int, int, int]:
+            target = self.get_unit(target_id)
+            if target is None:
+                return (-999, 0, 0)
+            stun_bonus = 18 if special and any(effect.kind == "stun" for effect in actor.special_ability.effects) else 0
+            low_hp_bonus = max(0, target.max_hp - target.hp)
+            speed_bonus = target.speed
+            return (stun_bonus + low_hp_bonus, speed_bonus, -self.distance(position, target.position))
 
         return max(target_ids, key=score)
 

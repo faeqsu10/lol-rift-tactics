@@ -61,6 +61,42 @@ class TacticsControllerTests(unittest.TestCase):
         self.assertEqual(controller.get_active_unit().id, "blue-ahri")
         self.assertTrue(any("기절 상태로 턴을 넘긴다" in line for line in controller.state.log))
 
+    def test_garen_passive_adds_damage_when_stationary(self) -> None:
+        controller = TacticsController(("blue-garen",), ("red-darius",))
+        controller.blocked_tiles.clear()
+        controller.get_unit("blue-garen").position = (0, 1)
+        controller.get_unit("red-darius").position = (1, 1)
+
+        result = controller.use_basic("red-darius")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.impacts[0].damage, 22)
+        self.assertEqual(controller.get_unit("red-darius").hp, 80)
+        self.assertTrue(any("선봉 결의 발동." in note for note in result.notes))
+
+    def test_braum_passive_grants_shield_on_turn_start(self) -> None:
+        controller = TacticsController(("blue-braum",), ("red-darius",))
+        braum = controller.get_unit("blue-braum")
+
+        self.assertEqual(controller.get_active_unit().id, "blue-braum")
+        self.assertEqual(braum.shield, 12)
+        self.assertTrue(any("보호막 12 획득" in line for line in controller.state.log))
+
+    def test_preview_ai_intent_reports_target(self) -> None:
+        controller = TacticsController(("blue-garen",), ("red-brand",))
+        controller.blocked_tiles.clear()
+        controller.get_unit("blue-garen").position = (0, 2)
+        controller.get_unit("red-brand").position = (4, 2)
+        controller.state.active_unit_id = "red-brand"
+        controller.state.turn_queue = ["red-brand"]
+
+        intent = controller.preview_ai_intent()
+
+        self.assertIsNotNone(intent)
+        self.assertEqual(intent.target_id, "blue-garen")
+        self.assertIn(intent.action_kind, {"basic", "special"})
+        self.assertIn("예정", intent.summary)
+
 
 class GameAppFlowTests(unittest.TestCase):
     def tearDown(self) -> None:

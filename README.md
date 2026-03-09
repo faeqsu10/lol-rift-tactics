@@ -93,6 +93,7 @@ npm run native:package
 - `native_tactics`는 `정찰전 -> 교전 -> 결전` 3단계 원정 구조
 - 각 승리 뒤 보상 하나를 고르고 다음 전투 배치 화면으로 이동
 - 보상 화면에서 다음 적 조합을 미리 확인 가능
+- `native_tactics` 전투 화면에서 현재 유닛의 패시브와 적의 다음 행동 의도 확인 가능
 - 마우스로 하단 스킬 버튼 클릭
 - 단일 대상 스킬은 전장 위 적 챔피언을 클릭해서 사용
 - `1`, `2`, `3`: 스킬 선택
@@ -155,7 +156,7 @@ SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./release/rift-tactics --headless --
 
 - `native_tactics`에 챔피언별 고유 패시브 추가
 - `native_tactics`에 타일 지형, 장애물 효과, 더 나은 AI 추가
-- `native_tactics`에 적 의도 표시와 전투 후 요약 추가
+- `native_tactics`에 전투 후 요약과 분기 선택 추가
 - 실제 스프라이트 시트와 캐릭터 아트 적용
 - 공격/피격/사망 전용 애니메이션 세분화
 - 배경 맵 아트와 UI 사운드 추가

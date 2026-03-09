@@ -20,6 +20,7 @@ from .data import DEFAULT_BLUE_DEPLOY_TILES
 from .data import DEFAULT_RED_DEPLOY_TILES
 from .data import GRID_HEIGHT
 from .data import GRID_WIDTH
+from .data import TACTICAL_BLUEPRINTS_BY_ID
 from .engine import TacticalActionResult
 from .engine import TacticsController
 
@@ -1079,6 +1080,7 @@ class GameApp:
         basic_targets = set(self.controller.get_valid_targets("basic")) if self.mode == "basic" else set()
         special_targets = set(self.controller.get_valid_targets("special")) if self.mode == "special" else set()
         active = self.controller.get_active_unit()
+        intent = self.controller.preview_ai_intent() if active and active.team == "red" else None
 
         for y in range(GRID_HEIGHT):
             for x in range(GRID_WIDTH):
@@ -1104,6 +1106,22 @@ class GameApp:
             rect = self.tile_rects[unit.position]
             color = (255, 183, 88) if target_id in basic_targets else (255, 129, 129)
             pygame.draw.rect(self.screen, color, rect.inflate(-8, -8), 3, border_radius=18)
+
+        if intent is not None:
+            if intent.move_to is not None:
+                move_rect = self.tile_rects[intent.move_to]
+                pygame.draw.rect(self.screen, (140, 196, 255), move_rect.inflate(-14, -14), 3, border_radius=18)
+            if intent.target_tile is not None:
+                target_rect = self.tile_rects[intent.target_tile]
+                pygame.draw.rect(self.screen, (255, 122, 122), target_rect.inflate(-8, -8), 3, border_radius=18)
+                source_tile = intent.move_to or active.position
+                pygame.draw.line(
+                    self.screen,
+                    (255, 208, 151),
+                    self._tile_center(source_tile),
+                    self._tile_center(intent.target_tile),
+                    3,
+                )
 
         for unit in self.controller.units:
             if unit.hp <= 0:
@@ -1148,6 +1166,7 @@ class GameApp:
 
     def _draw_battle_left_panel(self) -> None:
         active = self.controller.get_active_unit() if self.controller else None
+        intent = self.controller.preview_ai_intent() if self.controller and active and active.team == "red" else None
         self._draw_text("전술 브리핑", self.font_heading, (244, 239, 225), (LEFT_PANEL.x + 18, LEFT_PANEL.y + 18))
         self._draw_text(self.status_text, self.font_small, (167, 192, 212), (LEFT_PANEL.x + 18, LEFT_PANEL.y + 54))
 
@@ -1173,8 +1192,27 @@ class GameApp:
             if cooldown > 0:
                 special_label += f" (CD {cooldown})"
             self._draw_text(special_label, self.font_small, (223, 206, 164), (info_rect.x + 18, info_rect.y + 182))
+            passive_rect = pygame.Rect(info_rect.x + 16, info_rect.bottom + 16, info_rect.width - 32, 106)
+            pygame.draw.rect(self.screen, (11, 20, 31), passive_rect, border_radius=22)
+            pygame.draw.rect(self.screen, (236, 218, 176), passive_rect, 1, border_radius=22)
+            self._draw_text("패시브", self.font_ui, (229, 210, 164), (passive_rect.x + 16, passive_rect.y + 12))
+            self._draw_text(active.passive_name, self.font_ui, accent, (passive_rect.x + 16, passive_rect.y + 42))
+            self._draw_wrapped_text(active.passive_description, self.font_small, (208, 219, 226), pygame.Rect(passive_rect.x + 16, passive_rect.y + 68, passive_rect.width - 32, 26), max_lines=2)
 
-        guide_rect = pygame.Rect(LEFT_PANEL.x + 16, LEFT_PANEL.y + 330, LEFT_PANEL.width - 32, 280)
+        intent_rect = pygame.Rect(LEFT_PANEL.x + 16, LEFT_PANEL.y + 436, LEFT_PANEL.width - 32, 144)
+        pygame.draw.rect(self.screen, (11, 20, 31), intent_rect, border_radius=24)
+        pygame.draw.rect(self.screen, (236, 218, 176), intent_rect, 1, border_radius=24)
+        self._draw_text("적 의도", self.font_ui, (229, 210, 164), (intent_rect.x + 18, intent_rect.y + 18))
+        if intent is not None:
+            self._draw_wrapped_text(intent.summary, self.font_small, (214, 191, 184), pygame.Rect(intent_rect.x + 18, intent_rect.y + 52, intent_rect.width - 36, 54), max_lines=2)
+            if intent.move_to is not None:
+                self._draw_text(f"이동 칸: {intent.move_to}", self.font_small, (174, 208, 235), (intent_rect.x + 18, intent_rect.y + 104))
+            if intent.target_tile is not None:
+                self._draw_text(f"공격 대상 칸: {intent.target_tile}", self.font_small, (238, 162, 145), (intent_rect.x + 18, intent_rect.y + 126))
+        else:
+            self._draw_wrapped_text("현재는 플레이어 턴입니다. 적 차례가 오면 이동 칸과 공격 대상을 미리 보여 줍니다.", self.font_small, (208, 219, 226), pygame.Rect(intent_rect.x + 18, intent_rect.y + 52, intent_rect.width - 36, 64), max_lines=3)
+
+        guide_rect = pygame.Rect(LEFT_PANEL.x + 16, LEFT_PANEL.y + 594, LEFT_PANEL.width - 32, 178)
         pygame.draw.rect(self.screen, (11, 20, 31), guide_rect, border_radius=24)
         pygame.draw.rect(self.screen, (236, 218, 176), guide_rect, 1, border_radius=24)
         self._draw_text("조작", self.font_ui, (229, 210, 164), (guide_rect.x + 18, guide_rect.y + 18))
@@ -1187,7 +1225,7 @@ class GameApp:
             "6. E로 턴 종료, ESC로 선택 화면 복귀",
         ]
         for index, line in enumerate(guides):
-            self._draw_text(line, self.font_small, (201, 213, 221), (guide_rect.x + 18, guide_rect.y + 58 + index * 36))
+            self._draw_text(line, self.font_small, (201, 213, 221), (guide_rect.x + 18, guide_rect.y + 48 + index * 22))
 
     def _draw_battle_right_panel(self) -> None:
         if self.controller is None:
@@ -1309,7 +1347,7 @@ class GameApp:
             self._draw_wrapped_text(blueprint.title, self.font_small, (176, 195, 208), pygame.Rect(text_x, rect.y + 42, text_width, 18), max_lines=1)
             self._draw_text(blueprint.role, self.font_small, accent, (text_x, rect.y + 66))
             self._draw_text(f"체력 {blueprint.max_hp} · 속도 {blueprint.speed}", self.font_tiny, (198, 209, 218), (text_x, rect.y + 88))
-            description = footer or f"대표 스킬: {blueprint.abilities[0].name}"
+            description = footer or f"패시브: {TACTICAL_BLUEPRINTS_BY_ID[champion_id].passive_name}"
             self._draw_wrapped_text(description, self.font_tiny, (214, 222, 229), pygame.Rect(text_x, rect.y + 108, text_width, rect.height - 120), max_lines=2)
 
         if badge:

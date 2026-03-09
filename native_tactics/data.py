@@ -80,8 +80,32 @@ class TacticalBlueprint:
     speed: int
     accent: str
     move_range: int
+    passive_name: str
+    passive_description: str
     basic_ability: TacticalAbility
     special_ability: TacticalAbility
+
+
+PASSIVE_BY_CHAMPION_ID: dict[str, tuple[str, str]] = {
+    "blue-garen": ("선봉 결의", "이번 턴 이동하지 않았다면 공격 피해가 4 증가합니다."),
+    "blue-ahri": ("매혹의 사냥", "체력이 가득 찬 적에게 주는 피해가 5 증가합니다."),
+    "blue-jinx": ("들뜬 광기", "적을 처치하면 즉시 보호막 10을 얻습니다."),
+    "blue-lux": ("광채 잔향", "특수기를 쓰면 자신에게 보호막 8을 부여합니다."),
+    "blue-vi": ("추격 압박", "이번 턴 이동했다면 공격 피해가 4 증가합니다."),
+    "blue-ezreal": ("원거리 조준", "거리 3칸 이상에서 가한 피해가 4 증가합니다."),
+    "blue-leona": ("여명의 수호", "턴 시작 시 보호막 8을 얻습니다."),
+    "blue-ashe": ("서리 노출", "거리 3칸 이상에서 가한 피해가 3 증가합니다."),
+    "blue-braum": ("불굴", "턴 시작 시 보호막 12를 얻습니다."),
+    "red-darius": ("학살 본능", "체력이 절반 이하인 적에게 주는 피해가 5 증가합니다."),
+    "red-annie": ("화염 점화", "보호막이 없는 적에게 특수기 피해가 4 증가합니다."),
+    "red-caitlyn": ("헤드샷", "거리 4칸 이상 기본기 피해가 4 증가합니다."),
+    "red-morgana": ("칠흑 보호", "특수기를 쓰면 자신에게 보호막 10을 부여합니다."),
+    "red-yasuo": ("질풍", "이번 턴 이동했다면 공격 피해가 4 증가합니다."),
+    "red-zed": ("그림자 암살", "인접한 아군이 없는 적에게 주는 피해가 6 증가합니다."),
+    "red-lissandra": ("냉기 균열", "기절한 적에게 주는 피해가 5 증가합니다."),
+    "red-katarina": ("연쇄 참수", "적을 처치하면 즉시 보호막 10을 얻습니다."),
+    "red-brand": ("확산 화염", "특수기 피해가 3 증가합니다."),
+}
 
 
 def _damage_total(effects: tuple[AbilityEffect, ...]) -> int:
@@ -145,6 +169,7 @@ def _build_special_ability(blueprint: ChampionBlueprint) -> TacticalAbility:
 
 def build_tactical_blueprint(champion_id: str) -> TacticalBlueprint:
     blueprint = BLUEPRINTS_BY_ID[champion_id]
+    passive_name, passive_description = PASSIVE_BY_CHAMPION_ID[champion_id]
     return TacticalBlueprint(
         id=blueprint.id,
         name=blueprint.name,
@@ -155,6 +180,8 @@ def build_tactical_blueprint(champion_id: str) -> TacticalBlueprint:
         speed=blueprint.speed,
         accent=blueprint.accent,
         move_range=ROLE_MOVE_RANGE[blueprint.role],
+        passive_name=passive_name,
+        passive_description=passive_description,
         basic_ability=_build_basic_ability(blueprint),
         special_ability=_build_special_ability(blueprint),
     )
@@ -167,3 +194,8 @@ def build_tactical_blueprints(
     selected_blue_ids = tuple(blue_ids or DEFAULT_BLUE_IDS)
     selected_red_ids = tuple(red_ids or DEFAULT_RED_IDS)
     return tuple(build_tactical_blueprint(champion_id) for champion_id in (*selected_blue_ids, *selected_red_ids))
+
+
+TACTICAL_BLUEPRINTS_BY_ID: dict[str, TacticalBlueprint] = {
+    champion_id: build_tactical_blueprint(champion_id) for champion_id in BLUEPRINTS_BY_ID
+}

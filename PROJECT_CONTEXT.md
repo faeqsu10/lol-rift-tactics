@@ -55,6 +55,8 @@
   - movement plus action on each turn
   - obstacle tiles and movement range highlighting
   - role-based tactical ranges with champion-specific ability names
+  - champion-specific passive traits
+  - enemy intent preview during red turns
   - simple red-team AI movement and targeting
   - post-victory reward pick with next-enemy preview
   - post-battle overlay with direct return to champion select or rematch
@@ -92,10 +94,10 @@
 
 ## Recommended Next Steps
 
-1. Add champion-specific tactical passives and stronger skill differentiation to `native_tactics`.
-2. Add enemy intent UI and clearer threat telegraphing to `native_tactics`.
-3. Add terrain, elite encounters, and smarter pathfinding/AI to `native_tactics`.
-4. Add post-battle recap and route selection on top of the current reward loop.
+1. Add stronger champion-specific passive differentiation and more unique tactical triggers to `native_tactics`.
+2. Add terrain, elite encounters, and smarter pathfinding/AI to `native_tactics`.
+3. Add post-battle recap and route selection on top of the current reward loop.
+4. Expand enemy intent UI with predicted damage or threat zones.
 5. Replace shape-based placeholder characters with real sprite art or sprite sheets.
 
 ## Resume Prompt
