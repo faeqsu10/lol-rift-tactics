@@ -8,7 +8,9 @@ This file provides guidance for working in this repository.
 
 - League of Legends fan-made turn-based combat prototype
 - Current primary build: native `Pygame` client
-- Current primary loop: 7인 풀에서 3인 선택 -> 3v3 battle
+- Current active native tracks:
+  - `native_game`: 9인 풀에서 3인 선택 -> 3v3 battle
+  - `native_tactics`: 8x6 grid -> move + action turn battle
 - Current secondary build: legacy web prototype under `src/*`
 
 ## Commands
@@ -20,6 +22,9 @@ This file provides guidance for working in this repository.
 - 윈도우 빌드 스크립트: `scripts/build-windows.ps1`
 - 네이티브 테스트: `npm run native:test`
 - 네이티브 스모크: `npm run native:smoke`
+- 전술 실험 실행: `npm run tactics:play`
+- 전술 실험 테스트: `npm run tactics:test`
+- 전술 실험 스모크: `npm run tactics:smoke`
 - 웹 개발 서버: `npm run dev`
 - 웹 테스트: `npm test`
 
@@ -34,6 +39,13 @@ native_game/
 ├── runtime.py      # 번들/일반 실행 공통 리소스 경로
 ├── tests.py        # 전투 규칙 테스트
 └── __main__.py     # 런타임 부트스트랩과 실행 진입점
+
+native_tactics/
+├── app.py          # 그리드 전술 UI와 입력
+├── data.py         # 전술용 이동력, 사거리, 맵 설정
+├── engine.py       # 이동/행동 턴제 전술 상태 해석
+├── tests.py        # 전술 규칙 테스트
+└── __main__.py     # 전술 빌드 실행 진입점
 
 src/
 ├── App.tsx

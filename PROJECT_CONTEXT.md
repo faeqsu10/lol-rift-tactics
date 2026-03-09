@@ -12,6 +12,9 @@
 - This is a fan-made turn-based combat game based on League of Legends champions.
 - The primary goal is no longer a browser-first prototype.
 - The current priority is a native `Pygame` prototype that feels like an actual game window with motion, targeting, and combat feedback.
+- There are now two native tracks in the same repo:
+  - `native_game`: arena-style 3v3 combat prototype
+  - `native_tactics`: grid-based movement tactics prototype
 
 ## Decisions Already Made
 
@@ -27,6 +30,7 @@
 - The initial `README.md` commit exists on GitHub.
 - A web prototype still exists locally under `src/*`, but it is no longer the preferred gameplay path.
 - A native `Pygame` prototype now exists under `native_game/*`.
+- A second native tactics prototype now exists under `native_tactics/*`.
 - The native build opens a real game window and supports:
   - champion select screen before entering combat
   - 3v3 combat
@@ -43,6 +47,13 @@
   - speed-based turn order
   - cooldowns, shields, stun, and simple enemy AI
   - direct enemy target selection for single-target skills
+- The tactics build opens a separate real game window and supports:
+  - 8x6 grid battlefield
+  - movement plus action on each turn
+  - obstacle tiles and movement range highlighting
+  - role-based tactical ranges with champion-specific ability names
+  - simple red-team AI movement and targeting
+  - headless screenshot capture and tests
 - Initial roster:
   - Blue team: Garen, Ahri, Jinx
   - Red team: Darius, Annie, Caitlyn
@@ -51,12 +62,15 @@
   - Red pool: Darius, Annie, Caitlyn, Morgana, Yasuo, Zed, Lissandra, Katarina, Brand
 - Native dependency file: `requirements-native.txt`
 - Native run command: `.venv/bin/python -m native_game`
+- Tactics run command: `.venv/bin/python -m native_tactics`
 - Native package command: `npm run native:package`
 - Native packaged executable: `release/rift-tactics`
 - Windows package workflow: `.github/workflows/build-windows-exe.yml`
 - Windows build script: `scripts/build-windows.ps1`
 - Native tests: `.venv/bin/python -m native_game.tests`
+- Tactics tests: `.venv/bin/python -m native_tactics.tests`
 - Screenshot capture command: `npm run native:capture`
+- Tactics screenshot capture command: `npm run tactics:capture`
 - Audio implementation: `native_game/audio.py`
 - Runtime bootstrap: `native_game/__main__.py`
 - Runtime path helper: `native_game/runtime.py`
@@ -71,11 +85,11 @@
 
 ## Recommended Next Steps
 
-1. Replace shape-based placeholder characters with real sprite art or sprite sheets.
-2. Add distinct animation sets for attack, impact, defeat, and victory.
-3. Replace procedural champion motifs with higher-fidelity original audio assets if needed.
-4. Improve battlefield presentation with tile art, lane markers, and scene dressing.
-5. Re-evaluate long-term engine choice only after the native combat feel is validated.
+1. Add champion select and roster customization to `native_tactics`.
+2. Add tile terrain, cover, and smarter pathfinding/AI to `native_tactics`.
+3. Replace shape-based placeholder characters with real sprite art or sprite sheets.
+4. Add distinct animation sets for attack, impact, defeat, and victory.
+5. Replace procedural champion motifs with higher-fidelity original audio assets if needed.
 
 ## Resume Prompt
 

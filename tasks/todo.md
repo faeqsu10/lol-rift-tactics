@@ -16,7 +16,10 @@
 - [x] `PyInstaller` 기반 실행 파일 패키징 경로 추가 및 산출물 검증
 - [x] GitHub Actions 기반 Windows `.exe` 빌드 경로 추가
 - [x] 챔피언별 선택/시전 테마 사운드 추가
+- [x] 기존 아레나 버전을 유지한 채 `native_tactics` 전술 실험 패키지 추가
 - [x] 헤드리스 스크린샷으로 비주얼 결과 확인
+- [ ] `native_tactics` 챔피언 선택 화면 추가
+- [ ] `native_tactics` 지형 효과와 더 나은 AI 추가
 - [ ] 실제 스프라이트 기반 캐릭터 아트 도입 여부 결정
 - [ ] 공격, 피격, 사망, 승리 전용 애니메이션 세분화
 - [ ] 배경 맵 아트 추가
@@ -29,9 +32,13 @@
 - [x] `--screenshot` 출력 확인
 - [x] `npm run native:package`
 - [x] `./release/rift-tactics --headless --frames 2 --screenshot ...`
+- [x] `npm run tactics:test`
+- [x] `npm run tactics:smoke`
+- [x] `npm run tactics:capture`
 
 ## 리뷰 메모
 
 - 현재 목표는 "게임처럼 보이는가"를 우선 해결하는 것
 - 도형 프로토타입 느낌을 줄이기 위해 캐릭터 실루엣과 전장 레이어를 먼저 강화함
 - 스크린샷 캡처 커맨드는 `npm run native:capture`
+- 전술 실험은 기존 아레나 버전 위에 덮어쓰지 말고 별도 패키지로 병행 유지

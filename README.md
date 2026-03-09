@@ -6,8 +6,12 @@
 
 ## 현재 상태
 
-- 기본 플레이 빌드: `Pygame` 기반 네이티브 2D 전투 프로토타입
-- 현재 흐름: 챔피언 선택 -> 3 대 3 턴제 전투
+- 기본 플레이 빌드:
+  - `native_game`: 아레나형 3 대 3 전투 프로토타입
+  - `native_tactics`: 그리드 이동형 전술 실험 빌드
+- 현재 흐름:
+  - `native_game`: 챔피언 선택 -> 3 대 3 턴제 전투
+  - `native_tactics`: 8x6 전술 맵 -> 이동 + 행동 턴제
 - 블루 팀은 플레이어 조작, 레드 팀은 AI 조작
 - 목표: "게임처럼 보이고 움직이는 전투"를 먼저 완성한 뒤 시스템 확장
 
@@ -42,6 +46,12 @@ npm run native:setup
 
 ```bash
 npm run native:play
+```
+
+전술 맵 버전 실행:
+
+```bash
+npm run tactics:play
 ```
 
 직접 Python으로 실행:
@@ -92,16 +102,34 @@ npm run native:package
 npm run native:test
 ```
 
+전술 엔진 테스트:
+
+```bash
+npm run tactics:test
+```
+
 헤드리스 스모크 테스트:
 
 ```bash
 npm run native:smoke
 ```
 
+전술 맵 스모크 테스트:
+
+```bash
+npm run tactics:smoke
+```
+
 스크린샷 캡처:
 
 ```bash
 npm run native:capture
+```
+
+전술 맵 스크린샷 캡처:
+
+```bash
+npm run tactics:capture
 ```
 
 패키징된 실행 파일 검증:
@@ -117,6 +145,8 @@ SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./release/rift-tactics --headless --
 
 ## 다음 우선순위
 
+- `native_tactics`에 챔피언 선택 화면과 라인업 커스터마이즈 추가
+- `native_tactics`에 타일 지형, 장애물 효과, 더 나은 AI 추가
 - 실제 스프라이트 시트와 캐릭터 아트 적용
 - 공격/피격/사망 전용 애니메이션 세분화
 - 배경 맵 아트와 UI 사운드 추가
