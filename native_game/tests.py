@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from .combat import BattleController
+from .data import SELECTABLE_BLUE_IDS, SELECTABLE_RED_IDS
 
 
 class BattleControllerTests(unittest.TestCase):
@@ -26,6 +27,12 @@ class BattleControllerTests(unittest.TestCase):
                 "red-caitlyn",
             ],
         )
+
+    def test_expanded_roster_is_available(self) -> None:
+        self.assertIn("blue-ezreal", SELECTABLE_BLUE_IDS)
+        self.assertIn("blue-leona", SELECTABLE_BLUE_IDS)
+        self.assertIn("red-zed", SELECTABLE_RED_IDS)
+        self.assertIn("red-lissandra", SELECTABLE_RED_IDS)
 
     def test_enemy_targeting_returns_all_living_enemies(self) -> None:
         controller = BattleController()

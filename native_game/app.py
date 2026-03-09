@@ -30,11 +30,15 @@ CHAMPION_ART_FILES = {
     "blue-jinx": "Jinx.png",
     "blue-lux": "Lux.png",
     "blue-vi": "Vi.png",
+    "blue-ezreal": "Ezreal.png",
+    "blue-leona": "Leona.png",
     "red-darius": "Darius.png",
     "red-annie": "Annie.png",
     "red-caitlyn": "Caitlyn.png",
     "red-morgana": "Morgana.png",
     "red-yasuo": "Yasuo.png",
+    "red-zed": "Zed.png",
+    "red-lissandra": "Lissandra.png",
 }
 
 
@@ -860,11 +864,14 @@ class GameApp:
 
     def _draw_selection_pool(self, rect: pygame.Rect) -> None:
         self.selection_card_rects.clear()
-        columns = 2
-        card_width = 404
-        card_height = 146
+        columns = 3 if len(SELECTABLE_BLUE_IDS) > 6 else 2
         gap_x = 18
         gap_y = 18
+        rows = max(1, math.ceil(len(SELECTABLE_BLUE_IDS) / columns))
+        footer_height = 52
+        available_height = rect.height - footer_height - 16
+        card_width = (rect.width - gap_x * (columns - 1)) // columns
+        card_height = min(152, (available_height - gap_y * (rows - 1)) // rows)
 
         for index, champion_id in enumerate(SELECTABLE_BLUE_IDS):
             blueprint = BLUEPRINTS_BY_ID[champion_id]
@@ -894,17 +901,37 @@ class GameApp:
         pygame.draw.rect(card, (236, 218, 176) if not selected else (108, 224, 203), card.get_rect(), 1, border_radius=24)
         self.screen.blit(card, rect.topleft)
 
-        portrait_rect = pygame.Rect(rect.x + 16, rect.y + 16, 116, 116)
+        portrait_rect = pygame.Rect(rect.x + 14, rect.y + 14, 92, 92)
         self._draw_portrait_art(blueprint.id, portrait_rect, accent)
-        self._draw_text(blueprint.name, self.font_heading, (244, 239, 225), (rect.x + 148, rect.y + 16))
-        self._draw_text(blueprint.title, self.font_small, (176, 195, 208), (rect.x + 148, rect.y + 48))
-        self._draw_text(f"{blueprint.role}  |  체력 {blueprint.max_hp}  |  속도 {blueprint.speed}", self.font_small, accent, (rect.x + 148, rect.y + 74))
+        text_x = rect.x + 122
+        text_width = rect.width - 136
+        self._draw_text(blueprint.name, self.font_ui, (244, 239, 225), (text_x, rect.y + 14))
+        self._draw_wrapped_text(
+            blueprint.title,
+            self.font_small,
+            (176, 195, 208),
+            pygame.Rect(text_x, rect.y + 42, text_width, 18),
+            max_lines=1,
+        )
+        self._draw_text(blueprint.role, self.font_small, accent, (text_x, rect.y + 66))
+        self._draw_text(
+            f"체력 {blueprint.max_hp}  ·  속도 {blueprint.speed}",
+            self.font_small,
+            (194, 205, 214),
+            (text_x, rect.y + 88),
+        )
+        self._draw_text(
+            f"대표 스킬: {blueprint.abilities[0].name}",
+            self.font_small,
+            tinted(accent, 0.18),
+            (text_x, rect.y + 110),
+        )
         self._draw_wrapped_text(
             blueprint.abilities[0].description,
             self.font_small,
             (214, 222, 229),
-            pygame.Rect(rect.x + 148, rect.y + 98, rect.width - 164, 38),
-            max_lines=2,
+            pygame.Rect(text_x, rect.y + 128, text_width, 18),
+            max_lines=1,
         )
 
         if selected and order is not None:

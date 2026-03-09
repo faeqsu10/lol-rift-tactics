@@ -8,7 +8,7 @@ This file provides guidance for working in this repository.
 
 - League of Legends fan-made turn-based combat prototype
 - Current primary build: native `Pygame` client
-- Current primary loop: champion select -> 3v3 battle
+- Current primary loop: 7인 풀에서 3인 선택 -> 3v3 battle
 - Current secondary build: legacy web prototype under `src/*`
 
 ## Commands

@@ -46,8 +46,8 @@
   - Blue team: Garen, Ahri, Jinx
   - Red team: Darius, Annie, Caitlyn
 - Expanded selectable roster:
-  - Blue pool: Garen, Ahri, Jinx, Lux, Vi
-  - Red pool: Darius, Annie, Caitlyn, Morgana, Yasuo
+  - Blue pool: Garen, Ahri, Jinx, Lux, Vi, Ezreal, Leona
+  - Red pool: Darius, Annie, Caitlyn, Morgana, Yasuo, Zed, Lissandra
 - Native dependency file: `requirements-native.txt`
 - Native run command: `.venv/bin/python -m native_game`
 - Native tests: `.venv/bin/python -m native_game.tests`

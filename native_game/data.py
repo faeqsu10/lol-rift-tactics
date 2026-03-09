@@ -6,7 +6,7 @@ from typing import Literal
 
 TeamId = Literal["blue", "red"]
 TargetType = Literal["enemy", "self", "all-enemies"]
-Role = Literal["Vanguard", "Mage", "Marksman"]
+Role = Literal["Vanguard", "Mage", "Marksman", "Assassin"]
 EffectKind = Literal["damage", "shield", "stun"]
 
 
@@ -233,6 +233,81 @@ BLUE_TEAM: tuple[ChampionBlueprint, ...] = (
             ),
         ),
     ),
+    ChampionBlueprint(
+        id="blue-ezreal",
+        name="이즈리얼",
+        title="무모한 탐험가",
+        role="Marksman",
+        team="blue",
+        max_hp=72,
+        speed=71,
+        accent="#d8b46b",
+        abilities=(
+            Ability(
+                id="mystic-shot",
+                name="신비한 화살",
+                description="정교한 마력 탄환으로 적 하나를 꿰뚫습니다.",
+                cooldown=1,
+                target_type="enemy",
+                effects=(AbilityEffect(kind="damage", amount=16),),
+            ),
+            Ability(
+                id="arcane-shift",
+                name="비전 이동",
+                description="짧게 몸을 빼며 마력 보호막을 둘러칩니다.",
+                cooldown=2,
+                target_type="self",
+                effects=(AbilityEffect(kind="shield", amount=16),),
+            ),
+            Ability(
+                id="trueshot-barrage",
+                name="정조준 일격",
+                description="전장을 가르는 에너지 파동으로 적 전체를 공격합니다.",
+                cooldown=4,
+                target_type="all-enemies",
+                effects=(AbilityEffect(kind="damage", amount=14),),
+            ),
+        ),
+    ),
+    ChampionBlueprint(
+        id="blue-leona",
+        name="레오나",
+        title="여명의 방패",
+        role="Vanguard",
+        team="blue",
+        max_hp=100,
+        speed=57,
+        accent="#d9a957",
+        abilities=(
+            Ability(
+                id="shield-of-daybreak",
+                name="여명의 방패",
+                description="방패를 내질러 적을 기절시키고 제압합니다.",
+                cooldown=2,
+                target_type="enemy",
+                effects=(
+                    AbilityEffect(kind="damage", amount=12),
+                    AbilityEffect(kind="stun", turns=1),
+                ),
+            ),
+            Ability(
+                id="eclipse",
+                name="일식",
+                description="황금빛 갑주를 두르고 두터운 보호막을 얻습니다.",
+                cooldown=2,
+                target_type="self",
+                effects=(AbilityEffect(kind="shield", amount=24),),
+            ),
+            Ability(
+                id="solar-flare",
+                name="태양 폭발",
+                description="태양의 불꽃을 떨어뜨려 적 전체를 태웁니다.",
+                cooldown=4,
+                target_type="all-enemies",
+                effects=(AbilityEffect(kind="damage", amount=11),),
+            ),
+        ),
+    ),
 )
 
 
@@ -420,6 +495,81 @@ RED_TEAM: tuple[ChampionBlueprint, ...] = (
                 cooldown=3,
                 target_type="enemy",
                 effects=(AbilityEffect(kind="damage", amount=23),),
+            ),
+        ),
+    ),
+    ChampionBlueprint(
+        id="red-zed",
+        name="제드",
+        title="그림자의 주인",
+        role="Assassin",
+        team="red",
+        max_hp=78,
+        speed=73,
+        accent="#8e6a6a",
+        abilities=(
+            Ability(
+                id="razor-shuriken",
+                name="예리한 표창",
+                description="그림자 표창으로 적 하나를 정확히 찌릅니다.",
+                cooldown=1,
+                target_type="enemy",
+                effects=(AbilityEffect(kind="damage", amount=17),),
+            ),
+            Ability(
+                id="living-shadow",
+                name="살아있는 그림자",
+                description="그림자 속으로 숨어 순간적인 보호를 얻습니다.",
+                cooldown=2,
+                target_type="self",
+                effects=(AbilityEffect(kind="shield", amount=16),),
+            ),
+            Ability(
+                id="death-mark",
+                name="죽음의 표식",
+                description="표식을 새긴 뒤 폭발적인 일격으로 마무리합니다.",
+                cooldown=3,
+                target_type="enemy",
+                effects=(AbilityEffect(kind="damage", amount=24),),
+            ),
+        ),
+    ),
+    ChampionBlueprint(
+        id="red-lissandra",
+        name="리산드라",
+        title="얼음 마녀",
+        role="Mage",
+        team="red",
+        max_hp=82,
+        speed=61,
+        accent="#6fb1d4",
+        abilities=(
+            Ability(
+                id="ice-shard",
+                name="얼음 파편",
+                description="차가운 파편을 발사해 적을 꿰뚫습니다.",
+                cooldown=1,
+                target_type="enemy",
+                effects=(AbilityEffect(kind="damage", amount=15),),
+            ),
+            Ability(
+                id="ring-of-frost",
+                name="서릿발",
+                description="냉기를 폭발시켜 적을 얼려 묶습니다.",
+                cooldown=2,
+                target_type="enemy",
+                effects=(
+                    AbilityEffect(kind="damage", amount=9),
+                    AbilityEffect(kind="stun", turns=1),
+                ),
+            ),
+            Ability(
+                id="frozen-tomb",
+                name="얼음 무덤",
+                description="냉기의 폭발로 적 전체를 뒤덮습니다.",
+                cooldown=4,
+                target_type="all-enemies",
+                effects=(AbilityEffect(kind="damage", amount=12),),
             ),
         ),
     ),
