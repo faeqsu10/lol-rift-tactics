@@ -25,6 +25,7 @@ This file provides guidance for working in this repository.
 ```text
 native_game/
 ├── app.py          # Pygame 렌더링, 입력, 연출
+├── audio.py        # 절차형 효과음과 앰비언트 오디오
 ├── combat.py       # 턴제 전투 상태와 해석
 ├── data.py         # 챔피언/스킬 정의
 └── tests.py        # 전투 규칙 테스트

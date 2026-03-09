@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pygame
 
+from .audio import SoundBank
 from .combat import BattleAction, BattleController, CombatUnit
 
 WINDOW_WIDTH = 1600
@@ -136,6 +137,7 @@ def load_font(size: int, *, bold: bool = False) -> pygame.font.Font:
 
 class GameApp:
     def __init__(self, headless: bool = False) -> None:
+        pygame.mixer.pre_init(44100, -16, 2, 512)
         pygame.init()
         pygame.display.set_caption("리프트 택틱스")
         flags = pygame.HIDDEN if headless else 0
@@ -172,6 +174,8 @@ class GameApp:
         self.unit_hitboxes: dict[str, pygame.Rect] = {}
         self.reset_button = pygame.Rect(WINDOW_WIDTH - 214, 42, 162, 42)
         self.champion_art = self._load_champion_art()
+        self.audio = SoundBank()
+        self.audio.start_ambient()
 
         self.background_cache = self._build_background_cache()
         self.arena_cache = self._build_arena_cache()
@@ -332,6 +336,8 @@ class GameApp:
         if ability is None or active.cooldowns[ability.id] > 0:
             return
 
+        self.audio.play("ui-select")
+
         if ability.target_type == "enemy":
             self.selected_ability_id = None if self.selected_ability_id == ability.id else ability.id
             return
@@ -349,6 +355,7 @@ class GameApp:
 
         ability_id = self.selected_ability_id
         self.selected_ability_id = None
+        self.audio.play("ui-confirm")
         self._begin_preview(ability_id, target_id)
 
     def _begin_preview(self, ability_id: str, target_id: str | None) -> None:
@@ -365,6 +372,7 @@ class GameApp:
             actor_state.cast_timer = self.preview_timer
             actor_state.flare_timer = 0.42
 
+        self.audio.play("cast")
         self._spawn_preview_fx(preview)
 
     def _spawn_preview_fx(self, action: BattleAction) -> None:
@@ -450,6 +458,9 @@ class GameApp:
     def _apply_resolved_action_fx(self, action: BattleAction) -> None:
         self.last_action_timer = 1.0
         heavy_hit = action.ability_id in {"super-mega-death-rocket", "noxian-guillotine", "summon-tibbers"}
+        any_damage = False
+        any_shield = False
+        any_stun = False
 
         for impact in action.impacts:
             anchor = self._unit_anchor(impact.target_id)
@@ -458,6 +469,7 @@ class GameApp:
                 continue
 
             if impact.damage_dealt > 0:
+                any_damage = True
                 state.hit_timer = 0.42
                 self.shake_time = 0.22 if heavy_hit else 0.14
                 self.shake_strength = 11 if heavy_hit else 6
@@ -470,14 +482,28 @@ class GameApp:
                     FloatingText(anchor.x, anchor.y - 166, f"막음 {impact.blocked_damage}", (154, 221, 242), 0.8, 26)
                 )
             if impact.shield_gained > 0:
+                any_shield = True
                 state.shield_timer = 0.8
                 self.rings.append(RingEffect(center=(anchor.x, anchor.y - 28), color=(137, 215, 157), radius=30, growth=165))
                 self.floaters.append(FloatingText(anchor.x, anchor.y - 136, f"+보호막 {impact.shield_gained}", (170, 242, 190)))
             if impact.stun_turns_applied > 0:
+                any_stun = True
                 state.stun_timer = 0.92
                 self.floaters.append(FloatingText(anchor.x, anchor.y - 164, "기절", (255, 229, 145), 0.82, 26))
             if impact.defeated:
                 self.floaters.append(FloatingText(anchor.x, anchor.y - 188, "처치", (255, 216, 168), 0.95, 22))
+
+        if any_damage:
+            self.audio.play("hit-heavy" if heavy_hit else "hit")
+        if any_shield:
+            self.audio.play("shield")
+        if any_stun:
+            self.audio.play("stun")
+
+        if self.controller.state.winner == "blue":
+            self.audio.play("victory")
+        elif self.controller.state.winner == "red":
+            self.audio.play("defeat")
 
     def _reset(self) -> None:
         self.controller.reset()
@@ -491,6 +517,7 @@ class GameApp:
         self.projectiles.clear()
         self.rings.clear()
         self.fx_state = {unit.id: UnitFxState() for unit in self.controller.units}
+        self.audio.play("reset")
 
     def _unit_anchor(self, unit_id: str) -> pygame.Vector2:
         unit = next(candidate for candidate in self.controller.units if candidate.id == unit_id)

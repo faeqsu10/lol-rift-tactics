@@ -33,6 +33,7 @@
   - bundled Korean font rendering
   - champion icon art applied to battlefield units and side panels
   - upgraded battlefield presentation, UI panels, and champion standees
+  - procedural sound effects and ambient audio
   - animated unit idle/cast/hit states
   - projectile and ring effects
   - floating combat text
@@ -46,6 +47,7 @@
 - Native run command: `.venv/bin/python -m native_game`
 - Native tests: `.venv/bin/python -m native_game.tests`
 - Screenshot capture command: `npm run native:capture`
+- Audio implementation: `native_game/audio.py`
 - Task tracker: `tasks/todo.md`
 - Lessons log: `tasks/lessons.md`
 - Dev log: `docs/DEVLOG.md`
