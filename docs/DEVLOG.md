@@ -25,6 +25,13 @@
 - 버튼 선택, 시전, 피격, 보호막, 기절, 승패 사운드 연결
 - 낮은 볼륨의 앰비언트 루프 추가
 
+### WSL 오디오 런타임 보정
+
+- 시스템에 `libpulse0`가 없는 환경을 확인
+- `.vendor/pulse` 아래에 필요한 PulseAudio 관련 라이브러리를 번들
+- `native_game/__main__.py`에서 실행 전 `LD_LIBRARY_PATH`와 `SDL_AUDIODRIVER`를 보정하도록 추가
+- `npm run native:play`도 같은 경로를 사용하도록 보강
+
 ### 작업 운영 문서화
 
 - `CLAUDE.md` 추가

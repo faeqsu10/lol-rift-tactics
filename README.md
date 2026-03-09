@@ -44,6 +44,8 @@ npm run native:play
 .venv/bin/python -m native_game
 ```
 
+WSL/Linux 환경에서 시스템 `libpulse0`가 없어도, 저장소에 포함된 런타임 번들을 통해 `npm run native:play`는 소리가 나도록 구성했습니다.
+
 ## 조작
 
 - 마우스로 하단 스킬 버튼 클릭

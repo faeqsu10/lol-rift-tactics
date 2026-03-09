@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "test": "tsx --test src/**/*.test.ts",
     "native:setup": "python3 -m venv .venv && .venv/bin/pip install -r requirements-native.txt",
-    "native:play": ".venv/bin/python -m native_game",
+    "native:play": "LD_LIBRARY_PATH=\"$PWD/.vendor/pulse/extracted/usr/lib/x86_64-linux-gnu:$PWD/.vendor/pulse/extracted/usr/lib/x86_64-linux-gnu/pulseaudio:${LD_LIBRARY_PATH:-}\" SDL_AUDIODRIVER=\"${SDL_AUDIODRIVER:-pulseaudio}\" .venv/bin/python -m native_game",
     "native:test": ".venv/bin/python -m native_game.tests",
     "native:smoke": "SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy .venv/bin/python -m native_game --headless --frames 10",
     "native:capture": "SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy .venv/bin/python -m native_game --headless --frames 2 --screenshot /tmp/rift-tactics-native.png"

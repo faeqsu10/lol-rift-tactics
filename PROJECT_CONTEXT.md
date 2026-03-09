@@ -34,6 +34,7 @@
   - champion icon art applied to battlefield units and side panels
   - upgraded battlefield presentation, UI panels, and champion standees
   - procedural sound effects and ambient audio
+  - vendored PulseAudio runtime fallback for WSL/Linux environments missing `libpulse0`
   - animated unit idle/cast/hit states
   - projectile and ring effects
   - floating combat text
@@ -48,6 +49,8 @@
 - Native tests: `.venv/bin/python -m native_game.tests`
 - Screenshot capture command: `npm run native:capture`
 - Audio implementation: `native_game/audio.py`
+- Runtime bootstrap: `native_game/__main__.py`
+- Vendored WSL audio libs: `.vendor/pulse/extracted/usr/lib/x86_64-linux-gnu`
 - Task tracker: `tasks/todo.md`
 - Lessons log: `tasks/lessons.md`
 - Dev log: `docs/DEVLOG.md`

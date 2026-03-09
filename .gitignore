@@ -7,3 +7,6 @@ vite.config.d.ts
 __pycache__
 *.pyc
 스크린샷 *.png
+.vendor/pulse/*.deb
+.vendor/pulse/extracted/etc
+.vendor/pulse/extracted/usr/share

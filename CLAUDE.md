@@ -28,7 +28,8 @@ native_game/
 ├── audio.py        # 절차형 효과음과 앰비언트 오디오
 ├── combat.py       # 턴제 전투 상태와 해석
 ├── data.py         # 챔피언/스킬 정의
-└── tests.py        # 전투 규칙 테스트
+├── tests.py        # 전투 규칙 테스트
+└── __main__.py     # 런타임 부트스트랩과 실행 진입점
 
 src/
 ├── App.tsx
