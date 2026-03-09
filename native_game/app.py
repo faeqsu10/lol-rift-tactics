@@ -10,6 +10,7 @@ import pygame
 
 from .audio import SoundBank
 from .combat import BattleAction, BattleController, CombatUnit
+from .data import BLUEPRINTS_BY_ID, DEFAULT_BLUE_IDS, SELECTABLE_BLUE_IDS, SELECTABLE_RED_IDS
 
 WINDOW_WIDTH = 1600
 WINDOW_HEIGHT = 960
@@ -27,9 +28,13 @@ CHAMPION_ART_FILES = {
     "blue-garen": "Garen.png",
     "blue-ahri": "Ahri.png",
     "blue-jinx": "Jinx.png",
+    "blue-lux": "Lux.png",
+    "blue-vi": "Vi.png",
     "red-darius": "Darius.png",
     "red-annie": "Annie.png",
     "red-caitlyn": "Caitlyn.png",
+    "red-morgana": "Morgana.png",
+    "red-yasuo": "Yasuo.png",
 }
 
 
@@ -153,7 +158,18 @@ class GameApp:
         self.font_large = load_font(28, bold=True)
         self.font_title = load_font(44, bold=True)
 
-        self.controller = BattleController()
+        self.screen_mode = "select"
+        self.selected_blue_ids = list(DEFAULT_BLUE_IDS)
+        self.selected_red_ids = self._random_enemy_lineup()
+        self.selection_message = "플레이어 팀 3명을 고른 뒤 전투를 시작하세요."
+        self.selection_card_rects: dict[str, pygame.Rect] = {}
+        self.selection_slot_rects: list[pygame.Rect] = []
+        self.enemy_card_rects: dict[str, pygame.Rect] = {}
+        self.start_battle_button = pygame.Rect(1120, 824, 200, 54)
+        self.reroll_enemy_button = pygame.Rect(1120, 758, 200, 50)
+        self.return_to_select_button = pygame.Rect(WINDOW_WIDTH - 388, 42, 154, 42)
+
+        self.controller = BattleController(self.selected_blue_ids, self.selected_red_ids)
         self.selected_ability_id: str | None = None
         self.preview_action: BattleAction | None = None
         self.pending_resolution: tuple[str, str | None] | None = None
@@ -224,25 +240,117 @@ class GameApp:
         output.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
         return output
 
+    def _random_enemy_lineup(self) -> list[str]:
+        return random.sample(list(SELECTABLE_RED_IDS), 3)
+
+    def _rebuild_controller(self) -> None:
+        self.controller = BattleController(self.selected_blue_ids, self.selected_red_ids)
+        self.selected_ability_id = None
+        self.preview_action = None
+        self.pending_resolution = None
+        self.preview_timer = 0.0
+        self.ai_think_timer = 0.45
+        self.last_action_timer = 0.0
+        self.floaters.clear()
+        self.projectiles.clear()
+        self.rings.clear()
+        self.fx_state = {unit.id: UnitFxState() for unit in self.controller.units}
+        self.unit_hitboxes.clear()
+
+    def _start_selected_battle(self) -> None:
+        if len(self.selected_blue_ids) != 3:
+            self.selection_message = "플레이어 팀 3명을 모두 선택해야 합니다."
+            return
+
+        self._rebuild_controller()
+        self.screen_mode = "battle"
+        self.selection_message = "플레이어 팀 3명을 고른 뒤 전투를 시작하세요."
+        self.audio.play("ui-confirm")
+
+    def _return_to_select(self) -> None:
+        self.screen_mode = "select"
+        self.selected_ability_id = None
+        self.preview_action = None
+        self.pending_resolution = None
+        self.preview_timer = 0.0
+        self.audio.play("ui-select")
+
+    def _handle_select_screen_click(self, position: tuple[int, int]) -> None:
+        if self.start_battle_button.collidepoint(position):
+            self._start_selected_battle()
+            return
+
+        if self.reroll_enemy_button.collidepoint(position):
+            self.selected_red_ids = self._random_enemy_lineup()
+            self.selection_message = "적 조합을 다시 섞었습니다."
+            self.audio.play("ui-select")
+            return
+
+        for champion_id, rect in self.selection_card_rects.items():
+            if rect.collidepoint(position):
+                self._toggle_blue_selection(champion_id)
+                return
+
+        for index, rect in enumerate(self.selection_slot_rects):
+            if rect.collidepoint(position) and index < len(self.selected_blue_ids):
+                removed = self.selected_blue_ids.pop(index)
+                removed_name = BLUEPRINTS_BY_ID[removed].name
+                self.selection_message = f"{removed_name} 선택을 해제했습니다."
+                self.audio.play("ui-select")
+                return
+
+    def _toggle_blue_selection(self, champion_id: str) -> None:
+        blueprint = BLUEPRINTS_BY_ID[champion_id]
+        if champion_id in self.selected_blue_ids:
+            self.selected_blue_ids.remove(champion_id)
+            self.selection_message = f"{blueprint.name} 선택을 해제했습니다."
+            self.audio.play("ui-select")
+            return
+
+        if len(self.selected_blue_ids) >= 3:
+            self.selection_message = "플레이어 팀은 3명까지만 선택할 수 있습니다."
+            self.audio.play("reset")
+            return
+
+        self.selected_blue_ids.append(champion_id)
+        self.selection_message = f"{blueprint.name}을(를) 플레이어 팀에 추가했습니다."
+        self.audio.play("ui-confirm")
+
     def _handle_events(self) -> None:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
-                    self.running = False
+                    if self.screen_mode == "battle":
+                        self._return_to_select()
+                    else:
+                        self.running = False
                 elif event.key == pygame.K_r:
-                    self._reset()
-                elif event.key in (pygame.K_1, pygame.K_KP1):
+                    if self.screen_mode == "battle":
+                        self._reset()
+                    else:
+                        self.selected_blue_ids = list(DEFAULT_BLUE_IDS)
+                        self.selected_red_ids = self._random_enemy_lineup()
+                        self.selection_message = "기본 조합으로 되돌렸습니다."
+                        self.audio.play("reset")
+                elif self.screen_mode == "battle" and event.key in (pygame.K_1, pygame.K_KP1):
                     self._select_ability_index(0)
-                elif event.key in (pygame.K_2, pygame.K_KP2):
+                elif self.screen_mode == "battle" and event.key in (pygame.K_2, pygame.K_KP2):
                     self._select_ability_index(1)
-                elif event.key in (pygame.K_3, pygame.K_KP3):
+                elif self.screen_mode == "battle" and event.key in (pygame.K_3, pygame.K_KP3):
                     self._select_ability_index(2)
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                self._handle_click(event.pos)
+                if self.screen_mode == "select":
+                    self._handle_select_screen_click(event.pos)
+                else:
+                    self._handle_click(event.pos)
 
     def _update(self, dt: float) -> None:
+        if self.screen_mode != "battle":
+            self.camera_offset.update(0, 0)
+            return
+
         if self.preview_action is not None:
             self.preview_timer -= dt
             if self.preview_timer <= 0 and self.pending_resolution is not None:
@@ -301,6 +409,8 @@ class GameApp:
             self.camera_offset.update(0, 0)
 
     def _select_ability_index(self, index: int) -> None:
+        if self.screen_mode != "battle":
+            return
         active = self.controller.get_active_unit()
         if active is None or active.team != "blue" or self.preview_action is not None:
             return
@@ -309,6 +419,10 @@ class GameApp:
         self._handle_ability_click(active.abilities[index].id)
 
     def _handle_click(self, position: tuple[int, int]) -> None:
+        if self.return_to_select_button.collidepoint(position):
+            self._return_to_select()
+            return
+
         if self.reset_button.collidepoint(position):
             self._reset()
             return
@@ -506,17 +620,7 @@ class GameApp:
             self.audio.play("defeat")
 
     def _reset(self) -> None:
-        self.controller.reset()
-        self.selected_ability_id = None
-        self.preview_action = None
-        self.pending_resolution = None
-        self.preview_timer = 0.0
-        self.ai_think_timer = 0.45
-        self.last_action_timer = 0.0
-        self.floaters.clear()
-        self.projectiles.clear()
-        self.rings.clear()
-        self.fx_state = {unit.id: UnitFxState() for unit in self.controller.units}
+        self._rebuild_controller()
         self.audio.play("reset")
 
     def _unit_anchor(self, unit_id: str) -> pygame.Vector2:
@@ -679,6 +783,9 @@ class GameApp:
 
     def _draw(self) -> None:
         self.screen.blit(self.background_cache, (0, 0))
+        if self.screen_mode == "select":
+            self._draw_selection_screen()
+            return
         self._draw_header()
         self._draw_side_panel(LEFT_PANEL, "플레이어 팀", "blue")
         self._draw_side_panel(RIGHT_PANEL, "적 팀", "red")
@@ -686,6 +793,172 @@ class GameApp:
         self._draw_action_panel()
         self._draw_log_panel()
         self._draw_winner_overlay()
+
+    def _draw_selection_screen(self) -> None:
+        self._draw_header()
+
+        left_rect = pygame.Rect(46, 124, 884, 784)
+        right_rect = pygame.Rect(958, 124, 596, 784)
+        slots_rect = pygame.Rect(left_rect.x + 18, left_rect.y + 18, left_rect.width - 36, 176)
+        pool_rect = pygame.Rect(left_rect.x + 18, left_rect.y + 214, left_rect.width - 36, left_rect.height - 232)
+
+        self._draw_panel(left_rect, (77, 157, 214), glow=True)
+        self._draw_panel(right_rect, (212, 105, 86), glow=True)
+
+        self._draw_text("플레이어 팀 선택", self.font_heading, (244, 239, 225), (left_rect.x + 22, left_rect.y + 18))
+        self._draw_text("3명을 골라 전투를 시작하세요", self.font_small, (144, 177, 198), (left_rect.x + 24, left_rect.y + 50))
+        self._draw_text("적 조합 미리보기", self.font_heading, (244, 239, 225), (right_rect.x + 22, right_rect.y + 18))
+        self._draw_text("재추첨으로 다른 상대를 볼 수 있습니다", self.font_small, (180, 160, 154), (right_rect.x + 24, right_rect.y + 50))
+
+        self._draw_selection_slots(slots_rect)
+        self._draw_selection_pool(pool_rect)
+        self._draw_enemy_preview(right_rect)
+
+    def _draw_selection_slots(self, rect: pygame.Rect) -> None:
+        title_rect = pygame.Rect(rect.x, rect.y, rect.width, 34)
+        self._draw_text("출전 라인업", self.font_ui, (229, 210, 164), (title_rect.x, title_rect.y))
+        self._draw_text(f"{len(self.selected_blue_ids)}/3 선택", self.font_small, (128, 164, 188), (title_rect.right, title_rect.y + 4), align_right=True)
+
+        self.selection_slot_rects = []
+        slot_width = 250
+        gap = 22
+        start_x = rect.x
+        y = rect.y + 48
+        for index in range(3):
+            slot_rect = pygame.Rect(start_x + index * (slot_width + gap), y, slot_width, 112)
+            self.selection_slot_rects.append(slot_rect)
+            fill = pygame.Surface(slot_rect.size, pygame.SRCALPHA)
+            draw_vertical_gradient(fill, fill.get_rect(), (11, 21, 32), (17, 30, 44))
+            pygame.draw.rect(fill, (255, 255, 255, 12), fill.get_rect(), border_radius=22)
+            pygame.draw.rect(fill, (236, 218, 176), fill.get_rect(), 1, border_radius=22)
+            self.screen.blit(fill, slot_rect.topleft)
+
+            if index < len(self.selected_blue_ids):
+                champion_id = self.selected_blue_ids[index]
+                blueprint = BLUEPRINTS_BY_ID[champion_id]
+                self._draw_selection_slot_card(slot_rect, blueprint, index + 1)
+            else:
+                ghost_rect = pygame.Rect(slot_rect.x + 18, slot_rect.y + 18, 76, 76)
+                pygame.draw.rect(self.screen, (32, 49, 65), ghost_rect, border_radius=18)
+                pygame.draw.rect(self.screen, (236, 218, 176), ghost_rect, 1, border_radius=18)
+                self._draw_text("+", self.font_large, (122, 155, 177), ghost_rect.center, center=True)
+                self._draw_text("빈 슬롯", self.font_ui, (180, 192, 204), (slot_rect.x + 110, slot_rect.y + 26))
+                self._draw_text("아래 챔피언을 눌러 추가", self.font_small, (118, 145, 162), (slot_rect.x + 110, slot_rect.y + 58))
+
+    def _draw_selection_slot_card(self, rect: pygame.Rect, blueprint, order: int) -> None:
+        accent = hex_to_rgb(blueprint.accent)
+        badge_rect = pygame.Rect(rect.x + 14, rect.y + 14, 28, 28)
+        pygame.draw.rect(self.screen, accent, badge_rect, border_radius=9)
+        pygame.draw.rect(self.screen, (12, 20, 31), badge_rect, 1, border_radius=9)
+        self._draw_text(str(order), self.font_small, (11, 18, 27), badge_rect.center, center=True)
+
+        portrait_rect = pygame.Rect(rect.x + 50, rect.y + 14, 74, 74)
+        self._draw_portrait_art(blueprint.id, portrait_rect, accent)
+        self._draw_text(blueprint.name, self.font_ui, (244, 239, 225), (rect.x + 138, rect.y + 20))
+        self._draw_text(blueprint.role, self.font_small, accent, (rect.x + 138, rect.y + 48))
+        self._draw_text("클릭해서 제거", self.font_small, (150, 169, 183), (rect.x + 138, rect.y + 72))
+
+    def _draw_selection_pool(self, rect: pygame.Rect) -> None:
+        self.selection_card_rects.clear()
+        columns = 2
+        card_width = 404
+        card_height = 146
+        gap_x = 18
+        gap_y = 18
+
+        for index, champion_id in enumerate(SELECTABLE_BLUE_IDS):
+            blueprint = BLUEPRINTS_BY_ID[champion_id]
+            col = index % columns
+            row = index // columns
+            card_rect = pygame.Rect(
+                rect.x + col * (card_width + gap_x),
+                rect.y + row * (card_height + gap_y),
+                card_width,
+                card_height,
+            )
+            self.selection_card_rects[champion_id] = card_rect
+            selected = champion_id in self.selected_blue_ids
+            order = self.selected_blue_ids.index(champion_id) + 1 if selected else None
+            self._draw_selection_pool_card(card_rect, blueprint, selected, order)
+
+        footer_rect = pygame.Rect(rect.x, rect.bottom - 52, rect.width, 40)
+        self._draw_text(self.selection_message, self.font_small, (208, 219, 226), (footer_rect.x + 4, footer_rect.y + 8))
+
+    def _draw_selection_pool_card(self, rect: pygame.Rect, blueprint, selected: bool, order: int | None) -> None:
+        accent = hex_to_rgb(blueprint.accent)
+        card = pygame.Surface(rect.size, pygame.SRCALPHA)
+        base_top = (14, 24, 37) if not selected else (19, 47, 55)
+        base_bottom = (20, 32, 46) if not selected else (22, 61, 70)
+        draw_vertical_gradient(card, card.get_rect(), base_top, base_bottom)
+        pygame.draw.rect(card, (*accent, 18 if not selected else 42), card.get_rect(), border_radius=24)
+        pygame.draw.rect(card, (236, 218, 176) if not selected else (108, 224, 203), card.get_rect(), 1, border_radius=24)
+        self.screen.blit(card, rect.topleft)
+
+        portrait_rect = pygame.Rect(rect.x + 16, rect.y + 16, 116, 116)
+        self._draw_portrait_art(blueprint.id, portrait_rect, accent)
+        self._draw_text(blueprint.name, self.font_heading, (244, 239, 225), (rect.x + 148, rect.y + 16))
+        self._draw_text(blueprint.title, self.font_small, (176, 195, 208), (rect.x + 148, rect.y + 48))
+        self._draw_text(f"{blueprint.role}  |  체력 {blueprint.max_hp}  |  속도 {blueprint.speed}", self.font_small, accent, (rect.x + 148, rect.y + 74))
+        self._draw_wrapped_text(
+            blueprint.abilities[0].description,
+            self.font_small,
+            (214, 222, 229),
+            pygame.Rect(rect.x + 148, rect.y + 98, rect.width - 164, 38),
+            max_lines=2,
+        )
+
+        if selected and order is not None:
+            badge_rect = pygame.Rect(rect.right - 46, rect.y + 14, 28, 28)
+            pygame.draw.rect(self.screen, (95, 222, 201), badge_rect, border_radius=10)
+            pygame.draw.rect(self.screen, (10, 18, 29), badge_rect, 1, border_radius=10)
+            self._draw_text(str(order), self.font_small, (10, 18, 29), badge_rect.center, center=True)
+
+    def _draw_enemy_preview(self, rect: pygame.Rect) -> None:
+        pygame.draw.rect(self.screen, (214, 182, 112), self.reroll_enemy_button, border_radius=15)
+        pygame.draw.rect(self.screen, (255, 244, 217), self.reroll_enemy_button, 1, border_radius=15)
+        self._draw_text("적 재추첨", self.font_ui, (12, 20, 31), self.reroll_enemy_button.center, center=True)
+
+        start_fill = (214, 182, 112) if len(self.selected_blue_ids) == 3 else (68, 78, 92)
+        start_text = (12, 20, 31) if len(self.selected_blue_ids) == 3 else (188, 196, 204)
+        pygame.draw.rect(self.screen, start_fill, self.start_battle_button, border_radius=17)
+        pygame.draw.rect(self.screen, (255, 244, 217), self.start_battle_button, 1, border_radius=17)
+        self._draw_text("전투 시작", self.font_heading, start_text, self.start_battle_button.center, center=True)
+
+        self.enemy_card_rects.clear()
+        for index, champion_id in enumerate(self.selected_red_ids):
+            blueprint = BLUEPRINTS_BY_ID[champion_id]
+            card_rect = pygame.Rect(rect.x + 20, rect.y + 118 + index * 182, rect.width - 40, 164)
+            self.enemy_card_rects[champion_id] = card_rect
+            accent = hex_to_rgb(blueprint.accent)
+            card = pygame.Surface(card_rect.size, pygame.SRCALPHA)
+            draw_vertical_gradient(card, card.get_rect(), (28, 18, 18), (40, 23, 22))
+            pygame.draw.rect(card, (*accent, 20), card.get_rect(), border_radius=24)
+            pygame.draw.rect(card, (236, 218, 176), card.get_rect(), 1, border_radius=24)
+            self.screen.blit(card, card_rect.topleft)
+            portrait_rect = pygame.Rect(card_rect.x + 16, card_rect.y + 16, 120, 120)
+            self._draw_portrait_art(champion_id, portrait_rect, accent)
+            self._draw_text(blueprint.name, self.font_heading, (244, 239, 225), (card_rect.x + 154, card_rect.y + 18))
+            self._draw_text(blueprint.title, self.font_small, (200, 175, 170), (card_rect.x + 154, card_rect.y + 50))
+            self._draw_text(f"{blueprint.role}  |  체력 {blueprint.max_hp}  |  속도 {blueprint.speed}", self.font_small, accent, (card_rect.x + 154, card_rect.y + 76))
+            self._draw_wrapped_text(
+                blueprint.abilities[0].description,
+                self.font_small,
+                (221, 222, 228),
+                pygame.Rect(card_rect.x + 154, card_rect.y + 104, card_rect.width - 170, 38),
+                max_lines=2,
+            )
+
+    def _draw_portrait_art(self, champion_id: str, rect: pygame.Rect, accent: tuple[int, int, int]) -> None:
+        panel = pygame.Surface(rect.size, pygame.SRCALPHA)
+        draw_vertical_gradient(panel, panel.get_rect(), (12, 21, 31), (16, 28, 42))
+        pygame.draw.rect(panel, (*accent, 26), panel.get_rect(), border_radius=20)
+        pygame.draw.rect(panel, (236, 218, 176), panel.get_rect(), 1, border_radius=20)
+        self.screen.blit(panel, rect.topleft)
+        art = self.champion_art.get(champion_id)
+        if art is None:
+            return
+        portrait = self._masked_art_surface(art, (rect.width - 8, rect.height - 8), border_radius=18)
+        self.screen.blit(portrait, portrait.get_rect(center=rect.center))
 
     def _draw_panel(self, rect: pygame.Rect, accent: tuple[int, int, int], *, glow: bool = False) -> None:
         panel = pygame.Surface(rect.size, pygame.SRCALPHA)
@@ -702,24 +975,35 @@ class GameApp:
     def _draw_header(self) -> None:
         self._draw_panel(HEADER_RECT, (214, 182, 112), glow=True)
         title = "리그 오브 레전드: 리프트 택틱스"
-        active = self.controller.get_active_unit()
-        status = (
-            "전투 종료"
-            if self.controller.state.winner
-            else f"{self.preview_action.ability_name} 시전 중"
-            if self.preview_action
-            else f"{active.name} 행동 대기"
-            if active
-            else "대기 중"
-        )
+        if self.screen_mode == "select":
+            status = "챔피언 선택"
+        else:
+            active = self.controller.get_active_unit()
+            status = (
+                "전투 종료"
+                if self.controller.state.winner
+                else f"{self.preview_action.ability_name} 시전 중"
+                if self.preview_action
+                else f"{active.name} 행동 대기"
+                if active
+                else "대기 중"
+            )
         self._draw_text(title, self.font_large, (244, 239, 225), (52, 44))
-        self._draw_text(f"라운드 {self.controller.state.round}", self.font_ui, (220, 188, 118), (52, 73))
+        if self.screen_mode == "select":
+            self._draw_text("전투 전 준비", self.font_ui, (220, 188, 118), (52, 73))
+        else:
+            self._draw_text(f"라운드 {self.controller.state.round}", self.font_ui, (220, 188, 118), (52, 73))
         self._draw_text(status, self.font_ui, (192, 229, 235), (WINDOW_WIDTH // 2, 56), center=True)
 
         button_color = (214, 182, 112)
-        pygame.draw.rect(self.screen, button_color, self.reset_button, border_radius=15)
-        pygame.draw.rect(self.screen, (255, 244, 217), self.reset_button, 1, border_radius=15)
-        self._draw_text("R 재시작", self.font_ui, (12, 20, 31), self.reset_button.center, center=True)
+        if self.screen_mode == "battle":
+            pygame.draw.rect(self.screen, (44, 72, 97), self.return_to_select_button, border_radius=15)
+            pygame.draw.rect(self.screen, (215, 232, 242), self.return_to_select_button, 1, border_radius=15)
+            self._draw_text("조합 선택", self.font_ui, (233, 240, 245), self.return_to_select_button.center, center=True)
+
+            pygame.draw.rect(self.screen, button_color, self.reset_button, border_radius=15)
+            pygame.draw.rect(self.screen, (255, 244, 217), self.reset_button, 1, border_radius=15)
+            self._draw_text("R 재시작", self.font_ui, (12, 20, 31), self.reset_button.center, center=True)
 
     def _draw_side_panel(self, rect: pygame.Rect, label: str, team: str) -> None:
         accent = (64, 158, 214) if team == "blue" else (212, 105, 86)

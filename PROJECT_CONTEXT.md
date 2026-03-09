@@ -28,6 +28,7 @@
 - A web prototype still exists locally under `src/*`, but it is no longer the preferred gameplay path.
 - A native `Pygame` prototype now exists under `native_game/*`.
 - The native build opens a real game window and supports:
+  - champion select screen before entering combat
   - 3v3 combat
   - player-controlled blue team and AI-controlled red team
   - bundled Korean font rendering
@@ -44,6 +45,9 @@
 - Initial roster:
   - Blue team: Garen, Ahri, Jinx
   - Red team: Darius, Annie, Caitlyn
+- Expanded selectable roster:
+  - Blue pool: Garen, Ahri, Jinx, Lux, Vi
+  - Red pool: Darius, Annie, Caitlyn, Morgana, Yasuo
 - Native dependency file: `requirements-native.txt`
 - Native run command: `.venv/bin/python -m native_game`
 - Native tests: `.venv/bin/python -m native_game.tests`

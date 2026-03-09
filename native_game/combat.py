@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from itertools import count
 from typing import Iterable
 
-from .data import ALL_BLUEPRINTS, Ability, AbilityEffect, ChampionBlueprint, TargetType, TeamId
+from .data import Ability, AbilityEffect, ChampionBlueprint, TargetType, TeamId, build_battle_blueprints
 
 
 @dataclass
@@ -76,8 +76,18 @@ def unit_from_blueprint(blueprint: ChampionBlueprint) -> CombatUnit:
 
 
 class BattleController:
-    def __init__(self) -> None:
-        self.units = [unit_from_blueprint(blueprint) for blueprint in ALL_BLUEPRINTS]
+    def __init__(
+        self,
+        blue_ids: Iterable[str] | None = None,
+        red_ids: Iterable[str] | None = None,
+    ) -> None:
+        self.initial_blue_ids = tuple(blue_ids or ())
+        self.initial_red_ids = tuple(red_ids or ())
+        blueprints = build_battle_blueprints(
+            self.initial_blue_ids or None,
+            self.initial_red_ids or None,
+        )
+        self.units = [unit_from_blueprint(blueprint) for blueprint in blueprints]
         self.state = BattleState(
             round=1,
             turn_queue=self._build_turn_queue(),
@@ -91,7 +101,7 @@ class BattleController:
         self._prime_next_turn()
 
     def reset(self) -> None:
-        self.__init__()
+        self.__init__(self.initial_blue_ids or None, self.initial_red_ids or None)
 
     def get_unit(self, unit_id: str | None) -> CombatUnit | None:
         if not unit_id:

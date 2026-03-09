@@ -10,6 +10,23 @@ class BattleControllerTests(unittest.TestCase):
         controller = BattleController()
         self.assertEqual(controller.get_active_unit().name, "징크스")
 
+    def test_custom_lineup_is_used(self) -> None:
+        controller = BattleController(
+            ("blue-lux", "blue-vi", "blue-ahri"),
+            ("red-yasuo", "red-morgana", "red-caitlyn"),
+        )
+        self.assertEqual(
+            [unit.id for unit in controller.units],
+            [
+                "blue-lux",
+                "blue-vi",
+                "blue-ahri",
+                "red-yasuo",
+                "red-morgana",
+                "red-caitlyn",
+            ],
+        )
+
     def test_enemy_targeting_returns_all_living_enemies(self) -> None:
         controller = BattleController()
         self.assertEqual(

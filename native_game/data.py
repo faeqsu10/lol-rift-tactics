@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Iterable
 from typing import Literal
 
 TeamId = Literal["blue", "red"]
@@ -154,6 +155,84 @@ BLUE_TEAM: tuple[ChampionBlueprint, ...] = (
             ),
         ),
     ),
+    ChampionBlueprint(
+        id="blue-lux",
+        name="럭스",
+        title="광명의 소녀",
+        role="Mage",
+        team="blue",
+        max_hp=76,
+        speed=64,
+        accent="#d9c46a",
+        abilities=(
+            Ability(
+                id="light-binding",
+                name="빛의 속박",
+                description="빛의 구속으로 적을 묶고 피해를 줍니다.",
+                cooldown=2,
+                target_type="enemy",
+                effects=(
+                    AbilityEffect(kind="damage", amount=12),
+                    AbilityEffect(kind="stun", turns=1),
+                ),
+            ),
+            Ability(
+                id="prismatic-barrier",
+                name="프리즘 보호막",
+                description="빛의 장막으로 자신을 보호합니다.",
+                cooldown=2,
+                target_type="self",
+                effects=(AbilityEffect(kind="shield", amount=20),),
+            ),
+            Ability(
+                id="final-spark",
+                name="최후의 섬광",
+                description="전장을 가르는 광선으로 적 전체를 타격합니다.",
+                cooldown=4,
+                target_type="all-enemies",
+                effects=(AbilityEffect(kind="damage", amount=13),),
+            ),
+        ),
+    ),
+    ChampionBlueprint(
+        id="blue-vi",
+        name="바이",
+        title="필트오버의 집행자",
+        role="Vanguard",
+        team="blue",
+        max_hp=94,
+        speed=60,
+        accent="#d781b5",
+        abilities=(
+            Ability(
+                id="vault-breaker",
+                name="금고 부수기",
+                description="강하게 돌진해 적 하나를 강타합니다.",
+                cooldown=1,
+                target_type="enemy",
+                effects=(AbilityEffect(kind="damage", amount=19),),
+            ),
+            Ability(
+                id="blast-shield",
+                name="폭발 보호막",
+                description="가드 자세를 취해 보호막을 얻습니다.",
+                cooldown=2,
+                target_type="self",
+                effects=(AbilityEffect(kind="shield", amount=18),),
+            ),
+            Ability(
+                id="cease-and-desist",
+                name="정지 명령",
+                description="적을 추적해 공중으로 띄우듯 제압합니다.",
+                cooldown=3,
+                target_type="enemy",
+                effects=(
+                    AbilityEffect(kind="damage", amount=22),
+                    AbilityEffect(kind="stun", turns=1),
+                ),
+            ),
+        ),
+    ),
 )
 
 
@@ -269,7 +348,108 @@ RED_TEAM: tuple[ChampionBlueprint, ...] = (
             ),
         ),
     ),
+    ChampionBlueprint(
+        id="red-morgana",
+        name="모르가나",
+        title="타락한 자",
+        role="Mage",
+        team="red",
+        max_hp=80,
+        speed=62,
+        accent="#7d64bf",
+        abilities=(
+            Ability(
+                id="dark-binding",
+                name="어둠의 속박",
+                description="검은 사슬로 적을 묶고 피해를 입힙니다.",
+                cooldown=2,
+                target_type="enemy",
+                effects=(
+                    AbilityEffect(kind="damage", amount=11),
+                    AbilityEffect(kind="stun", turns=1),
+                ),
+            ),
+            Ability(
+                id="black-shield",
+                name="칠흑의 방패",
+                description="어둠의 장막으로 자신을 지켜냅니다.",
+                cooldown=2,
+                target_type="self",
+                effects=(AbilityEffect(kind="shield", amount=22),),
+            ),
+            Ability(
+                id="soul-shackles",
+                name="영혼의 족쇄",
+                description="영혼 사슬로 적 전체를 뒤흔듭니다.",
+                cooldown=4,
+                target_type="all-enemies",
+                effects=(AbilityEffect(kind="damage", amount=12),),
+            ),
+        ),
+    ),
+    ChampionBlueprint(
+        id="red-yasuo",
+        name="야스오",
+        title="용서받지 못한 자",
+        role="Marksman",
+        team="red",
+        max_hp=82,
+        speed=74,
+        accent="#7aa4cd",
+        abilities=(
+            Ability(
+                id="steel-tempest",
+                name="강철 폭풍",
+                description="날카로운 찌르기로 적 하나를 베어냅니다.",
+                cooldown=1,
+                target_type="enemy",
+                effects=(AbilityEffect(kind="damage", amount=17),),
+            ),
+            Ability(
+                id="wind-wall",
+                name="바람 장막",
+                description="순간적인 바람 결계로 자신을 보호합니다.",
+                cooldown=2,
+                target_type="self",
+                effects=(AbilityEffect(kind="shield", amount=16),),
+            ),
+            Ability(
+                id="last-breath",
+                name="최후의 숨결",
+                description="거센 돌진 후 강력한 일격을 꽂아 넣습니다.",
+                cooldown=3,
+                target_type="enemy",
+                effects=(AbilityEffect(kind="damage", amount=23),),
+            ),
+        ),
+    ),
 )
 
 
 ALL_BLUEPRINTS: tuple[ChampionBlueprint, ...] = (*BLUE_TEAM, *RED_TEAM)
+BLUEPRINTS_BY_ID: dict[str, ChampionBlueprint] = {blueprint.id: blueprint for blueprint in ALL_BLUEPRINTS}
+DEFAULT_BLUE_IDS: tuple[str, str, str] = ("blue-garen", "blue-ahri", "blue-jinx")
+DEFAULT_RED_IDS: tuple[str, str, str] = ("red-darius", "red-annie", "red-caitlyn")
+SELECTABLE_BLUE_IDS: tuple[str, ...] = tuple(blueprint.id for blueprint in BLUE_TEAM)
+SELECTABLE_RED_IDS: tuple[str, ...] = tuple(blueprint.id for blueprint in RED_TEAM)
+
+
+def build_battle_blueprints(
+    blue_ids: Iterable[str] | None = None,
+    red_ids: Iterable[str] | None = None,
+) -> tuple[ChampionBlueprint, ...]:
+    selected_blue_ids = tuple(blue_ids or DEFAULT_BLUE_IDS)
+    selected_red_ids = tuple(red_ids or DEFAULT_RED_IDS)
+
+    blue_lineup = tuple(
+        BLUEPRINTS_BY_ID[blueprint_id]
+        for blueprint_id in selected_blue_ids
+        if blueprint_id in BLUEPRINTS_BY_ID and BLUEPRINTS_BY_ID[blueprint_id].team == "blue"
+    )
+    red_lineup = tuple(
+        BLUEPRINTS_BY_ID[blueprint_id]
+        for blueprint_id in selected_red_ids
+        if blueprint_id in BLUEPRINTS_BY_ID and BLUEPRINTS_BY_ID[blueprint_id].team == "red"
+    )
+
+    return (*blue_lineup, *red_lineup)
