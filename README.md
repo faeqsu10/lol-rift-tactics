@@ -96,6 +96,8 @@ npm run native:package
 - `native_tactics` 전투 화면에서 현재 유닛의 패시브와 적의 다음 행동 의도 확인 가능
 - `native_tactics` 전장에 스테이지별 `수풀`, `룬 지대`, `화염 지대`가 배치됨
 - `native_tactics` 2전부터 엘리트 적이 등장하고, 적 의도 패널에 예상 피해와 위협 칸이 함께 표시됨
+- 승리 후 `전투 요약 -> 경로 선택 -> 다음 전투 배치` 흐름으로 이어짐
+- 경로 선택은 다음 전투에 한정되는 실전 보정을 제공하고, AI도 지형/위협을 고려해 움직임
 - 마우스로 하단 스킬 버튼 클릭
 - 단일 대상 스킬은 전장 위 적 챔피언을 클릭해서 사용
 - `1`, `2`, `3`: 스킬 선택
@@ -157,7 +159,7 @@ SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./release/rift-tactics --headless --
 ## 다음 우선순위
 
 - `native_tactics`에 지형과 엘리트를 활용하는 더 나은 AI 추가
-- `native_tactics`에 전투 후 요약과 분기 선택 추가
+- `native_tactics`에 전투 후 요약과 분기 선택 2차 확장 추가
 - `native_tactics`에 챔피언별 고유 패시브 2차 차별화 추가
 - 실제 스프라이트 시트와 캐릭터 아트 적용
 - 공격/피격/사망 전용 애니메이션 세분화

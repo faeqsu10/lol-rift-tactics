@@ -813,10 +813,13 @@ class TacticsController:
             target = self.get_unit(target_id)
             if target is None:
                 return (-999, 0, 0)
+            ability = actor.special_ability if special else actor.basic_ability
+            _, predicted_damage = self._preview_action_outcome(actor, position, ability, "special" if special else "basic", target_id)
+            kill_bonus = 24 if predicted_damage >= target.hp else 0
             stun_bonus = 18 if special and any(effect.kind == "stun" for effect in actor.special_ability.effects) else 0
             low_hp_bonus = max(0, target.max_hp - target.hp)
             speed_bonus = target.speed
-            return (stun_bonus + low_hp_bonus, speed_bonus, -self.distance(position, target.position))
+            return (kill_bonus + stun_bonus + low_hp_bonus, speed_bonus, -self.distance(position, target.position))
 
         return max(target_ids, key=score)
 
@@ -829,14 +832,54 @@ class TacticsController:
         if not enemies:
             return None
 
-        def score(tile: GridPos) -> tuple[int, int, int]:
+        def score(tile: GridPos) -> tuple[int, int, int, int, int, int]:
             nearest_distance = min(self.distance(tile, enemy.position) for enemy in enemies)
-            special_in_range = any(self.distance(tile, enemy.position) <= actor.special_ability.cast_range for enemy in enemies)
-            basic_in_range = any(self.distance(tile, enemy.position) <= actor.basic_ability.cast_range for enemy in enemies)
+            action_kind, _, target_id, _ = self._predict_follow_up_from_position(actor, tile)
+            predicted_damage = 0
+            if target_id and action_kind in {"basic", "special"}:
+                ability = actor.special_ability if action_kind == "special" else actor.basic_ability
+                _, predicted_damage = self._preview_action_outcome(actor, tile, ability, action_kind, target_id)
+            kill_bonus = 0
+            if target_id:
+                target = self.get_unit(target_id)
+                if target is not None and predicted_damage >= target.hp:
+                    kill_bonus = 3
+            terrain_bonus = self._terrain_preference(actor, tile, predicted_damage > 0)
+            threat_penalty = self._enemy_threat_on_tile(tile, actor.team)
             return (
-                2 if special_in_range else 0,
-                1 if basic_in_range else 0,
+                kill_bonus,
+                2 if action_kind == "special" else 1 if action_kind == "basic" else 0,
+                terrain_bonus,
+                predicted_damage,
+                -threat_penalty,
                 -nearest_distance,
             )
 
         return max(reachable, key=score)
+
+    def _enemy_threat_on_tile(self, tile: GridPos, team: TeamId) -> int:
+        pressure = 0
+        for enemy in self.living_units():
+            if enemy.team == team:
+                continue
+            if self.distance(tile, enemy.position) <= enemy.basic_ability.cast_range:
+                pressure += 2
+            elif self.distance(tile, enemy.position) <= enemy.special_ability.cast_range:
+                pressure += 1
+        return pressure
+
+    def _terrain_preference(self, actor: TacticalUnit, tile: GridPos, can_attack: bool) -> int:
+        terrain_id = self._terrain_at(tile)
+        if terrain_id is None:
+            return 0
+        if terrain_id == "hazard":
+            return -8
+        if terrain_id == "brush":
+            if actor.hp / actor.max_hp <= 0.6 or actor.role in {"Marksman", "Mage"}:
+                return 4
+            return 1
+        if terrain_id == "rune":
+            if can_attack:
+                return 5 if actor.is_elite else 4
+            return 1
+        return 0

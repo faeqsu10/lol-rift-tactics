@@ -131,6 +131,22 @@ class TacticsControllerTests(unittest.TestCase):
         self.assertEqual(result.impacts[0].damage, 25)
         self.assertTrue(any("룬 지대 강화 발동." in note for note in result.notes))
 
+    def test_ai_avoids_hazard_when_rune_tile_exists(self) -> None:
+        controller = TacticsController(
+            ("blue-garen",),
+            ("red-brand",),
+            ((0, 2),),
+            ((4, 2),),
+            terrain_tiles={(3, 2): "hazard", (5, 2): "rune"},
+        )
+        controller.blocked_tiles.clear()
+        controller.state.active_unit_id = "red-brand"
+        controller.state.turn_queue = ["red-brand"]
+
+        destination = controller._choose_ai_move(controller.get_unit("red-brand"))
+
+        self.assertNotEqual(destination, (3, 2))
+
 
 class GameAppFlowTests(unittest.TestCase):
     def tearDown(self) -> None:
@@ -148,9 +164,9 @@ class GameAppFlowTests(unittest.TestCase):
         app._select_reward(app.reward_option_ids[0])
         app._advance_after_reward()
 
-        self.assertEqual(app.screen_mode, "deploy")
+        self.assertEqual(app.screen_mode, "route")
         self.assertEqual(app.run_stage, 2)
-        self.assertEqual(len(app.deploy_assignments), 3)
+        self.assertEqual(len(app.route_option_ids), 2)
 
     def test_final_victory_restart_resets_run_stage(self) -> None:
         app = GameApp(headless=True)
@@ -175,6 +191,51 @@ class GameAppFlowTests(unittest.TestCase):
         elite_units = [unit for unit in app.controller.units if unit.team == "red" and unit.is_elite]
         self.assertEqual(len(elite_units), 1)
         self.assertGreater(elite_units[0].max_hp, 102)
+
+    def test_reward_then_route_choice_advances_to_deploy(self) -> None:
+        app = GameApp(headless=True)
+        app._start_deploy()
+        app._start_battle()
+        app._prepare_reward_phase()
+        app._select_reward(app.reward_option_ids[0])
+        app._advance_after_reward()
+
+        self.assertEqual(app.screen_mode, "route")
+        self.assertEqual(len(app.route_option_ids), 2)
+
+        app._select_route(app.route_option_ids[0])
+        app._advance_after_route()
+
+        self.assertEqual(app.screen_mode, "deploy")
+        self.assertIsNotNone(app.current_route_id)
+
+    def test_assault_route_boosts_next_battle_damage(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
+        app.selected_red_ids = ["red-darius", "red-annie", "red-caitlyn"]
+        app.run_stage = 2
+        app.current_route_id = "assault-line"
+        app._seed_deployment()
+
+        controller = app._build_controller_from_current_setup()
+        app._attach_controller(controller)
+
+        garen = app.controller.get_unit("blue-garen")
+        base_damage = next(effect.amount for effect in garen.basic_ability.effects if effect.kind == "damage")
+        self.assertGreaterEqual(base_damage, 20)
+
+    def test_hidden_trail_preview_adds_brush_tiles_to_route_screen(self) -> None:
+        app = GameApp(headless=True)
+        app.run_stage = 2
+
+        base_brush_count = sum(1 for terrain_id in app._terrain_tiles_for_stage().values() if terrain_id == "brush")
+        preview_brush_count = sum(
+            1
+            for terrain_id in app._terrain_tiles_for_stage(route_id="hidden-trail").values()
+            if terrain_id == "brush"
+        )
+
+        self.assertGreater(preview_brush_count, base_brush_count)
 
 
 if __name__ == "__main__":

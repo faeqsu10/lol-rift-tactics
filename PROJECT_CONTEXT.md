@@ -59,7 +59,9 @@
   - enemy intent preview during red turns with predicted damage and threat tiles
   - stage-based terrain tiles: brush, rune, hazard
   - elite enemies in later expedition stages
-  - simple red-team AI movement and targeting
+  - route selection between battles with temporary next-battle modifiers
+  - battle recap summary before choosing the next route
+  - terrain-aware red-team AI movement and targeting
   - post-victory reward pick with next-enemy preview
   - post-battle overlay with direct return to champion select or rematch
   - headless screenshot capture and tests
@@ -96,10 +98,10 @@
 
 ## Recommended Next Steps
 
-1. Add smarter AI that values terrain, elite pressure, and threat zones better.
-2. Add stronger champion-specific passive differentiation and more unique tactical triggers to `native_tactics`.
-3. Add post-battle recap and route selection on top of the current reward loop.
-4. Expand enemy intent UI from one-action preview to multi-target or sequence preview.
+1. Add stronger champion-specific passive differentiation and more unique tactical triggers to `native_tactics`.
+2. Expand enemy intent UI from one-action preview to multi-target or sequence preview.
+3. Add richer route branching and post-battle recap depth on top of the current reward loop.
+4. Improve AI further around elite focus fire and terrain denial.
 5. Replace shape-based placeholder characters with real sprite art or sprite sheets.
 
 ## Resume Prompt

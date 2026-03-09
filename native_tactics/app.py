@@ -59,6 +59,22 @@ STAGE_RED_POOLS = {
     2: ("red-darius", "red-caitlyn", "red-morgana", "red-yasuo", "red-brand", "red-lissandra"),
     3: ("red-darius", "red-yasuo", "red-zed", "red-brand", "red-katarina", "red-lissandra"),
 }
+ROUTE_OPTIONS = (
+    ("supply-line", "보급로", "다음 전투에서 아군 전원 시작 보호막 +8"),
+    ("assault-line", "돌격로", "다음 전투에서 아군 전원 피해 +2"),
+    ("hidden-trail", "은폐로", "다음 전투에 추가 수풀 2개 생성"),
+    ("rune-path", "룬 회랑", "다음 전투에 추가 룬 지대 2개 생성"),
+)
+ROUTE_EXTRA_TERRAIN = {
+    "hidden-trail": {
+        2: {(2, 2): "brush", (5, 3): "brush"},
+        3: {(2, 4): "brush", (5, 1): "brush"},
+    },
+    "rune-path": {
+        2: {(2, 3): "rune", (5, 2): "rune"},
+        3: {(2, 1): "rune", (5, 4): "rune"},
+    },
+}
 
 
 @dataclass
@@ -75,6 +91,25 @@ class RunReward:
     id: str
     name: str
     description: str
+
+
+@dataclass(frozen=True)
+class RouteOption:
+    id: str
+    name: str
+    description: str
+
+
+@dataclass
+class BattleRecap:
+    stage_label: str
+    result_label: str
+    rounds: int
+    blue_damage: int
+    red_damage: int
+    blue_kills: int
+    red_kills: int
+    highlight: str
 
 
 def clamp(value: float, low: float, high: float) -> float:
@@ -142,17 +177,28 @@ class GameApp:
         self.champion_art = self._load_champion_art()
         self.background_cache = self._build_background()
 
-        self.screen_mode: Literal["select", "deploy", "battle", "reward"] = "select"
+        self.screen_mode: Literal["select", "deploy", "battle", "reward", "route"] = "select"
         self.mode = "move"
         self.status_text = ""
         self.selection_message = ""
         self.selected_blue_ids = list(DEFAULT_BLUE_IDS)
         self.run_stage = 1
         self.run_rewards = {reward_id: RunReward(reward_id, name, description) for reward_id, name, description in RUN_REWARDS}
+        self.route_options = {route_id: RouteOption(route_id, name, description) for route_id, name, description in ROUTE_OPTIONS}
         self.run_bonuses = {reward_id: 0 for reward_id in self.run_rewards}
         self.reward_option_ids: list[str] = []
         self.selected_reward_id: str | None = None
+        self.route_option_ids: list[str] = []
+        self.selected_route_id: str | None = None
+        self.current_route_id: str | None = None
         self.pending_red_ids: list[str] = []
+        self.last_battle_recap: BattleRecap | None = None
+        self.battle_stats = {
+            "blue_damage": 0,
+            "red_damage": 0,
+            "blue_kills": 0,
+            "red_kills": 0,
+        }
         self.selected_red_ids = self._random_enemy_lineup(self.run_stage)
         self.deploy_assignments: dict[tuple[int, int], str] = {}
         self.red_deploy_assignments: dict[tuple[int, int], str] = {}
@@ -171,6 +217,7 @@ class GameApp:
         self.selection_slot_rects: list[pygame.Rect] = []
         self.deploy_roster_rects: dict[str, pygame.Rect] = {}
         self.reward_card_rects: dict[str, pygame.Rect] = {}
+        self.route_card_rects: dict[str, pygame.Rect] = {}
         self.selection_message = "플레이어 팀 3명을 고른 뒤 배치 단계로 넘어가세요."
 
     def run(self, max_frames: int | None = None, screenshot_path: str | None = None) -> None:
@@ -214,8 +261,14 @@ class GameApp:
     def _enemy_pool_for_stage(self, stage: int) -> tuple[str, ...]:
         return STAGE_RED_POOLS.get(stage, tuple(SELECTABLE_RED_IDS))
 
-    def _terrain_tiles_for_stage(self, stage: int | None = None) -> dict[tuple[int, int], str]:
-        return dict(STAGE_TERRAIN_TILES.get(stage or self.run_stage, {}))
+    def _terrain_tiles_for_stage(self, stage: int | None = None, route_id: str | None = None) -> dict[tuple[int, int], str]:
+        resolved_stage = stage or self.run_stage
+        tiles = dict(STAGE_TERRAIN_TILES.get(resolved_stage, {}))
+        resolved_route_id = route_id if route_id is not None else self.current_route_id
+        if resolved_route_id in ROUTE_EXTRA_TERRAIN:
+            for tile, terrain_id in ROUTE_EXTRA_TERRAIN[resolved_route_id].get(resolved_stage, {}).items():
+                tiles[tile] = terrain_id
+        return tiles
 
     def _elite_enemy_ids_for_stage(self, stage: int | None = None, lineup: list[str] | None = None) -> tuple[str, ...]:
         current_stage = stage or self.run_stage
@@ -238,8 +291,20 @@ class GameApp:
         self.run_bonuses = {reward_id: 0 for reward_id in self.run_rewards}
         self.reward_option_ids = []
         self.selected_reward_id = None
+        self.route_option_ids = []
+        self.selected_route_id = None
+        self.current_route_id = None
         self.pending_red_ids = []
+        self.last_battle_recap = None
         self.selected_red_ids = self._random_enemy_lineup(self.run_stage)
+
+    def _reset_battle_stats(self) -> None:
+        self.battle_stats = {
+            "blue_damage": 0,
+            "red_damage": 0,
+            "blue_kills": 0,
+            "red_kills": 0,
+        }
 
     def _run_bonus_lines(self) -> list[str]:
         lines: list[str] = []
@@ -256,8 +321,36 @@ class GameApp:
         self.reward_option_ids = random.sample(available_ids, 3)
         self.selected_reward_id = None
         self.pending_red_ids = self._random_enemy_lineup(self.run_stage + 1)
+        self.current_route_id = None
         self.screen_mode = "reward"
         self.selection_message = "보상 하나를 고른 뒤 다음 전투로 넘어가세요."
+
+    def _prepare_route_phase(self) -> None:
+        self.route_option_ids = random.sample(list(self.route_options), 2)
+        self.selected_route_id = None
+        self.screen_mode = "route"
+        self.selection_message = "전투 요약을 확인하고 다음 경로 하나를 선택하세요."
+
+    def _select_route(self, route_id: str) -> None:
+        if route_id not in self.route_option_ids:
+            return
+        self.selected_route_id = route_id
+        self.selection_message = f"{self.route_options[route_id].name} 선택. 다음 전투 배치를 시작할 수 있습니다."
+        self.audio.play("ui-confirm")
+
+    def _advance_after_route(self) -> None:
+        if self.selected_route_id is None:
+            self.selection_message = "먼저 다음 경로 하나를 선택해야 합니다."
+            self.audio.play("reset")
+            return
+        self.current_route_id = self.selected_route_id
+        self.route_option_ids = []
+        self.selected_route_id = None
+        self._seed_deployment()
+        self.screen_mode = "deploy"
+        route_name = self.route_options[self.current_route_id].name
+        self.selection_message = f"{self._current_stage_label()} · {route_name} 경로로 시작 위치를 다시 배치하세요."
+        self.audio.play("ui-confirm")
 
     def _select_reward(self, reward_id: str) -> None:
         if reward_id not in self.reward_option_ids:
@@ -291,10 +384,22 @@ class GameApp:
         self.pending_red_ids = []
         self.reward_option_ids = []
         self.selected_reward_id = None
-        self._seed_deployment()
-        self.screen_mode = "deploy"
-        self.selection_message = f"{self._current_stage_label()} 시작 위치를 다시 배치하세요."
-        self.audio.play("ui-confirm")
+        self._prepare_route_phase()
+
+    def _build_battle_recap(self, result_label: str) -> BattleRecap | None:
+        if self.controller is None:
+            return None
+        highlight = self.controller.state.log[0] if self.controller.state.log else "전투 종료"
+        return BattleRecap(
+            stage_label=self._current_stage_label(),
+            result_label=result_label,
+            rounds=self.controller.state.round,
+            blue_damage=self.battle_stats["blue_damage"],
+            red_damage=self.battle_stats["red_damage"],
+            blue_kills=self.battle_stats["blue_kills"],
+            red_kills=self.battle_stats["red_kills"],
+            highlight=highlight,
+        )
 
     def _seed_deployment(self) -> None:
         self.deploy_assignments = {
@@ -324,6 +429,7 @@ class GameApp:
     def _attach_controller(self, controller: TacticsController) -> None:
         self._apply_run_modifiers(controller)
         self.controller = controller
+        self._reset_battle_stats()
         self.hit_flash = {unit.id: 0.0 for unit in controller.units}
         self.unit_visual_positions = {
             unit.id: pygame.Vector2(self._tile_center(unit.position)) for unit in controller.units
@@ -348,6 +454,8 @@ class GameApp:
         shield_bonus = self.run_bonuses["bonus-shield"] * 12
         enemy_tier = max(0, self.run_stage - 1)
         elite_ids = self._elite_enemy_ids_for_stage(lineup=[unit.id for unit in controller.units if unit.team == "red"])
+        route_damage_bonus = 2 if self.current_route_id == "assault-line" else 0
+        route_shield_bonus = 8 if self.current_route_id == "supply-line" else 0
 
         for unit in controller.units:
             if unit.team == "blue":
@@ -355,9 +463,9 @@ class GameApp:
                 unit.hp = unit.max_hp
                 unit.speed += speed_bonus
                 unit.move_range += move_bonus
-                unit.shield += shield_bonus
-                unit.basic_ability = self._boost_damage_effects(unit.basic_ability, damage_bonus)
-                unit.special_ability = self._boost_damage_effects(unit.special_ability, damage_bonus)
+                unit.shield += shield_bonus + route_shield_bonus
+                unit.basic_ability = self._boost_damage_effects(unit.basic_ability, damage_bonus + route_damage_bonus)
+                unit.special_ability = self._boost_damage_effects(unit.special_ability, damage_bonus + route_damage_bonus)
             else:
                 unit.max_hp += enemy_tier * 8
                 unit.hp = unit.max_hp
@@ -488,6 +596,17 @@ class GameApp:
                 self._handle_click(event.pos)
 
     def _handle_keydown(self, key: int) -> None:
+        if self.screen_mode == "route":
+            if key in {pygame.K_ESCAPE}:
+                self._return_to_select()
+                return
+            if key == pygame.K_r:
+                self._return_to_select()
+                return
+            if key in {pygame.K_RETURN, pygame.K_SPACE}:
+                self._advance_after_route()
+                return
+
         if self.screen_mode == "reward":
             if key in {pygame.K_ESCAPE}:
                 self._return_to_select()
@@ -557,6 +676,8 @@ class GameApp:
         if header_action and header_action.collidepoint(position):
             if self.screen_mode == "battle":
                 self._reset_battle()
+            elif self.screen_mode == "route":
+                self._return_to_select()
             elif self.screen_mode == "reward":
                 self._return_to_select()
             elif self.screen_mode == "deploy":
@@ -572,6 +693,10 @@ class GameApp:
 
         if self.screen_mode == "reward":
             self._handle_reward_click(position)
+            return
+
+        if self.screen_mode == "route":
+            self._handle_route_click(position)
             return
 
         if self.screen_mode == "deploy":
@@ -628,6 +753,18 @@ class GameApp:
         for reward_id, rect in self.reward_card_rects.items():
             if rect.collidepoint(position):
                 self._select_reward(reward_id)
+                return
+
+    def _handle_route_click(self, position: tuple[int, int]) -> None:
+        if self.button_rects.get("route-next") and self.button_rects["route-next"].collidepoint(position):
+            self._advance_after_route()
+            return
+        if self.button_rects.get("route-select") and self.button_rects["route-select"].collidepoint(position):
+            self._return_to_select()
+            return
+        for route_id, rect in self.route_card_rects.items():
+            if rect.collidepoint(position):
+                self._select_route(route_id)
                 return
 
     def _handle_battle_click(self, position: tuple[int, int]) -> None:
@@ -761,6 +898,7 @@ class GameApp:
                 self.ai_timer = 0.55
 
     def _apply_action_result(self, result: TacticalActionResult) -> None:
+        actor = self.controller.get_unit(result.actor_id) if self.controller else None
         if result.kind == "move":
             self.audio.play("ui-confirm", champion_id=result.actor_id)
         elif result.kind == "end":
@@ -778,6 +916,15 @@ class GameApp:
             if unit is None:
                 continue
             anchor = self.unit_visual_positions[unit.id]
+            if actor is not None:
+                if actor.team == "blue":
+                    self.battle_stats["blue_damage"] += impact.damage
+                    if impact.defeated:
+                        self.battle_stats["blue_kills"] += 1
+                else:
+                    self.battle_stats["red_damage"] += impact.damage
+                    if impact.defeated:
+                        self.battle_stats["red_kills"] += 1
             if impact.damage:
                 any_damage = True
                 self.hit_flash[unit.id] = 0.28
@@ -813,6 +960,7 @@ class GameApp:
 
         if self.controller and self.controller.state.winner == "blue":
             self.audio.play("victory")
+            self.last_battle_recap = self._build_battle_recap("승리")
             if self.run_stage < RUN_STAGE_COUNT:
                 self.status_text = f"{self._current_stage_label()} 승리. 전투 보상을 선택하세요."
                 self._prepare_reward_phase()
@@ -820,6 +968,7 @@ class GameApp:
                 self.status_text = "최종 결전을 승리했습니다."
         elif self.controller and self.controller.state.winner == "red":
             self.audio.play("defeat")
+            self.last_battle_recap = self._build_battle_recap("패배")
             self.status_text = f"{self._current_stage_label()}에서 패배했습니다."
 
     def _draw(self) -> None:
@@ -827,10 +976,13 @@ class GameApp:
         self.button_rects.clear()
         self.tile_rects.clear()
         self.reward_card_rects.clear()
+        self.route_card_rects.clear()
         if self.screen_mode == "select":
             self._draw_selection_screen()
         elif self.screen_mode == "reward":
             self._draw_reward_screen()
+        elif self.screen_mode == "route":
+            self._draw_route_screen()
         elif self.screen_mode == "deploy":
             self._draw_deploy_screen()
         else:
@@ -1010,7 +1162,102 @@ class GameApp:
         enabled = self.selected_reward_id is not None
         pygame.draw.rect(self.screen, (214, 182, 112) if enabled else (76, 84, 96), next_rect, border_radius=15)
         pygame.draw.rect(self.screen, (255, 244, 217), next_rect, 1, border_radius=15)
-        self._draw_text("다음 전투", self.font_ui, (12, 20, 31) if enabled else (188, 196, 204), next_rect.center, center=True)
+        self._draw_text("경로 선택", self.font_ui, (12, 20, 31) if enabled else (188, 196, 204), next_rect.center, center=True)
+
+    def _draw_route_screen(self) -> None:
+        self._draw_header(
+            "리그 오브 레전드: 리프트 택틱스",
+            "전투 요약과 경로 선택",
+            f"{self._current_stage_label()} 진입 준비",
+            "선택으로",
+        )
+        self._draw_panel(SELECT_LEFT_PANEL, (74, 157, 214))
+        self._draw_panel(SELECT_RIGHT_PANEL, (214, 182, 112))
+        self._draw_text("전투 요약", self.font_heading, (244, 239, 225), (SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 18))
+        self._draw_text(self.selection_message, self.font_small, (167, 192, 212), (SELECT_LEFT_PANEL.x + 24, SELECT_LEFT_PANEL.y + 52))
+        self._draw_text("다음 경로 선택", self.font_heading, (244, 239, 225), (SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.y + 18))
+        self._draw_text("다음 전투에 적용할 경로 보정을 하나 선택하세요", self.font_small, (198, 176, 168), (SELECT_RIGHT_PANEL.x + 24, SELECT_RIGHT_PANEL.y + 52))
+
+        recap = self.last_battle_recap
+        overview_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 96, SELECT_LEFT_PANEL.width - 44, 120)
+        pygame.draw.rect(self.screen, (11, 20, 31), overview_rect, border_radius=24)
+        pygame.draw.rect(self.screen, (236, 218, 176), overview_rect, 1, border_radius=24)
+        if recap is not None:
+            self._draw_text(f"{recap.stage_label} · {recap.result_label}", self.font_heading, (244, 239, 225), (overview_rect.x + 18, overview_rect.y + 16))
+            self._draw_text(f"전투 라운드 {recap.rounds}", self.font_ui, (223, 206, 164), (overview_rect.x + 18, overview_rect.y + 54))
+            self._draw_wrapped_text(recap.highlight, self.font_small, (208, 219, 226), pygame.Rect(overview_rect.x + 18, overview_rect.y + 82, overview_rect.width - 36, 24), max_lines=1)
+        else:
+            self._draw_text("직전 전투 기록 없음", self.font_heading, (244, 239, 225), (overview_rect.x + 18, overview_rect.y + 28))
+            self._draw_text("전투 종료 후 핵심 수치와 마지막 로그를 여기서 보여 줍니다.", self.font_small, (208, 219, 226), (overview_rect.x + 18, overview_rect.y + 72))
+
+        stat_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 238, SELECT_LEFT_PANEL.width - 44, 188)
+        pygame.draw.rect(self.screen, (11, 20, 31), stat_rect, border_radius=24)
+        pygame.draw.rect(self.screen, (236, 218, 176), stat_rect, 1, border_radius=24)
+        self._draw_text("핵심 수치", self.font_ui, (229, 210, 164), (stat_rect.x + 18, stat_rect.y + 14))
+        if recap is not None:
+            stats = [
+                f"아군 누적 피해 {recap.blue_damage}",
+                f"적군 누적 피해 {recap.red_damage}",
+                f"아군 처치 {recap.blue_kills}",
+                f"적군 처치 {recap.red_kills}",
+            ]
+            for index, line in enumerate(stats):
+                self._draw_text(line, self.font_small, (209, 220, 227), (stat_rect.x + 18, stat_rect.y + 52 + index * 28))
+        else:
+            self._draw_text("전투 종료 후 자동 집계", self.font_small, (209, 220, 227), (stat_rect.x + 18, stat_rect.y + 52))
+
+        stage_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 452, SELECT_LEFT_PANEL.width - 44, 400)
+        pygame.draw.rect(self.screen, (11, 20, 31), stage_rect, border_radius=24)
+        pygame.draw.rect(self.screen, (236, 218, 176), stage_rect, 1, border_radius=24)
+        self._draw_text("다음 전투 정보", self.font_ui, (229, 210, 164), (stage_rect.x + 18, stage_rect.y + 14))
+        self._draw_text(f"다음 스테이지: {self._current_stage_label()}", self.font_heading, (244, 239, 225), (stage_rect.x + 18, stage_rect.y + 48))
+        selected_route = self.selected_route_id or self.current_route_id
+        route_hint = "현재 경로 없음" if selected_route is None else f"선택 경로: {self.route_options[selected_route].name}"
+        self._draw_text(route_hint, self.font_small, (171, 193, 208), (stage_rect.x + 18, stage_rect.y + 84))
+        terrain_lines = []
+        terrain_counts: dict[str, int] = {}
+        preview_route_id = self.selected_route_id or self.current_route_id
+        for terrain_id in self._terrain_tiles_for_stage(route_id=preview_route_id).values():
+            terrain_counts[terrain_id] = terrain_counts.get(terrain_id, 0) + 1
+        for terrain_id, count in terrain_counts.items():
+            terrain_lines.append(f"{TERRAIN_BY_ID[terrain_id].name} {count}칸")
+        self._draw_text("지형 구성", self.font_ui, (223, 206, 164), (stage_rect.x + 18, stage_rect.y + 126))
+        for index, line in enumerate(terrain_lines or ["특수 지형 없음"]):
+            self._draw_text(line, self.font_small, hex_to_rgb(TERRAIN_BY_ID[list(terrain_counts)[index]].color) if terrain_counts and index < len(terrain_counts) else (209, 220, 227), (stage_rect.x + 18, stage_rect.y + 160 + index * 26))
+        enemy_line = " · ".join(BLUEPRINTS_BY_ID[champion_id].name for champion_id in self.selected_red_ids)
+        self._draw_wrapped_text(f"적 조합: {enemy_line}", self.font_small, (209, 220, 227), pygame.Rect(stage_rect.x + 18, stage_rect.y + 252, stage_rect.width - 36, 40), max_lines=2)
+
+        for index, route_id in enumerate(self.route_option_ids):
+            rect = pygame.Rect(SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.y + 96 + index * 236, SELECT_RIGHT_PANEL.width - 44, 208)
+            self.route_card_rects[route_id] = rect
+            option = self.route_options[route_id]
+            selected = route_id == self.selected_route_id
+            card = pygame.Surface(rect.size, pygame.SRCALPHA)
+            draw_vertical_gradient(card, card.get_rect(), (22, 46, 58) if selected else (15, 26, 39), (26, 68, 76) if selected else (20, 32, 46))
+            pygame.draw.rect(card, (95, 222, 201, 36) if selected else (214, 182, 112, 18), card.get_rect(), border_radius=24)
+            pygame.draw.rect(card, (108, 224, 203) if selected else (236, 218, 176), card.get_rect(), 1, border_radius=24)
+            self.screen.blit(card, rect.topleft)
+            self._draw_text(option.name, self.font_heading, (244, 239, 225), (rect.x + 18, rect.y + 22))
+            self._draw_wrapped_text(option.description, self.font_ui, (208, 219, 226), pygame.Rect(rect.x + 18, rect.y + 66, rect.width - 36, 54), max_lines=2)
+            extras = {
+                "supply-line": "안정적 운영용 경로",
+                "assault-line": "빠른 킬 압박용 경로",
+                "hidden-trail": "수풀 활용용 경로",
+                "rune-path": "폭딜 연계용 경로",
+            }
+            self._draw_text(extras.get(route_id, ""), self.font_small, (223, 206, 164), (rect.x + 18, rect.y + 142))
+
+        select_rect = pygame.Rect(SELECT_RIGHT_PANEL.x + 32, SELECT_RIGHT_PANEL.bottom - 118, 190, 48)
+        next_rect = pygame.Rect(SELECT_RIGHT_PANEL.right - 242, SELECT_RIGHT_PANEL.bottom - 118, 190, 48)
+        self.button_rects["route-select"] = select_rect
+        self.button_rects["route-next"] = next_rect
+        pygame.draw.rect(self.screen, (70, 80, 92), select_rect, border_radius=15)
+        pygame.draw.rect(self.screen, (255, 244, 217), select_rect, 1, border_radius=15)
+        self._draw_text("선택 화면으로", self.font_ui, (231, 236, 240), select_rect.center, center=True)
+        enabled = self.selected_route_id is not None
+        pygame.draw.rect(self.screen, (214, 182, 112) if enabled else (76, 84, 96), next_rect, border_radius=15)
+        pygame.draw.rect(self.screen, (255, 244, 217), next_rect, 1, border_radius=15)
+        self._draw_text("다음 전투 배치", self.font_ui, (12, 20, 31) if enabled else (188, 196, 204), next_rect.center, center=True)
 
     def _draw_deploy_screen(self) -> None:
         self._draw_header("리그 오브 레전드: 리프트 택틱스", "원정 전술 배치", f"{self._current_stage_label()} · {self.run_stage}/{RUN_STAGE_COUNT}", "선택으로")
