@@ -11,6 +11,7 @@ os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 from .app import GameApp
 from .app import BattleObjective
 from .app import RouteEvent
+from .app import NodeFollowUp
 from .app import RunNode
 from .app import RUN_STAGE_COUNT
 from .app import StageModifier
@@ -646,7 +647,49 @@ class GameAppFlowTests(unittest.TestCase):
         self.assertEqual(len(app.route_option_ids), 3)
         self.assertEqual(set(app.route_option_ids), set(app.route_event_by_route_id))
         self.assertEqual(set(app.route_option_ids), set(app.route_node_by_route_id))
+        self.assertEqual(set(app.route_option_ids), set(app.node_follow_up_by_route_id))
         self.assertEqual(len({node.id for node in app.route_node_by_route_id.values()}), 3)
+
+    def test_node_follow_up_modifies_next_battle_stats(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
+        app.selected_red_ids = ["red-darius", "red-annie", "red-caitlyn"]
+        app.run_stage = 2
+        app.route_option_ids = ["supply-line"]
+        app.route_event_by_route_id = {}
+        app.route_node_by_route_id = {
+            "supply-line": RunNode(
+                id="rest-camp",
+                name="휴식 거점",
+                category="정비 노드",
+                description="테스트용",
+                effect_label="아군 체력 +12 · 보호막 +6 · 예약 페널티 해제",
+                stage_modifiers={"blue_hp": 12, "blue_shield": 6},
+                clears_pending_penalty=True,
+            )
+        }
+        app.node_follow_up_by_route_id = {
+            "supply-line": NodeFollowUp(
+                id="rest-regroup",
+                node_id="rest-camp",
+                name="신속 재집결",
+                description="테스트용",
+                effect_label="이번 전투 아군 속도 +4 · 이동력 +1",
+                stage_modifiers={"blue_speed": 4, "blue_move": 1},
+            )
+        }
+        app.selected_route_id = "supply-line"
+
+        app._advance_after_route()
+        controller = app._build_controller_from_current_setup()
+        app._attach_controller(controller)
+
+        garen = app.controller.get_unit("blue-garen")
+        self.assertIsNotNone(app.current_node_follow_up)
+        self.assertEqual(app.current_node_follow_up.name, "신속 재집결")
+        self.assertEqual(garen.speed, TACTICAL_BLUEPRINTS_BY_ID["blue-garen"].speed + 4)
+        self.assertEqual(garen.move_range, TACTICAL_BLUEPRINTS_BY_ID["blue-garen"].move_range + 1)
+        self.assertIn("신속 재집결", app._current_route_node_summary() or "")
 
     def test_route_event_modifies_next_battle_stats(self) -> None:
         app = GameApp(headless=True)

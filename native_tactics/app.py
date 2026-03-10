@@ -331,6 +331,56 @@ RUN_NODE_TEMPLATES = {
         "extra_elites": 1,
     },
 }
+NODE_FOLLOW_UP_TEMPLATES = {
+    "rest-camp": (
+        {
+            "id": "rest-medic",
+            "name": "의무관 순회",
+            "description": "현장 의무관이 전열을 다시 세우며 체력과 보호막을 보강합니다.",
+            "effect_label": "이번 전투 아군 체력 +6 · 시작 보호막 +4",
+            "stage_modifiers": {"blue_hp": 6, "blue_shield": 4},
+        },
+        {
+            "id": "rest-regroup",
+            "name": "신속 재집결",
+            "description": "짧은 정비 후 재빠르게 재집결해 선턴 대응을 준비합니다.",
+            "effect_label": "이번 전투 아군 속도 +4 · 이동력 +1",
+            "stage_modifiers": {"blue_speed": 4, "blue_move": 1},
+        },
+    ),
+    "event-surge": (
+        {
+            "id": "surge-overdrive",
+            "name": "공명 폭주",
+            "description": "균열 잔광이 무기를 과충전해 공격력을 끌어올립니다.",
+            "effect_label": "이번 전투 아군 피해 +2 · 적 피해 +1",
+            "stage_modifiers": {"blue_damage": 2, "enemy_damage": 1},
+        },
+        {
+            "id": "surge-siphon",
+            "name": "잔광 흡수",
+            "description": "불안정한 파편을 보호막으로 전환해 진입 안정성을 높입니다.",
+            "effect_label": "이번 전투 아군 시작 보호막 +8 · 피해 +1",
+            "stage_modifiers": {"blue_shield": 8, "blue_damage": 1},
+        },
+    ),
+    "elite-contract": (
+        {
+            "id": "elite-bounty",
+            "name": "현상금 표식",
+            "description": "정예 위치가 미리 드러나 블루 팀의 집중 화력이 강해집니다.",
+            "effect_label": "이번 전투 아군 피해 +2 · 속도 +2",
+            "stage_modifiers": {"blue_damage": 2, "blue_speed": 2},
+        },
+        {
+            "id": "elite-breach",
+            "name": "선봉 추적",
+            "description": "추적조가 진입 경로를 열어 이동력과 초반 보호막을 지원합니다.",
+            "effect_label": "이번 전투 아군 이동력 +1 · 시작 보호막 +6",
+            "stage_modifiers": {"blue_move": 1, "blue_shield": 6},
+        },
+    ),
+}
 
 
 @dataclass
@@ -390,6 +440,16 @@ class RunNode:
     extra_elites: int = 0
     victory_reward_id: str | None = None
     victory_reward_label: str | None = None
+
+
+@dataclass(frozen=True)
+class NodeFollowUp:
+    id: str
+    node_id: str
+    name: str
+    description: str
+    effect_label: str
+    stage_modifiers: dict[str, int]
 
 
 @dataclass
@@ -524,10 +584,12 @@ class GameApp:
         self.route_option_ids: list[str] = []
         self.route_event_by_route_id: dict[str, RouteEvent] = {}
         self.route_node_by_route_id: dict[str, RunNode] = {}
+        self.node_follow_up_by_route_id: dict[str, NodeFollowUp] = {}
         self.selected_route_id: str | None = None
         self.current_route_id: str | None = None
         self.current_route_event: RouteEvent | None = None
         self.current_route_node: RunNode | None = None
+        self.current_node_follow_up: NodeFollowUp | None = None
         self.pending_red_ids: list[str] = []
         self.pending_stage_penalty: StageModifier | None = None
         self.active_stage_penalty: StageModifier | None = None
@@ -678,10 +740,12 @@ class GameApp:
         self.route_option_ids = []
         self.route_event_by_route_id = {}
         self.route_node_by_route_id = {}
+        self.node_follow_up_by_route_id = {}
         self.selected_route_id = None
         self.current_route_id = None
         self.current_route_event = None
         self.current_route_node = None
+        self.current_node_follow_up = None
         self.pending_red_ids = []
         self.pending_stage_penalty = None
         self.active_stage_penalty = None
@@ -725,6 +789,7 @@ class GameApp:
         self.current_route_id = None
         self.current_route_event = None
         self.current_route_node = None
+        self.current_node_follow_up = None
         self.active_stage_penalty = None
         self.current_objective = None
         self.screen_mode = "reward"
@@ -759,6 +824,10 @@ class GameApp:
             route_id: self._roll_route_node(node_id)
             for route_id, node_id in zip(self.route_option_ids, node_ids)
         }
+        self.node_follow_up_by_route_id = {
+            route_id: self._roll_node_follow_up(self.route_node_by_route_id[route_id].id)
+            for route_id in self.route_option_ids
+        }
         self.selected_route_id = None
         self.current_objective = None
         self.screen_mode = "route"
@@ -773,12 +842,14 @@ class GameApp:
         self.selected_route_id = route_id
         route_event = self.route_event_by_route_id.get(route_id)
         route_node = self.route_node_by_route_id.get(route_id)
+        node_follow_up = self.node_follow_up_by_route_id.get(route_id)
         node_line = "" if route_node is None else f" · 노드 {route_node.name}"
+        follow_up_line = "" if node_follow_up is None else f" · 후속 {node_follow_up.name}"
         event_line = "" if route_event is None else f" · 이벤트 {route_event.name}"
         penalty_line = ""
         if route_node is not None and route_node.clears_pending_penalty and self.pending_stage_penalty is not None:
             penalty_line = " · 예약 페널티 해제"
-        self.selection_message = f"{self.route_options[route_id].name} 선택{node_line}{event_line}{penalty_line}. 다음 전투 배치를 시작할 수 있습니다."
+        self.selection_message = f"{self.route_options[route_id].name} 선택{node_line}{follow_up_line}{event_line}{penalty_line}. 다음 전투 배치를 시작할 수 있습니다."
         self.audio.play("ui-confirm")
 
     def _advance_after_route(self) -> None:
@@ -789,21 +860,24 @@ class GameApp:
         self.current_route_id = self.selected_route_id
         self.current_route_event = self.route_event_by_route_id.get(self.current_route_id)
         self.current_route_node = self.route_node_by_route_id.get(self.current_route_id)
+        self.current_node_follow_up = self.node_follow_up_by_route_id.get(self.current_route_id)
         cleared_penalty = self.current_route_node is not None and self.current_route_node.clears_pending_penalty
         self.active_stage_penalty = None if cleared_penalty else self.pending_stage_penalty
         self.pending_stage_penalty = None
         self.route_option_ids = []
         self.route_event_by_route_id = {}
         self.route_node_by_route_id = {}
+        self.node_follow_up_by_route_id = {}
         self.selected_route_id = None
         self._seed_deployment()
         self.screen_mode = "deploy"
         route_name = self.route_options[self.current_route_id].name
         node_line = "" if self.current_route_node is None else f" · 노드 {self.current_route_node.name}"
+        follow_up_line = "" if self.current_node_follow_up is None else f" · 후속 {self.current_node_follow_up.name}"
         event_line = "" if self.current_route_event is None else f" · 이벤트 {self.current_route_event.name}"
         penalty_line = "" if self.active_stage_penalty is None else f" · 주의 {self.active_stage_penalty.name}"
         rest_line = " · 예약 페널티 정리" if cleared_penalty else ""
-        self.selection_message = f"{self._current_stage_label()} · {route_name}{node_line}{event_line}{penalty_line}{rest_line}. 시작 위치를 다시 배치하세요."
+        self.selection_message = f"{self._current_stage_label()} · {route_name}{node_line}{follow_up_line}{event_line}{penalty_line}{rest_line}. 시작 위치를 다시 배치하세요."
         self.audio.play("ui-confirm")
 
     def _select_reward(self, reward_id: str) -> None:
@@ -989,6 +1063,17 @@ class GameApp:
             victory_reward_label=victory_reward_label,
         )
 
+    def _roll_node_follow_up(self, node_id: str) -> NodeFollowUp:
+        template = random.choice(NODE_FOLLOW_UP_TEMPLATES[node_id])
+        return NodeFollowUp(
+            id=template["id"],
+            node_id=node_id,
+            name=template["name"],
+            description=template["description"],
+            effect_label=template["effect_label"],
+            stage_modifiers=dict(template["stage_modifiers"]),
+        )
+
     def _scale_modifiers(self, modifiers: dict[str, int], scale: int) -> dict[str, int]:
         if scale == 1:
             return dict(modifiers)
@@ -1032,7 +1117,9 @@ class GameApp:
     def _current_route_node_summary(self) -> str | None:
         if self.current_route_node is None:
             return None
-        return f"{self.current_route_node.name} · {self.current_route_node.effect_label}"
+        if self.current_node_follow_up is None:
+            return f"{self.current_route_node.name} · {self.current_route_node.effect_label}"
+        return f"{self.current_route_node.name} · {self.current_node_follow_up.name} · {self.current_node_follow_up.effect_label}"
 
     def _current_route_event_summary(self) -> str | None:
         if self.current_route_event is None:
@@ -1051,6 +1138,7 @@ class GameApp:
             ROUTE_BONUSES.get(self.current_route_id or "", {}),
             self._route_event_stage_modifiers(self.current_route_event, self.current_route_node),
             self.current_route_node.stage_modifiers if self.current_route_node is not None else {},
+            self.current_node_follow_up.stage_modifiers if self.current_node_follow_up is not None else {},
             self.active_stage_penalty.modifiers if self.active_stage_penalty is not None else {},
         ]
         for source in sources:
@@ -1333,6 +1421,8 @@ class GameApp:
                 controller._push_log(f"{elite_unit.name} 엘리트 특성 · {trait.name}.")
         if self.current_route_node is not None:
             controller._push_log(f"{self.current_route_node.name} 적용 · {self.current_route_node.effect_label}.")
+        if self.current_node_follow_up is not None:
+            controller._push_log(f"{self.current_node_follow_up.name} 발동 · {self.current_node_follow_up.effect_label}.")
         if self.current_route_event is not None:
             controller._push_log(f"{self.current_route_event.name} 적용 · {self._route_event_effect_label(self.current_route_event, self.current_route_node)}.")
         self._reset_battle_stats()
@@ -2215,6 +2305,7 @@ class GameApp:
         self._draw_text(f"다음 스테이지: {self._current_stage_label()}", self.font_heading, (244, 239, 225), (stage_rect.x + 18, stage_rect.y + 48))
         selected_route = self.selected_route_id or self.current_route_id
         selected_node = self.route_node_by_route_id.get(selected_route) if self.selected_route_id else self.current_route_node
+        selected_follow_up = self.node_follow_up_by_route_id.get(selected_route) if self.selected_route_id else self.current_node_follow_up
         preview_objective = self._preview_battle_objective(route_id=selected_route, enemy_ids=self.selected_red_ids)
         route_hint = "현재 경로 없음" if selected_route is None else f"선택 경로: {self.route_options[selected_route].name}"
         self._draw_text(route_hint, self.font_small, (171, 193, 208), (stage_rect.x + 18, stage_rect.y + 84))
@@ -2223,7 +2314,10 @@ class GameApp:
             self._draw_text(f"위험: {ROUTE_RISK_BY_ID[selected_route]}", self.font_small, (233, 156, 140), (stage_rect.x + 18, stage_rect.y + 132))
             if selected_node is not None:
                 self._draw_text(f"노드: {selected_node.name} · {selected_node.category}", self.font_small, (170, 222, 210), (stage_rect.x + 18, stage_rect.y + 156))
-                self._draw_wrapped_text(selected_node.effect_label, self.font_tiny, (209, 220, 227), pygame.Rect(stage_rect.x + 18, stage_rect.y + 178, stage_rect.width - 36, 18), max_lines=1)
+                follow_up_line = selected_node.effect_label
+                if selected_follow_up is not None:
+                    follow_up_line = f"{selected_node.effect_label} / 후속 {selected_follow_up.name}: {selected_follow_up.effect_label}"
+                self._draw_wrapped_text(follow_up_line, self.font_tiny, (209, 220, 227), pygame.Rect(stage_rect.x + 18, stage_rect.y + 178, stage_rect.width - 36, 32), max_lines=2)
             objective_preview_text = (
                 preview_objective.description.replace("목표: ", "")
                 if preview_objective is not None
@@ -2266,6 +2360,7 @@ class GameApp:
             option = self.route_options[route_id]
             route_event = self.route_event_by_route_id.get(route_id)
             route_node = self.route_node_by_route_id.get(route_id)
+            node_follow_up = self.node_follow_up_by_route_id.get(route_id)
             selected = route_id == self.selected_route_id
             card = pygame.Surface(rect.size, pygame.SRCALPHA)
             draw_vertical_gradient(card, card.get_rect(), (22, 46, 58) if selected else (15, 26, 39), (26, 68, 76) if selected else (20, 32, 46))
@@ -2276,7 +2371,10 @@ class GameApp:
             self._draw_text(ROUTE_STYLE_BY_ID[route_id], self.font_small, (223, 206, 164), (rect.x + 18, rect.y + 58))
             self._draw_wrapped_text(option.description, self.font_tiny, (208, 219, 226), pygame.Rect(rect.x + 18, rect.y + 82, rect.width - 36, 16), max_lines=1)
             if route_node is not None:
-                self._draw_wrapped_text(f"노드: {route_node.name} · {route_node.category}", self.font_tiny, (170, 222, 210), pygame.Rect(rect.x + 18, rect.y + 106, rect.width - 36, 16), max_lines=1)
+                node_label = f"노드: {route_node.name} · {route_node.category}"
+                if node_follow_up is not None:
+                    node_label += f" · 후속 {node_follow_up.name}"
+                self._draw_wrapped_text(node_label, self.font_tiny, (170, 222, 210), pygame.Rect(rect.x + 18, rect.y + 106, rect.width - 36, 16), max_lines=1)
             if route_event is not None:
                 self._draw_wrapped_text(f"이벤트: {route_event.name}", self.font_tiny, (214, 203, 156), pygame.Rect(rect.x + 18, rect.y + 122, rect.width - 36, 16), max_lines=1)
             self._draw_wrapped_text(f"위험: {ROUTE_RISK_BY_ID[route_id]}", self.font_tiny, (231, 168, 152), pygame.Rect(rect.x + 18, rect.y + 138, rect.width - 36, 16), max_lines=1)
@@ -2454,7 +2552,10 @@ class GameApp:
         self._draw_text("배치 브리핑", self.font_heading, (244, 239, 225), (LEFT_PANEL.x + 18, LEFT_PANEL.y + 18))
         self._draw_text(self.selection_message, self.font_small, (167, 192, 212), (LEFT_PANEL.x + 18, LEFT_PANEL.y + 54))
         if self.current_route_node is not None:
-            self._draw_text(f"런 노드 · {self.current_route_node.name}", self.font_small, (170, 222, 210), (LEFT_PANEL.x + 18, LEFT_PANEL.y + 82))
+            node_label = f"런 노드 · {self.current_route_node.name}"
+            if self.current_node_follow_up is not None:
+                node_label += f" / {self.current_node_follow_up.name}"
+            self._draw_text(node_label, self.font_small, (170, 222, 210), (LEFT_PANEL.x + 18, LEFT_PANEL.y + 82))
         if self.current_route_event is not None:
             self._draw_text(f"전술 이벤트 · {self.current_route_event.name}", self.font_small, (223, 206, 164), (LEFT_PANEL.x + 18, LEFT_PANEL.y + 104))
         self._draw_text("선택한 챔피언", self.font_ui, (229, 210, 164), (LEFT_PANEL.x + 18, LEFT_PANEL.y + 132))
@@ -2506,7 +2607,9 @@ class GameApp:
         champion_name = BLUEPRINTS_BY_ID[self.selected_deploy_champion_id].name if self.selected_deploy_champion_id else "없음"
         self._draw_text(champion_name, self.font_heading, (244, 239, 225), (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 38))
         deploy_preview_objective = self._preview_battle_objective()
-        if self.current_route_node is not None:
+        if self.current_node_follow_up is not None:
+            self._draw_text(f"후속 · {self.current_node_follow_up.name}", self.font_tiny, (170, 222, 210), (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 46))
+        elif self.current_route_node is not None:
             self._draw_text(f"노드 · {self.current_route_node.effect_label}", self.font_tiny, (170, 222, 210), (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 46))
         elif self.current_route_event is not None:
             self._draw_text(f"이벤트 · {self._route_event_effect_label(self.current_route_event, self.current_route_node)}", self.font_tiny, (170, 222, 210), (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 46))
@@ -2516,12 +2619,16 @@ class GameApp:
             f"적용 페널티 · {self.active_stage_penalty.description}"
             if self.active_stage_penalty is not None
             else (
+                f"후속 효과 · {self.current_node_follow_up.effect_label}"
+                if self.current_node_follow_up is not None
+                else (
                 f"결전 목표 · {deploy_preview_objective.description.replace('목표: ', '')}"
                 if deploy_preview_objective is not None and deploy_preview_objective.is_finale
                 else (
                 f"이벤트 · {self._route_event_effect_label(self.current_route_event, self.current_route_node)}"
                 if self.current_route_event is not None and self.current_route_node is not None
                 else "수풀=보호막 · 룬=피해 +3 · 화염=이동 피해"
+                )
                 )
             )
         )
@@ -2692,7 +2799,10 @@ class GameApp:
         self._draw_text("전술 브리핑", self.font_heading, (244, 239, 225), (LEFT_PANEL.x + 18, LEFT_PANEL.y + 18))
         self._draw_text(self.status_text, self.font_small, (167, 192, 212), (LEFT_PANEL.x + 18, LEFT_PANEL.y + 54))
         if self.current_route_node is not None:
-            self._draw_text(f"런 노드 · {self.current_route_node.name}", self.font_small, (170, 222, 210), (LEFT_PANEL.x + 18, LEFT_PANEL.y + 78))
+            node_label = f"런 노드 · {self.current_route_node.name}"
+            if self.current_node_follow_up is not None:
+                node_label += f" / {self.current_node_follow_up.name}"
+            self._draw_text(node_label, self.font_small, (170, 222, 210), (LEFT_PANEL.x + 18, LEFT_PANEL.y + 78))
         elif self.current_route_event is not None:
             self._draw_text(f"전술 이벤트 · {self.current_route_event.name}", self.font_small, (170, 222, 210), (LEFT_PANEL.x + 18, LEFT_PANEL.y + 78))
 
@@ -2868,7 +2978,9 @@ class GameApp:
 
         info_x = BOTTOM_PANEL.right - 340
         objective = self.current_objective
-        if self.current_route_node is not None:
+        if self.current_node_follow_up is not None:
+            self._draw_text(f"후속 효과 · {self.current_node_follow_up.effect_label}", self.font_tiny, (170, 222, 210), (info_x, BOTTOM_PANEL.y + 18))
+        elif self.current_route_node is not None:
             self._draw_text(f"노드 효과 · {self.current_route_node.effect_label}", self.font_tiny, (170, 222, 210), (info_x, BOTTOM_PANEL.y + 18))
         else:
             self._draw_text("현재 턴", self.font_small, (223, 206, 164), (info_x, BOTTOM_PANEL.y + 18))
