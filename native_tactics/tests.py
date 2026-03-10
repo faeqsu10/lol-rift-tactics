@@ -9,6 +9,7 @@ os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 
 from .app import GameApp
+from .app import RouteEvent
 from .app import RUN_STAGE_COUNT
 from .data import TACTICAL_BLUEPRINTS_BY_ID
 from .engine import TacticsController
@@ -265,6 +266,43 @@ class GameAppFlowTests(unittest.TestCase):
         self.assertEqual(app.screen_mode, "deploy")
         self.assertIsNotNone(app.current_route_id)
 
+    def test_prepare_route_phase_rolls_events_for_each_option(self) -> None:
+        app = GameApp(headless=True)
+
+        app._prepare_route_phase()
+
+        self.assertEqual(len(app.route_option_ids), 3)
+        self.assertEqual(set(app.route_option_ids), set(app.route_event_by_route_id))
+
+    def test_route_event_modifies_next_battle_stats(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
+        app.selected_red_ids = ["red-darius", "red-annie", "red-caitlyn"]
+        app.run_stage = 2
+        app.route_option_ids = ["supply-line"]
+        app.route_event_by_route_id = {
+            "supply-line": RouteEvent(
+                id="test-supply-event",
+                route_id="supply-line",
+                name="테스트 보급",
+                description="테스트용",
+                effect_label="아군 시작 보호막 +6",
+                stage_modifiers={"blue_shield": 6},
+                failure_penalty_name="테스트 페널티",
+                failure_penalty_label="적 시작 보호막 +10",
+                penalty_modifiers={"enemy_shield": 10},
+            )
+        }
+        app.selected_route_id = "supply-line"
+
+        app._advance_after_route()
+        controller = app._build_controller_from_current_setup()
+        app._attach_controller(controller)
+
+        self.assertEqual(app.screen_mode, "deploy")
+        self.assertIsNotNone(app.current_route_event)
+        self.assertEqual(app.controller.get_unit("blue-garen").shield, 14)
+
     def test_assault_route_boosts_next_battle_damage(self) -> None:
         app = GameApp(headless=True)
         app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
@@ -366,6 +404,70 @@ class GameAppFlowTests(unittest.TestCase):
         self.assertEqual(app.screen_mode, "reward")
         self.assertEqual(app.run_bonuses["bonus-damage"], 1)
         self.assertIn("선제 제압", app.last_objective_summary)
+
+    def test_failed_objective_queues_penalty_for_next_stage(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_blue_ids = ["blue-garen"]
+        app.selected_red_ids = ["red-darius"]
+        app.run_stage = 1
+        app.current_route_id = "assault-line"
+        app.current_route_event = RouteEvent(
+            id="test-assault-event",
+            route_id="assault-line",
+            name="테스트 돌격",
+            description="테스트용",
+            effect_label="아군 피해 +2",
+            stage_modifiers={"blue_damage": 2},
+            failure_penalty_name="역습 준비",
+            failure_penalty_label="다음 전투 적 전원 피해 +2",
+            penalty_modifiers={"enemy_damage": 2},
+        )
+        app.deploy_assignments = {(0, 1): "blue-garen"}
+        app.red_deploy_assignments = {(1, 1): "red-darius"}
+
+        controller = app._build_controller_from_current_setup()
+        app._attach_controller(controller)
+        app.current_objective = app._build_battle_objective()
+        app.controller.state.active_unit_id = "blue-garen"
+        app.controller.state.turn_queue = ["blue-garen"]
+        app.controller.state.round = 3
+        app._refresh_objective_failure()
+        app.controller.get_unit("red-darius").hp = 1
+
+        result = app.controller.use_basic("red-darius")
+        app._apply_action_result(result)
+
+        self.assertEqual(app.screen_mode, "reward")
+        self.assertIsNotNone(app.pending_stage_penalty)
+        self.assertEqual(app.pending_stage_penalty.description, "다음 전투 적 전원 피해 +2")
+
+        app.pending_red_ids = ["red-darius"]
+        app._select_reward(app.reward_option_ids[0])
+        app._advance_after_reward()
+        app.route_option_ids = ["supply-line"]
+        app.route_event_by_route_id = {
+            "supply-line": RouteEvent(
+                id="test-next-event",
+                route_id="supply-line",
+                name="다음 이벤트",
+                description="테스트용",
+                effect_label="아군 보호막 +6",
+                stage_modifiers={"blue_shield": 6},
+                failure_penalty_name="다음 페널티",
+                failure_penalty_label="적 보호막 +10",
+                penalty_modifiers={"enemy_shield": 10},
+            )
+        }
+        app.selected_route_id = "supply-line"
+        app._advance_after_route()
+
+        controller = app._build_controller_from_current_setup()
+        app._attach_controller(controller)
+
+        darius = app.controller.get_unit("red-darius")
+        base_damage = next(effect.amount for effect in TACTICAL_BLUEPRINTS_BY_ID["red-darius"].basic_ability.effects if effect.kind == "damage")
+        boosted_damage = next(effect.amount for effect in darius.basic_ability.effects if effect.kind == "damage")
+        self.assertEqual(boosted_damage, base_damage + 7)
 
     def test_start_battle_syncs_objective_tiles_to_controller(self) -> None:
         app = GameApp(headless=True)

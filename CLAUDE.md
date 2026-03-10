@@ -10,7 +10,7 @@ This file provides guidance for working in this repository.
 - Current primary build: native `Pygame` client
 - Current active native tracks:
   - `native_game`: 9인 풀에서 3인 선택 -> 3v3 battle
-  - `native_tactics`: 3인 선택 -> 시작 배치 -> 3전 원정 -> 보상 -> 전투 요약 -> 3안 경로 선택 -> 패시브/적 의도/연속 턴 예고/지형/엘리트전/맵 목표/목표 경쟁 AI
+  - `native_tactics`: 3인 선택 -> 시작 배치 -> 3전 원정 -> 보상 -> 전투 요약 -> 3안 경로 선택 + 전투 이벤트 -> 패시브/적 의도/연속 턴 예고/지형/엘리트전/맵 목표/목표 경쟁 AI/실패 페널티
 - Current secondary build: legacy web prototype under `src/*`
 
 ## Commands

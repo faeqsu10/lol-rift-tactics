@@ -60,8 +60,10 @@
   - stage-based terrain tiles: brush, rune, hazard
   - elite enemies in later expedition stages
   - route selection between battles with three risk/reward options and temporary next-battle modifiers
+  - route cards now include a second-pass battle event for the next fight
   - route-specific map objectives during battles with progress HUD and marked objective tiles
   - completed objectives grant an automatic run bonus before the normal reward pick
+  - failed objectives can queue a next-battle penalty that persists through the next route/deploy step
   - battle recap summary before choosing the next route
   - terrain-aware red-team AI movement and targeting
   - objective-aware red-team AI that contests marked tiles and pressure zones
@@ -106,10 +108,10 @@
 
 ## Recommended Next Steps
 
-1. Add route-specific events 2nd pass with stronger objective variety and failure penalties.
-2. Add stronger champion-specific passive differentiation and more unique tactical triggers to `native_tactics`.
-3. Add a first boss battle layer and distinct elite/objective rules.
-4. Improve intent once more around chained damage text, danger scoring, and elite focus fire.
+1. Add stronger champion-specific passive differentiation and more unique tactical triggers to `native_tactics`.
+2. Add a first boss battle layer and distinct elite/objective rules.
+3. Improve intent once more around chained damage text, danger scoring, and elite focus fire.
+4. Add run-map node variety such as rest/event/elite splits on top of the current route flow.
 5. Replace shape-based placeholder characters with real sprite art or sprite sheets.
 
 ## Resume Prompt
