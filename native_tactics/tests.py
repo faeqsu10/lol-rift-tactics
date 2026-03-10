@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
 import os
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import pygame
 
@@ -10,6 +13,7 @@ os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 
 from .app import GameApp
 from .app import BattleObjective
+from .app import BattleRecap
 from .app import RouteEvent
 from .app import NodeFollowUp
 from .app import RunNode
@@ -546,6 +550,131 @@ class GameAppFlowTests(unittest.TestCase):
         self.assertEqual(len(app.run_history), 0)
         self.assertIsNone(app.run_summary)
         self.assertEqual(len(app.deploy_assignments), 3)
+
+    def test_run_summary_persists_history_file(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            history_path = Path(temp_dir) / "tactics-history.json"
+            app = GameApp(headless=True, history_path=history_path)
+            app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
+            app.run_stage = RUN_STAGE_COUNT
+            app.run_bonuses["bonus-damage"] = 1
+            app.run_history = [
+                BattleRecap(
+                    stage_label="정찰전",
+                    result_label="승리",
+                    rounds=3,
+                    blue_damage=48,
+                    red_damage=19,
+                    blue_kills=1,
+                    red_kills=0,
+                    highlight="[01] 가렌, decisive strike 사용.",
+                ),
+                BattleRecap(
+                    stage_label="엘리트전",
+                    result_label="승리",
+                    rounds=4,
+                    blue_damage=62,
+                    red_damage=27,
+                    blue_kills=2,
+                    red_kills=0,
+                    highlight="[02] 아리, 매혹 적중.",
+                ),
+                BattleRecap(
+                    stage_label="결전",
+                    result_label="승리",
+                    rounds=5,
+                    blue_damage=84,
+                    red_damage=36,
+                    blue_kills=3,
+                    red_kills=1,
+                    highlight="[03] 징크스, 로켓 마무리.",
+                ),
+            ]
+
+            app._enter_run_summary("원정 성공")
+
+            self.assertTrue(history_path.exists())
+            payload = json.loads(history_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["version"], 1)
+            self.assertEqual(len(payload["records"]), 1)
+            self.assertEqual(payload["records"][0]["result_label"], "원정 성공")
+            self.assertIn("저장 기록 1런", app.run_summary.history_overview_lines[0])
+
+            loaded_app = GameApp(headless=True, history_path=history_path)
+            self.assertEqual(len(loaded_app.history_store.records), 1)
+
+    def test_run_summary_compares_against_saved_best_record(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            history_path = Path(temp_dir) / "tactics-history.json"
+
+            first_app = GameApp(headless=True, history_path=history_path)
+            first_app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
+            first_app.run_stage = 2
+            first_app.run_history = [
+                BattleRecap(
+                    stage_label="정찰전",
+                    result_label="승리",
+                    rounds=4,
+                    blue_damage=42,
+                    red_damage=25,
+                    blue_kills=1,
+                    red_kills=0,
+                    highlight="[01] 가렌, 유지.",
+                ),
+                BattleRecap(
+                    stage_label="엘리트전",
+                    result_label="패배",
+                    rounds=5,
+                    blue_damage=36,
+                    red_damage=71,
+                    blue_kills=0,
+                    red_kills=2,
+                    highlight="[02] 다리우스, 마무리.",
+                ),
+            ]
+            first_app._enter_run_summary("원정 실패")
+
+            second_app = GameApp(headless=True, history_path=history_path)
+            second_app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
+            second_app.run_stage = RUN_STAGE_COUNT
+            second_app.run_history = [
+                BattleRecap(
+                    stage_label="정찰전",
+                    result_label="승리",
+                    rounds=3,
+                    blue_damage=50,
+                    red_damage=18,
+                    blue_kills=1,
+                    red_kills=0,
+                    highlight="[01] 가렌, 유지.",
+                ),
+                BattleRecap(
+                    stage_label="엘리트전",
+                    result_label="승리",
+                    rounds=4,
+                    blue_damage=70,
+                    red_damage=24,
+                    blue_kills=2,
+                    red_kills=0,
+                    highlight="[02] 아리, 매혹 적중.",
+                ),
+                BattleRecap(
+                    stage_label="결전",
+                    result_label="승리",
+                    rounds=4,
+                    blue_damage=92,
+                    red_damage=31,
+                    blue_kills=3,
+                    red_kills=0,
+                    highlight="[03] 징크스, 마무리.",
+                ),
+            ]
+
+            second_app._enter_run_summary("원정 성공")
+
+            self.assertIn("저장 기록 2런 · 완주 1회", second_app.run_summary.history_overview_lines[0])
+            self.assertIn("전체 최고 원정을 경신했습니다.", second_app.run_summary.history_comparison_lines)
+            self.assertIn("현재 조합 최고 기록을 경신했습니다.", second_app.run_summary.history_comparison_lines)
 
     def test_stage_two_marks_elite_enemy(self) -> None:
         app = GameApp(headless=True)

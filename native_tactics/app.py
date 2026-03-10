@@ -4,6 +4,7 @@ import argparse
 import random
 from dataclasses import dataclass
 from dataclasses import replace
+from pathlib import Path
 from typing import Literal
 
 import pygame
@@ -32,6 +33,7 @@ from .data import TERRAIN_BY_ID
 from .data import boss_profile_id_for_champion
 from .engine import TacticalActionResult
 from .engine import TacticsController
+from .history import RunHistoryStore
 
 WINDOW_WIDTH = 1600
 WINDOW_HEIGHT = 960
@@ -461,6 +463,8 @@ class RunSummary:
     best_reward_line: str
     recommendation: str
     recap_entries: list[BattleRecap]
+    history_overview_lines: list[str]
+    history_comparison_lines: list[str]
 
 
 @dataclass
@@ -527,7 +531,7 @@ def load_font(size: int, *, bold: bool = False) -> pygame.font.Font:
 
 
 class GameApp:
-    def __init__(self, headless: bool = False) -> None:
+    def __init__(self, headless: bool = False, history_path: Path | None = None) -> None:
         pygame.mixer.pre_init(44100, -16, 2, 512)
         pygame.init()
         pygame.display.set_caption("리프트 택틱스: 전술 실험")
@@ -536,6 +540,8 @@ class GameApp:
         self.clock = pygame.time.Clock()
         self.running = True
         self.headless = headless
+        resolved_history_path = history_path if history_path is not None else (None if headless else RunHistoryStore.default_path())
+        self.history_store = RunHistoryStore.load(resolved_history_path)
 
         self.font_tiny = load_font(13)
         self.font_small = load_font(16)
@@ -1014,6 +1020,8 @@ class GameApp:
             best_reward_line=self._best_reward_line(),
             recommendation=self._build_run_recommendation(result_label, recaps, total_blue_damage, total_red_damage),
             recap_entries=recaps,
+            history_overview_lines=[],
+            history_comparison_lines=[],
         )
 
     def _record_battle_recap(self, result_label: str) -> BattleRecap | None:
@@ -1025,6 +1033,9 @@ class GameApp:
 
     def _enter_run_summary(self, result_label: str) -> None:
         self.run_summary = self._build_run_summary(result_label)
+        history_summary = self.history_store.record_summary(self.run_summary, stage_number=self.run_stage)
+        self.run_summary.history_overview_lines = history_summary.overview_lines
+        self.run_summary.history_comparison_lines = history_summary.comparison_lines
         self.screen_mode = "summary"
         self.mode = "move"
         self.finale_banner_title = None
@@ -2478,18 +2489,26 @@ class GameApp:
         for index, line in enumerate(stat_lines):
             self._draw_text(line, self.font_small, (209, 220, 227), (stats_rect.x + 18, stats_rect.y + 48 + index * 24))
 
-        build_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 444, SELECT_LEFT_PANEL.width - 44, 166)
+        build_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 444, SELECT_LEFT_PANEL.width - 44, 148)
         pygame.draw.rect(self.screen, (11, 20, 31), build_rect, border_radius=24)
         pygame.draw.rect(self.screen, (236, 218, 176), build_rect, 1, border_radius=24)
         self._draw_text("이번 런 빌드 포인트", self.font_ui, (229, 210, 164), (build_rect.x + 18, build_rect.y + 14))
-        for index, line in enumerate(summary.build_lines or ["강화 · 아직 강화 없음"]):
+        for index, line in enumerate((summary.build_lines or ["강화 · 아직 강화 없음"])[:4]):
             self._draw_wrapped_text(line, self.font_small, (209, 220, 227), pygame.Rect(build_rect.x + 18, build_rect.y + 48 + index * 24, build_rect.width - 36, 20), max_lines=1)
 
-        guide_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 628, SELECT_LEFT_PANEL.width - 44, 106)
+        record_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 610, SELECT_LEFT_PANEL.width - 44, 98)
+        pygame.draw.rect(self.screen, (11, 20, 31), record_rect, border_radius=24)
+        pygame.draw.rect(self.screen, (236, 218, 176), record_rect, 1, border_radius=24)
+        self._draw_text("저장 기록 비교", self.font_ui, (229, 210, 164), (record_rect.x + 18, record_rect.y + 14))
+        history_lines = [*summary.history_overview_lines[:2], *summary.history_comparison_lines[:2]] or ["저장 기록 없음"]
+        for index, line in enumerate(history_lines[:4]):
+            self._draw_wrapped_text(line, self.font_tiny, (208, 219, 226), pygame.Rect(record_rect.x + 18, record_rect.y + 44 + index * 14, record_rect.width - 36, 14), max_lines=1)
+
+        guide_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 724, SELECT_LEFT_PANEL.width - 44, 86)
         pygame.draw.rect(self.screen, (11, 20, 31), guide_rect, border_radius=24)
         pygame.draw.rect(self.screen, (*accent, 42), guide_rect, 1, border_radius=24)
         self._draw_text("다음 추천", self.font_ui, (229, 210, 164), (guide_rect.x + 18, guide_rect.y + 14))
-        self._draw_wrapped_text(summary.recommendation, self.font_small, (208, 219, 226), pygame.Rect(guide_rect.x + 18, guide_rect.y + 44, guide_rect.width - 36, 44), max_lines=2)
+        self._draw_wrapped_text(summary.recommendation, self.font_small, (208, 219, 226), pygame.Rect(guide_rect.x + 18, guide_rect.y + 40, guide_rect.width - 36, 34), max_lines=2)
 
         rerun_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 32, SELECT_LEFT_PANEL.bottom - 86, 246, 52)
         select_rect = pygame.Rect(SELECT_LEFT_PANEL.right - 278, SELECT_LEFT_PANEL.bottom - 86, 246, 52)
@@ -3327,4 +3346,5 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--frames", type=int, default=None, help="Run only for a fixed number of frames")
     parser.add_argument("--headless", action="store_true", help="Use a hidden window for smoke tests")
     parser.add_argument("--screenshot", type=str, default=None, help="Save the last rendered frame to a PNG path")
+    parser.add_argument("--history-path", type=str, default=None, help="Override the saved run-history JSON path")
     return parser

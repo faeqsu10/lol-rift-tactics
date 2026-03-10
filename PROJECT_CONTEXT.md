@@ -74,6 +74,7 @@
   - boss awakening now creates a hazard pulse on adjacent tiles and drives a dedicated finale banner/panel presentation
   - battle recap summary before choosing the next route
   - run-end summary screen with cumulative stats, build highlights, battle timeline, and direct replay/select actions
+  - persisted run history with best-run comparison on the summary screen
   - terrain-aware red-team AI movement and targeting
   - objective-aware red-team AI that contests marked tiles and pressure zones
   - post-victory reward pick with next-enemy preview
@@ -93,6 +94,7 @@
 - Windows build script: `scripts/build-windows.ps1`
 - Native tests: `.venv/bin/python -m native_game.tests`
 - Tactics tests: `.venv/bin/python -m native_tactics.tests`
+- Tactics history save path: `.local/native_tactics_history.json`
 - Screenshot capture command: `npm run native:capture`
 - Tactics screenshot capture command: `npm run tactics:capture`
 - Audio implementation: `native_game/audio.py`
@@ -116,11 +118,11 @@
 
 ## Recommended Next Steps
 
-1. Add run-history persistence or best-run comparison on top of the new run-end summary screen.
-2. Add node-specific cut-ins or start-of-battle presentation so rest/event/elite branches feel more authored.
-3. Replace shape-based placeholder characters with real sprite art or sprite sheets.
-4. Expand map and objective variety on top of the boss loop.
-5. Add more authored boss variants or finale-only special rules on top of the new boss pattern system.
+1. Add node-specific cut-ins or start-of-battle presentation so rest/event/elite branches feel more authored.
+2. Replace shape-based placeholder characters with real sprite art or sprite sheets.
+3. Expand map and objective variety on top of the boss loop.
+4. Add more authored boss variants or finale-only special rules on top of the new boss pattern system.
+5. Add richer meta progression or unlock structure on top of the saved run-history layer.
 
 ## Resume Prompt
 

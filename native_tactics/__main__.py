@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
 from native_game.runtime import project_root
 
@@ -42,7 +43,8 @@ def main() -> None:
 
     parser = build_parser()
     args = parser.parse_args()
-    app = GameApp(headless=args.headless)
+    history_path = Path(args.history_path) if args.history_path else None
+    app = GameApp(headless=args.headless, history_path=history_path)
     app.run(max_frames=args.frames, screenshot_path=args.screenshot)
 
 
