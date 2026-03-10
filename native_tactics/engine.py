@@ -91,7 +91,16 @@ class TacticalIntent:
     target_count: int = 0
     predicted_damage: int = 0
     threat_tiles: list[GridPos] = field(default_factory=list)
+    threatened_unit_ids: list[str] = field(default_factory=list)
+    damage_by_unit: dict[str, int] = field(default_factory=dict)
     objective_pressure_label: str | None = None
+    danger_score: int = 0
+    danger_label: str | None = None
+    chain_summary: str | None = None
+    phase_focus_target_id: str | None = None
+    phase_focus_target_name: str | None = None
+    phase_focus_damage: int = 0
+    phase_lethal_target_count: int = 0
     phase_actor_count: int = 1
     phase_total_damage: int = 0
     phase_target_count: int = 0
@@ -358,6 +367,16 @@ class TacticsController:
         phase_actors = self._collect_enemy_phase_actors(actor.id)
         phase_intents = [self._preview_actor_intent(phase_actor) for phase_actor in phase_actors]
         intent = phase_intents[0]
+        phase_damage_by_unit: dict[str, int] = {}
+        phase_target_hits: dict[str, int] = {}
+        phase_has_boss = False
+        phase_has_elite = False
+        for phase_actor, phase_intent in zip(phase_actors, phase_intents):
+            phase_has_boss = phase_has_boss or phase_actor.is_boss
+            phase_has_elite = phase_has_elite or (phase_actor.is_elite and not phase_actor.is_boss)
+            for unit_id, damage in phase_intent.damage_by_unit.items():
+                phase_damage_by_unit[unit_id] = phase_damage_by_unit.get(unit_id, 0) + damage
+                phase_target_hits[unit_id] = phase_target_hits.get(unit_id, 0) + 1
         phase_threat_tiles = self._unique_tiles(
             threat_tile
             for phase_intent in phase_intents
@@ -373,10 +392,41 @@ class TacticsController:
         intent.phase_target_count = len(phase_threat_tiles)
         intent.phase_threat_tiles = phase_threat_tiles
         intent.phase_objective_tiles = phase_objective_tiles
-        intent.phase_summary = (
-            f"적 연속 턴 {intent.phase_actor_count}회 · 총 피해 {intent.phase_total_damage} · 위협 {intent.phase_target_count}칸"
-            + (" · 목표 압박" if phase_objective_tiles else "")
+        focus_target_id = max(phase_damage_by_unit, key=phase_damage_by_unit.get) if phase_damage_by_unit else None
+        focus_target = self.get_unit(focus_target_id)
+        lethal_target_count = sum(
+            1
+            for unit_id, damage in phase_damage_by_unit.items()
+            if (unit := self.get_unit(unit_id)) is not None and damage >= unit.hp
         )
+        chain_summary: str | None = None
+        if focus_target is not None and phase_target_hits.get(focus_target.id, 0) >= 2:
+            chain_summary = f"{focus_target.name} 연쇄 집중 {phase_damage_by_unit[focus_target.id]}"
+        elif focus_target is not None and phase_damage_by_unit.get(focus_target.id, 0) >= focus_target.hp:
+            chain_summary = f"{focus_target.name} 처치각 {phase_damage_by_unit[focus_target.id]}"
+        elif len(phase_damage_by_unit) >= 2:
+            chain_summary = f"{len(phase_damage_by_unit)}명 동시 압박"
+        danger_score = self._danger_score_for_projection(
+            phase_damage_by_unit,
+            objective_pressure=bool(phase_objective_tiles),
+            has_boss=phase_has_boss,
+            has_elite=phase_has_elite,
+            focus_hits=phase_target_hits.get(focus_target_id, 0) if focus_target_id is not None else 0,
+            lethal_target_count=lethal_target_count,
+        )
+        danger_label = self._danger_label_from_score(danger_score)
+        intent.danger_score = danger_score
+        intent.danger_label = danger_label
+        intent.chain_summary = chain_summary
+        intent.phase_focus_target_id = focus_target.id if focus_target is not None else None
+        intent.phase_focus_target_name = focus_target.name if focus_target is not None else None
+        intent.phase_focus_damage = phase_damage_by_unit.get(focus_target_id, 0) if focus_target_id is not None else 0
+        intent.phase_lethal_target_count = lethal_target_count
+        intent.phase_summary = f"적 연속 턴 {intent.phase_actor_count}회 · 총 피해 {intent.phase_total_damage} · 위험 {danger_label}"
+        if chain_summary:
+            intent.phase_summary += f" · {chain_summary}"
+        if phase_objective_tiles:
+            intent.phase_summary += " · 목표 압박"
 
         follow_up_intent: TacticalIntent | None = phase_intents[1] if len(phase_intents) > 1 else None
         next_actor = phase_actors[1] if len(phase_actors) > 1 else self._next_red_actor_after(actor.id)
@@ -396,6 +446,39 @@ class TacticsController:
         intent.follow_up_objective_pressure_label = follow_up_intent.objective_pressure_label
         return intent
 
+    def _danger_score_for_projection(
+        self,
+        damage_by_unit: dict[str, int],
+        *,
+        objective_pressure: bool,
+        has_boss: bool,
+        has_elite: bool,
+        focus_hits: int,
+        lethal_target_count: int,
+    ) -> int:
+        score = sum(damage_by_unit.values())
+        threatened_units = len([damage for damage in damage_by_unit.values() if damage > 0])
+        score += max(0, threatened_units - 1) * 4
+        score += lethal_target_count * 12
+        if focus_hits >= 2:
+            score += 6
+        if objective_pressure:
+            score += 4
+        if has_boss:
+            score += 8
+        elif has_elite:
+            score += 4
+        return score
+
+    def _danger_label_from_score(self, score: int) -> str:
+        if score >= 42:
+            return "치명"
+        if score >= 28:
+            return "높음"
+        if score >= 14:
+            return "보통"
+        return "낮음"
+
     def _preview_actor_intent(self, actor: TacticalUnit) -> TacticalIntent:
         special_targets = []
         if actor.cooldowns.get(actor.special_ability.id, 0) <= 0:
@@ -406,8 +489,20 @@ class TacticsController:
         if should_open_with_special:
             target_id = self._pick_ai_target(actor, special_targets, special=True)
             target = self.get_unit(target_id)
-            threat_tiles, predicted_damage = self._preview_action_outcome(actor, actor.position, actor.special_ability, "special", target_id)
+            damage_by_unit, threat_tiles, predicted_damage = self._preview_action_outcome(actor, actor.position, actor.special_ability, "special", target_id)
             _, objective_pressure_label = self._objective_pressure_preview(actor, actor.position, target.position if target else None)
+            danger_score = self._danger_score_for_projection(
+                damage_by_unit,
+                objective_pressure=objective_pressure_label is not None,
+                has_boss=actor.is_boss,
+                has_elite=actor.is_elite and not actor.is_boss,
+                focus_hits=1,
+                lethal_target_count=sum(
+                    1
+                    for unit_id, damage in damage_by_unit.items()
+                    if (unit := self.get_unit(unit_id)) is not None and damage >= unit.hp
+                ),
+            )
             return TacticalIntent(
                 actor_id=actor.id,
                 actor_name=actor.name,
@@ -420,15 +515,31 @@ class TacticsController:
                 target_count=len(threat_tiles),
                 predicted_damage=predicted_damage,
                 threat_tiles=threat_tiles,
+                threatened_unit_ids=list(damage_by_unit),
+                damage_by_unit=damage_by_unit,
                 objective_pressure_label=objective_pressure_label,
+                danger_score=danger_score,
+                danger_label=self._danger_label_from_score(danger_score),
             )
 
         basic_targets = self._get_valid_targets_for_position(actor, actor.basic_ability, actor.position)
         if basic_targets:
             target_id = self._pick_ai_target(actor, basic_targets)
             target = self.get_unit(target_id)
-            threat_tiles, predicted_damage = self._preview_action_outcome(actor, actor.position, actor.basic_ability, "basic", target_id)
+            damage_by_unit, threat_tiles, predicted_damage = self._preview_action_outcome(actor, actor.position, actor.basic_ability, "basic", target_id)
             _, objective_pressure_label = self._objective_pressure_preview(actor, actor.position, target.position if target else None)
+            danger_score = self._danger_score_for_projection(
+                damage_by_unit,
+                objective_pressure=objective_pressure_label is not None,
+                has_boss=actor.is_boss,
+                has_elite=actor.is_elite and not actor.is_boss,
+                focus_hits=1,
+                lethal_target_count=sum(
+                    1
+                    for unit_id, damage in damage_by_unit.items()
+                    if (unit := self.get_unit(unit_id)) is not None and damage >= unit.hp
+                ),
+            )
             return TacticalIntent(
                 actor_id=actor.id,
                 actor_name=actor.name,
@@ -441,7 +552,11 @@ class TacticsController:
                 target_count=len(threat_tiles),
                 predicted_damage=predicted_damage,
                 threat_tiles=threat_tiles,
+                threatened_unit_ids=list(damage_by_unit),
+                damage_by_unit=damage_by_unit,
                 objective_pressure_label=objective_pressure_label,
+                danger_score=danger_score,
+                danger_label=self._danger_label_from_score(danger_score),
             )
 
         destination = self._choose_ai_move(actor)
@@ -463,8 +578,20 @@ class TacticsController:
         if action_name and target_id:
             target = self.get_unit(target_id)
             ability = actor.special_ability if action_kind == "special" else actor.basic_ability
-            threat_tiles, predicted_damage = self._preview_action_outcome(actor, destination, ability, action_kind, target_id)
+            damage_by_unit, threat_tiles, predicted_damage = self._preview_action_outcome(actor, destination, ability, action_kind, target_id)
             _, objective_pressure_label = self._objective_pressure_preview(actor, destination, target_tile)
+            danger_score = self._danger_score_for_projection(
+                damage_by_unit,
+                objective_pressure=objective_pressure_label is not None,
+                has_boss=actor.is_boss,
+                has_elite=actor.is_elite and not actor.is_boss,
+                focus_hits=1,
+                lethal_target_count=sum(
+                    1
+                    for unit_id, damage in damage_by_unit.items()
+                    if (unit := self.get_unit(unit_id)) is not None and damage >= unit.hp
+                ),
+            )
             return TacticalIntent(
                 actor_id=actor.id,
                 actor_name=actor.name,
@@ -477,7 +604,11 @@ class TacticsController:
                 target_count=len(threat_tiles),
                 predicted_damage=predicted_damage,
                 threat_tiles=threat_tiles,
+                threatened_unit_ids=list(damage_by_unit),
+                damage_by_unit=damage_by_unit,
                 objective_pressure_label=objective_pressure_label,
+                danger_score=danger_score,
+                danger_label=self._danger_label_from_score(danger_score),
             )
 
         _, objective_pressure_label = self._objective_pressure_preview(actor, destination, None)
@@ -982,17 +1113,18 @@ class TacticsController:
         ability: TacticalAbility,
         ability_kind: Literal["basic", "special"],
         target_id: str | None,
-    ) -> tuple[list[GridPos], int]:
+    ) -> tuple[dict[str, int], list[GridPos], int]:
+        damage_by_unit: dict[str, int] = {}
         threat_tiles: list[GridPos] = []
-        predicted_damage = 0
         for resolved_target_id in self._resolve_targets_from_position(actor, ability, target_id, source_position):
             target = self.get_unit(resolved_target_id)
             if target is None:
                 continue
             modified_effects, _ = self._modified_effects(actor, target, ability_kind, ability.effects, source_position)
             threat_tiles.append(target.position)
-            predicted_damage += self._estimate_damage(target, modified_effects)
-        return threat_tiles, predicted_damage
+            damage_by_unit[resolved_target_id] = self._estimate_damage(target, modified_effects)
+        predicted_damage = sum(damage_by_unit.values())
+        return damage_by_unit, threat_tiles, predicted_damage
 
     def _estimate_damage(self, target: TacticalUnit, effects: tuple[AbilityEffect, ...]) -> int:
         shield = target.shield
@@ -1123,7 +1255,7 @@ class TacticsController:
             if target is None:
                 return (-999, 0, 0)
             ability = actor.special_ability if special else actor.basic_ability
-            _, predicted_damage = self._preview_action_outcome(actor, position, ability, "special" if special else "basic", target_id)
+            _, _, predicted_damage = self._preview_action_outcome(actor, position, ability, "special" if special else "basic", target_id)
             kill_bonus = 24 if predicted_damage >= target.hp else 0
             stun_bonus = 18 if special and any(effect.kind == "stun" for effect in actor.special_ability.effects) else 0
             low_hp_bonus = max(0, target.max_hp - target.hp)
@@ -1150,7 +1282,7 @@ class TacticsController:
             predicted_damage = 0
             if target_id and action_kind in {"basic", "special"}:
                 ability = actor.special_ability if action_kind == "special" else actor.basic_ability
-                _, predicted_damage = self._preview_action_outcome(actor, tile, ability, action_kind, target_id)
+                _, _, predicted_damage = self._preview_action_outcome(actor, tile, ability, action_kind, target_id)
             kill_bonus = 0
             if target_id:
                 target = self.get_unit(target_id)

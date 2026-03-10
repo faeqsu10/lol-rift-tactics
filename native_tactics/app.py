@@ -2015,6 +2015,11 @@ class GameApp:
             if intent.follow_up_target_tile is not None:
                 target_rect = self.tile_rects[intent.follow_up_target_tile]
                 pygame.draw.rect(self.screen, (255, 204, 117), target_rect.inflate(-16, -16), 2, border_radius=16)
+            if intent.phase_focus_target_id is not None:
+                focus_unit = self.controller.get_unit(intent.phase_focus_target_id)
+                if focus_unit is not None and focus_unit.hp > 0:
+                    focus_rect = self.tile_rects[focus_unit.position]
+                    pygame.draw.rect(self.screen, (255, 92, 92), focus_rect.inflate(-10, -10), 3, border_radius=18)
 
         for unit in self.controller.units:
             if unit.hp <= 0:
@@ -2103,7 +2108,7 @@ class GameApp:
             self._draw_text(active.passive_name, self.font_ui, accent, (passive_rect.x + 16, passive_rect.y + 42))
             self._draw_wrapped_text(active.passive_description, self.font_small, (208, 219, 226), pygame.Rect(passive_rect.x + 16, passive_rect.y + 68, passive_rect.width - 32, 26), max_lines=2)
 
-        intent_rect = pygame.Rect(LEFT_PANEL.x + 16, LEFT_PANEL.y + 436, LEFT_PANEL.width - 32, 166)
+        intent_rect = pygame.Rect(LEFT_PANEL.x + 16, LEFT_PANEL.y + 436, LEFT_PANEL.width - 32, 188)
         pygame.draw.rect(self.screen, (11, 20, 31), intent_rect, border_radius=24)
         pygame.draw.rect(self.screen, (236, 218, 176), intent_rect, 1, border_radius=24)
         self._draw_text("적 의도", self.font_ui, (229, 210, 164), (intent_rect.x + 18, intent_rect.y + 18))
@@ -2117,11 +2122,13 @@ class GameApp:
             if intent.target_count > 1:
                 current_parts.append(f"광역 {intent.target_count}명")
             current_parts.append(f"피해 {intent.predicted_damage}")
+            if intent.danger_label:
+                current_parts.append(f"위험 {intent.danger_label}")
             if intent.objective_pressure_label:
                 current_parts.append("목표 압박")
-            self._draw_text("이번 적 차례 · " + " / ".join(current_parts), self.font_tiny, (255, 213, 150), (intent_rect.x + 18, intent_rect.y + 104))
+            self._draw_wrapped_text("이번 적 차례 · " + " / ".join(current_parts), self.font_tiny, (255, 213, 150), pygame.Rect(intent_rect.x + 18, intent_rect.y + 102, intent_rect.width - 36, 18), max_lines=1)
             if intent.phase_summary:
-                self._draw_text(intent.phase_summary, self.font_tiny, (221, 188, 255), (intent_rect.x + 18, intent_rect.y + 124))
+                self._draw_wrapped_text(intent.phase_summary, self.font_tiny, (221, 188, 255), pygame.Rect(intent_rect.x + 18, intent_rect.y + 122, intent_rect.width - 36, 32), max_lines=2)
             if intent.follow_up_actor_name:
                 next_parts = [f"다음 {intent.follow_up_actor_name}"]
                 if intent.follow_up_target_tile is not None:
@@ -2131,11 +2138,11 @@ class GameApp:
                 next_parts.append(f"피해 {intent.follow_up_predicted_damage}")
                 if intent.follow_up_objective_pressure_label:
                     next_parts.append("목표 압박")
-                self._draw_text(" / ".join(next_parts), self.font_tiny, (242, 201, 133), (intent_rect.x + 18, intent_rect.y + 144))
+                self._draw_wrapped_text(" / ".join(next_parts), self.font_tiny, (242, 201, 133), pygame.Rect(intent_rect.x + 18, intent_rect.y + 158, intent_rect.width - 36, 18), max_lines=1)
         else:
             self._draw_wrapped_text("현재는 플레이어 턴입니다. 적 차례가 오면 이동 칸, 예상 피해, 연속 턴 압박을 미리 보여 줍니다.", self.font_small, (208, 219, 226), pygame.Rect(intent_rect.x + 18, intent_rect.y + 52, intent_rect.width - 36, 72), max_lines=3)
 
-        guide_rect = pygame.Rect(LEFT_PANEL.x + 16, LEFT_PANEL.y + 616, LEFT_PANEL.width - 32, 176)
+        guide_rect = pygame.Rect(LEFT_PANEL.x + 16, LEFT_PANEL.y + 638, LEFT_PANEL.width - 32, 154)
         pygame.draw.rect(self.screen, (11, 20, 31), guide_rect, border_radius=24)
         pygame.draw.rect(self.screen, (236, 218, 176), guide_rect, 1, border_radius=24)
         self._draw_text("조작", self.font_ui, (229, 210, 164), (guide_rect.x + 18, guide_rect.y + 18))
@@ -2148,7 +2155,7 @@ class GameApp:
             "6. E로 턴 종료, ESC로 선택 화면 복귀",
         ]
         for index, line in enumerate(guides):
-            self._draw_text(line, self.font_small, (201, 213, 221), (guide_rect.x + 18, guide_rect.y + 48 + index * 22))
+            self._draw_text(line, self.font_small, (201, 213, 221), (guide_rect.x + 18, guide_rect.y + 44 + index * 18))
 
     def _draw_battle_right_panel(self) -> None:
         if self.controller is None:

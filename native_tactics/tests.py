@@ -264,6 +264,39 @@ class TacticsControllerTests(unittest.TestCase):
         self.assertIsNotNone(intent.phase_summary)
         self.assertIn("적 연속 턴", intent.phase_summary)
 
+    def test_preview_ai_intent_reports_danger_and_focus_target(self) -> None:
+        controller = TacticsController(("blue-garen",), ("red-brand", "red-caitlyn"))
+        controller.blocked_tiles.clear()
+        controller.get_unit("blue-garen").position = (0, 2)
+        controller.get_unit("red-brand").position = (4, 2)
+        controller.get_unit("red-caitlyn").position = (6, 2)
+        controller.state.active_unit_id = "red-brand"
+        controller.state.turn_queue = ["red-brand", "red-caitlyn", "blue-garen"]
+
+        intent = controller.preview_ai_intent()
+
+        self.assertIsNotNone(intent)
+        self.assertIn(intent.danger_label, {"보통", "높음", "치명"})
+        self.assertEqual(intent.phase_focus_target_name, "가렌")
+        self.assertGreater(intent.phase_focus_damage, 0)
+        self.assertIsNotNone(intent.chain_summary)
+
+    def test_preview_ai_intent_counts_lethal_targets_in_enemy_phase(self) -> None:
+        controller = TacticsController(("blue-garen",), ("red-brand", "red-caitlyn"))
+        controller.blocked_tiles.clear()
+        controller.get_unit("blue-garen").position = (0, 2)
+        controller.get_unit("blue-garen").hp = 12
+        controller.get_unit("red-brand").position = (4, 2)
+        controller.get_unit("red-caitlyn").position = (6, 2)
+        controller.state.active_unit_id = "red-brand"
+        controller.state.turn_queue = ["red-brand", "red-caitlyn", "blue-garen"]
+
+        intent = controller.preview_ai_intent()
+
+        self.assertIsNotNone(intent)
+        self.assertEqual(intent.phase_lethal_target_count, 1)
+        self.assertIn("연쇄 집중", intent.chain_summary or "")
+
     def test_hazard_tile_deals_damage_on_move(self) -> None:
         controller = TacticsController(
             ("blue-garen",),

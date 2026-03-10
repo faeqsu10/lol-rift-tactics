@@ -10,7 +10,7 @@ This file provides guidance for working in this repository.
 - Current primary build: native `Pygame` client
 - Current active native tracks:
   - `native_game`: 9인 풀에서 3인 선택 -> 3v3 battle
-  - `native_tactics`: 3인 선택 -> 시작 배치 -> 3전 원정 -> 보상 -> 전투 요약 -> 3안 경로 선택 + 전투 이벤트 -> 패시브 2차/챔피언별 특수기/적 의도/연속 턴 예고/지형/엘리트 특성/보스 결전/맵 목표/목표 경쟁 AI/실패 페널티
+  - `native_tactics`: 3인 선택 -> 시작 배치 -> 3전 원정 -> 보상 -> 전투 요약 -> 3안 경로 선택 + 전투 이벤트 -> 패시브 2차/챔피언별 특수기/적 의도 4차/연속 턴 예고/지형/엘리트 특성/보스 결전/맵 목표/목표 경쟁 AI/실패 페널티
 - Current secondary build: legacy web prototype under `src/*`
 
 ## Commands
@@ -90,6 +90,7 @@ src/
 - 출시 목표 변화가 생기면 `docs/TACTICS_RELEASE_TARGET.md`와 `docs/TACTICS_MILESTONES.md`를 먼저 갱신
 - 챔피언별 스킬 선택 규칙을 건드리면 `tactics:test`, `tactics:smoke`, `tactics:capture`를 항상 같이 다시 돌릴 것
 - 보스/엘리트 스테이지 규칙을 바꾸면 배치 화면과 전투 화면 둘 다 캡처해서 표식과 텍스트 밀도를 같이 확인할 것
+- 적 의도 패널 줄 수를 늘릴 때는 전장 포커스 표식과 함께 캡처해, 텍스트만 늘어난 게 아니라 실제 대응 포인트가 보이는지 확인할 것
 
 ### Frequent Commits
 

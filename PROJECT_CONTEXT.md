@@ -57,7 +57,7 @@
   - role-based tactical ranges with champion-specific ability names
   - champion-specific passive traits with second-pass differentiation
   - champion-specific tactical special picks so marquee skills stay consistent
-  - enemy intent preview during red turns with predicted damage, threat tiles, multi-target counts, next-enemy warning, and enemy-phase summaries
+  - enemy intent preview during red turns with predicted damage, threat tiles, multi-target counts, next-enemy warning, enemy-phase summaries, danger labels, and chain-focus warnings
   - stage-based terrain tiles: brush, rune, hazard
   - elite enemies in later expedition stages with trait rules
   - stage 3 boss battle with a marked boss unit and one-time phase shift
@@ -110,9 +110,9 @@
 
 ## Recommended Next Steps
 
-1. Improve intent once more around chained damage text, danger scoring, and elite focus fire.
-2. Add run-map node variety such as rest/event/elite splits on top of the current route flow.
-3. Add a second boss pass with boss-only objectives, stronger phase scripting, and finale presentation.
+1. Add run-map node variety such as rest/event/elite splits on top of the current route flow.
+2. Add a second boss pass with boss-only objectives, stronger phase scripting, and finale presentation.
+3. Add a run-end summary layer that pushes immediate replays and build comparison.
 4. Replace shape-based placeholder characters with real sprite art or sprite sheets.
 5. Expand map and objective variety on top of the boss loop.
 
