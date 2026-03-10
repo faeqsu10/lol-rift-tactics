@@ -84,6 +84,102 @@ class TacticsControllerTests(unittest.TestCase):
         self.assertEqual(braum.shield, 12)
         self.assertTrue(any("보호막 12 획득" in line for line in controller.state.log))
 
+    def test_vi_special_after_long_move_increases_damage_and_stun(self) -> None:
+        controller = TacticsController(("blue-vi",), ("red-darius",))
+        controller.blocked_tiles.clear()
+        controller.get_unit("blue-vi").position = (0, 2)
+        controller.get_unit("red-darius").position = (4, 2)
+
+        controller.move_active((2, 2))
+        result = controller.use_special("red-darius")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.impacts[0].damage, 28)
+        self.assertEqual(result.impacts[0].stun_applied, 2)
+
+    def test_ezreal_basic_reduces_special_cooldown(self) -> None:
+        controller = TacticsController(("blue-ezreal",), ("red-darius",))
+        controller.blocked_tiles.clear()
+        controller.get_unit("blue-ezreal").position = (0, 1)
+        controller.get_unit("red-darius").position = (4, 1)
+        controller.get_unit("blue-ezreal").cooldowns["trueshot-barrage"] = 2
+
+        result = controller.use_basic("red-darius")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(controller.get_unit("blue-ezreal").cooldowns["trueshot-barrage"], 1)
+        self.assertTrue(any("마력 재장전 발동." in note for note in result.notes))
+
+    def test_lux_special_creates_rune_tile(self) -> None:
+        controller = TacticsController(("blue-lux",), ("red-darius",))
+        controller.blocked_tiles.clear()
+        controller.get_unit("blue-lux").position = (0, 2)
+        controller.get_unit("red-darius").position = (4, 2)
+
+        result = controller.use_special("red-darius")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(controller.terrain_tiles[(0, 2)], "rune")
+        self.assertEqual(controller.get_unit("blue-lux").shield, 8)
+
+    def test_leona_special_stuns_multiple_targets(self) -> None:
+        controller = TacticsController(("blue-leona",), ("red-darius", "red-brand"))
+        controller.blocked_tiles.clear()
+        controller.get_unit("blue-leona").position = (0, 2)
+        controller.get_unit("red-darius").position = (3, 2)
+        controller.get_unit("red-brand").position = (4, 2)
+        controller.state.active_unit_id = "blue-leona"
+        controller.state.turn_queue = ["blue-leona"]
+
+        result = controller.use_special("red-darius")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(len(result.impacts), 2)
+        self.assertTrue(all(impact.stun_applied == 1 for impact in result.impacts))
+        self.assertEqual(controller.get_unit("red-darius").stun_turns, 1)
+        self.assertEqual(controller.get_unit("red-brand").stun_turns, 1)
+
+    def test_brand_special_creates_hazard_on_target_tile(self) -> None:
+        controller = TacticsController(("blue-garen",), ("red-brand",))
+        controller.blocked_tiles.clear()
+        controller.get_unit("blue-garen").position = (3, 2)
+        controller.get_unit("red-brand").position = (0, 2)
+        controller.state.active_unit_id = "red-brand"
+        controller.state.turn_queue = ["red-brand"]
+
+        result = controller.use_special("blue-garen")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(controller.terrain_tiles[(3, 2)], "hazard")
+
+    def test_darius_special_kill_grants_shield(self) -> None:
+        controller = TacticsController(("blue-garen",), ("red-darius",))
+        controller.blocked_tiles.clear()
+        controller.get_unit("blue-garen").position = (3, 2)
+        controller.get_unit("blue-garen").hp = 10
+        controller.get_unit("red-darius").position = (1, 2)
+        controller.state.active_unit_id = "red-darius"
+        controller.state.turn_queue = ["red-darius"]
+
+        result = controller.use_special("blue-garen")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(controller.get_unit("red-darius").shield, 12)
+
+    def test_zed_special_on_isolated_target_refunds_cooldown(self) -> None:
+        controller = TacticsController(("blue-garen",), ("red-zed",))
+        controller.blocked_tiles.clear()
+        controller.get_unit("blue-garen").position = (3, 2)
+        controller.get_unit("red-zed").position = (0, 2)
+        controller.state.active_unit_id = "red-zed"
+        controller.state.turn_queue = ["red-zed"]
+
+        result = controller.use_special("blue-garen")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(controller.get_unit("red-zed").shield, 6)
+        self.assertEqual(controller.get_unit("red-zed").cooldowns["death-mark"], controller.get_unit("red-zed").special_ability.cooldown - 1)
+
     def test_preview_ai_intent_reports_target(self) -> None:
         controller = TacticsController(("blue-garen",), ("red-brand",))
         controller.blocked_tiles.clear()

@@ -10,7 +10,7 @@ This file provides guidance for working in this repository.
 - Current primary build: native `Pygame` client
 - Current active native tracks:
   - `native_game`: 9인 풀에서 3인 선택 -> 3v3 battle
-  - `native_tactics`: 3인 선택 -> 시작 배치 -> 3전 원정 -> 보상 -> 전투 요약 -> 3안 경로 선택 + 전투 이벤트 -> 패시브/적 의도/연속 턴 예고/지형/엘리트전/맵 목표/목표 경쟁 AI/실패 페널티
+  - `native_tactics`: 3인 선택 -> 시작 배치 -> 3전 원정 -> 보상 -> 전투 요약 -> 3안 경로 선택 + 전투 이벤트 -> 패시브 2차/챔피언별 특수기/적 의도/연속 턴 예고/지형/엘리트전/맵 목표/목표 경쟁 AI/실패 페널티
 - Current secondary build: legacy web prototype under `src/*`
 
 ## Commands
@@ -88,6 +88,7 @@ src/
 - 앱 상태와 엔진 상태를 둘 다 쓰는 규칙은 동기화 헬퍼와 회귀 테스트를 함께 둘 것
 - 전술 리텐션 관련 근거는 `docs/TACTICS_UX_RESEARCH.md`에 함께 업데이트
 - 출시 목표 변화가 생기면 `docs/TACTICS_RELEASE_TARGET.md`와 `docs/TACTICS_MILESTONES.md`를 먼저 갱신
+- 챔피언별 스킬 선택 규칙을 건드리면 `tactics:test`, `tactics:smoke`, `tactics:capture`를 항상 같이 다시 돌릴 것
 
 ### Frequent Commits
 

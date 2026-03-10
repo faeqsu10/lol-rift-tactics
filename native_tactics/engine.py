@@ -46,6 +46,7 @@ class TacticalUnit:
     cooldowns: dict[str, int]
     has_moved: bool
     has_acted: bool
+    moved_distance_this_turn: int
     temporary_damage_bonus: int
     is_elite: bool
 
@@ -134,6 +135,7 @@ def unit_from_blueprint(blueprint: TacticalBlueprint, position: GridPos) -> Tact
         cooldowns={blueprint.special_ability.id: 0},
         has_moved=False,
         has_acted=False,
+        moved_distance_this_turn=0,
         temporary_damage_bonus=0,
         is_elite=False,
     )
@@ -260,6 +262,7 @@ class TacticsController:
         start = actor.position
         actor.position = destination
         actor.has_moved = True
+        actor.moved_distance_this_turn = self.distance(start, destination)
         result = TacticalActionResult(actor_id=actor.id, kind="move", start=start, end=destination)
         terrain_impact, terrain_note = self._apply_move_terrain(actor)
         if terrain_impact is not None:
@@ -589,7 +592,7 @@ class TacticsController:
         actor.has_acted = True
         if ability_kind == "special":
             actor.cooldowns[ability.id] = ability.cooldown
-        notes.extend(self._apply_post_action_passives(actor, ability_kind, impacts))
+        notes.extend(self._apply_post_action_passives(actor, ability_kind, impacts, target_ids, target_id))
 
         summary = " ".join(self._format_impact_text(self.get_unit(target_unit_id), impact) for target_unit_id, impact in zip(target_ids, impacts))
         log_line = f"{actor.name}, {ability.name} 사용. {summary}".strip()
@@ -697,29 +700,48 @@ class TacticsController:
             return effects, []
 
         bonus_damage = 0
+        bonus_stun_turns = 0
         notes: list[str] = []
         origin = source_position or actor.position
         distance = self.distance(origin, target.position)
+        movement_distance = actor.moved_distance_this_turn
+        if source_position is not None and source_position != actor.position:
+            movement_distance = max(movement_distance, self.distance(actor.position, source_position))
 
         if actor.temporary_damage_bonus > 0:
             bonus_damage += actor.temporary_damage_bonus
             notes.append("룬 지대 강화 발동.")
 
-        if actor.id == "blue-garen" and not actor.has_moved:
+        if actor.id == "blue-garen" and movement_distance == 0:
             bonus_damage += 4
             notes.append("선봉 결의 발동.")
         elif actor.id == "blue-ahri" and target.hp == target.max_hp:
             bonus_damage += 5
             notes.append("매혹의 사냥 발동.")
-        elif actor.id == "blue-vi" and actor.has_moved:
-            bonus_damage += 4
+        elif actor.id == "blue-vi" and movement_distance >= 2:
+            bonus_damage += 6
             notes.append("추격 압박 발동.")
+            if ability_kind == "special":
+                bonus_stun_turns += 1
+                notes.append("정지 명령 강화.")
         elif actor.id == "blue-ezreal" and distance >= 3:
             bonus_damage += 4
             notes.append("원거리 조준 발동.")
+        elif actor.id == "blue-leona" and actor.shield > 0 and distance <= 1:
+            bonus_damage += 3
+            notes.append("여명의 수호 발동.")
         elif actor.id == "blue-ashe" and distance >= 3:
             bonus_damage += 3
             notes.append("서리 노출 발동.")
+            if ability_kind == "special" and distance >= 4:
+                bonus_stun_turns += 1
+                notes.append("서리 결속 발동.")
+        elif actor.id == "blue-braum" and target.stun_turns > 0:
+            bonus_damage += 4
+            notes.append("불굴 반격 발동.")
+        elif actor.id == "blue-lux" and target.stun_turns > 0:
+            bonus_damage += 4
+            notes.append("광채 공명 발동.")
         elif actor.id == "red-darius" and target.hp <= target.max_hp // 2:
             bonus_damage += 5
             notes.append("학살 본능 발동.")
@@ -729,28 +751,46 @@ class TacticsController:
         elif actor.id == "red-caitlyn" and ability_kind == "basic" and distance >= 4:
             bonus_damage += 4
             notes.append("헤드샷 발동.")
-        elif actor.id == "red-yasuo" and actor.has_moved:
-            bonus_damage += 4
+        elif actor.id == "red-caitlyn" and target.stun_turns > 0:
+            bonus_damage += 2
+            notes.append("확정 사격 발동.")
+        elif actor.id == "red-yasuo" and movement_distance >= 2:
+            bonus_damage += 6
             notes.append("질풍 발동.")
+            if target.stun_turns > 0:
+                bonus_damage += 4
+                notes.append("폭풍 마무리 발동.")
         elif actor.id == "red-zed" and self._is_isolated(target):
             bonus_damage += 6
             notes.append("그림자 암살 발동.")
         elif actor.id == "red-lissandra" and target.stun_turns > 0:
             bonus_damage += 5
             notes.append("냉기 균열 발동.")
+            if ability_kind == "special":
+                bonus_stun_turns += 1
+                notes.append("빙결 연장 발동.")
         elif actor.id == "red-brand" and ability_kind == "special":
             bonus_damage += 3
             notes.append("확산 화염 발동.")
+            if self._terrain_at(target.position) == "hazard":
+                bonus_damage += 4
+                notes.append("불길 증폭 발동.")
 
-        if bonus_damage <= 0:
+        if bonus_damage <= 0 and bonus_stun_turns <= 0:
             return effects, notes
 
-        boosted_effects = tuple(
-            AbilityEffect(kind=effect.kind, amount=effect.amount + bonus_damage, turns=effect.turns)
-            if effect.kind == "damage"
-            else effect
-            for effect in effects
-        )
+        boosted_effects: list[AbilityEffect] = []
+        stun_effect_present = False
+        for effect in effects:
+            if effect.kind == "damage":
+                boosted_effects.append(AbilityEffect(kind=effect.kind, amount=effect.amount + bonus_damage, turns=effect.turns))
+            elif effect.kind == "stun":
+                stun_effect_present = True
+                boosted_effects.append(AbilityEffect(kind=effect.kind, amount=effect.amount, turns=effect.turns + bonus_stun_turns))
+            else:
+                boosted_effects.append(effect)
+        if bonus_stun_turns > 0 and not stun_effect_present:
+            boosted_effects.append(AbilityEffect(kind="stun", amount=0, turns=bonus_stun_turns))
         return boosted_effects, notes
 
     def _apply_post_action_passives(
@@ -758,19 +798,73 @@ class TacticsController:
         actor: TacticalUnit,
         ability_kind: Literal["basic", "special"],
         impacts: list[TacticalImpact],
+        target_ids: list[str],
+        primary_target_id: str | None,
     ) -> list[str]:
         notes: list[str] = []
         defeated_any = any(impact.defeated for impact in impacts)
+        hit_any = any(impact.damage > 0 or impact.stun_applied > 0 for impact in impacts)
+
+        def grant_shield(amount: int, note: str) -> None:
+            actor.shield += amount
+            if note not in notes:
+                notes.append(note)
+
+        def reduce_special_cooldown(amount: int, note: str) -> None:
+            special_id = actor.special_ability.id
+            previous = actor.cooldowns.get(special_id, 0)
+            actor.cooldowns[special_id] = max(0, previous - amount)
+            if actor.cooldowns[special_id] < previous and note not in notes:
+                notes.append(note)
 
         if actor.id in {"blue-jinx", "red-katarina"} and defeated_any:
-            actor.shield += 10
-            notes.append(f"{actor.passive_name} 발동.")
+            grant_shield(10, f"{actor.passive_name} 발동.")
+        if actor.id == "blue-garen" and ability_kind == "special" and len(target_ids) >= 2:
+            grant_shield(6, "심판 방벽 발동.")
+        if actor.id == "blue-ahri" and ability_kind == "special" and primary_target_id is not None:
+            target = self.get_unit(primary_target_id)
+            if target is not None and self._is_isolated(target):
+                reduce_special_cooldown(1, "혼령 추적 발동.")
+        if actor.id == "blue-jinx" and ability_kind == "special" and len(target_ids) >= 2:
+            grant_shield(6, "폭주 탄막 발동.")
         if actor.id == "blue-lux" and ability_kind == "special":
-            actor.shield += 8
-            notes.append("광채 잔향 발동.")
+            grant_shield(8, "광채 잔향 발동.")
+            self.terrain_tiles[actor.position] = "rune"
+            notes.append("빛의 잔광이 룬 지대를 남긴다.")
+        if actor.id == "blue-ezreal" and ability_kind == "basic" and hit_any:
+            reduce_special_cooldown(1, "마력 재장전 발동.")
+        if actor.id == "blue-leona" and ability_kind == "special" and len(target_ids) >= 2:
+            for target_id, impact in zip(target_ids, impacts):
+                target = self.get_unit(target_id)
+                if target is None or target.hp <= 0:
+                    continue
+                target.stun_turns = max(target.stun_turns, 1)
+                impact.stun_applied = max(impact.stun_applied, 1)
+            notes.append("태양 폭발 강화 발동.")
+        if actor.id == "blue-braum" and any(
+            (target := self.get_unit(target_id)) is not None and target.stun_turns > 0 for target_id in target_ids
+        ):
+            grant_shield(6, "불굴 반격 발동.")
+        if actor.id == "red-darius" and ability_kind == "special" and defeated_any:
+            grant_shield(12, "녹서스 집행 발동.")
+        if actor.id == "red-annie" and ability_kind == "special" and len(target_ids) >= 2:
+            grant_shield(8, "티버의 엄호 발동.")
         if actor.id == "red-morgana" and ability_kind == "special":
-            actor.shield += 10
-            notes.append("칠흑 보호 발동.")
+            grant_shield(10, "칠흑 보호 발동.")
+            if len(target_ids) >= 2:
+                grant_shield(6, "영혼 수확 발동.")
+        if actor.id == "red-zed" and ability_kind == "special" and primary_target_id is not None:
+            target = self.get_unit(primary_target_id)
+            if target is not None and self._is_isolated(target):
+                grant_shield(6, "그림자 귀환 발동.")
+                reduce_special_cooldown(1, "그림자 귀환 발동.")
+        if actor.id == "red-katarina" and ability_kind == "special" and len(target_ids) >= 2:
+            grant_shield(6, "단검 폭류 발동.")
+        if actor.id == "red-brand" and ability_kind == "special" and primary_target_id is not None:
+            target = self.get_unit(primary_target_id)
+            if target is not None:
+                self.terrain_tiles[target.position] = "hazard"
+                notes.append("불씨 잔류 발동.")
         return notes
 
     def _apply_turn_start_passives(self, actor: TacticalUnit) -> None:
@@ -926,6 +1020,7 @@ class TacticsController:
 
             actor.has_moved = False
             actor.has_acted = False
+            actor.moved_distance_this_turn = 0
             actor.temporary_damage_bonus = 0
             actor.cooldowns[actor.special_ability.id] = max(0, actor.cooldowns[actor.special_ability.id] - 1)
 

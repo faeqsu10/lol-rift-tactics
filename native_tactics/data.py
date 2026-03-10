@@ -134,24 +134,58 @@ class TacticalBlueprint:
 
 
 PASSIVE_BY_CHAMPION_ID: dict[str, tuple[str, str]] = {
-    "blue-garen": ("선봉 결의", "이번 턴 이동하지 않았다면 공격 피해가 4 증가합니다."),
-    "blue-ahri": ("매혹의 사냥", "체력이 가득 찬 적에게 주는 피해가 5 증가합니다."),
-    "blue-jinx": ("들뜬 광기", "적을 처치하면 즉시 보호막 10을 얻습니다."),
-    "blue-lux": ("광채 잔향", "특수기를 쓰면 자신에게 보호막 8을 부여합니다."),
-    "blue-vi": ("추격 압박", "이번 턴 이동했다면 공격 피해가 4 증가합니다."),
-    "blue-ezreal": ("원거리 조준", "거리 3칸 이상에서 가한 피해가 4 증가합니다."),
-    "blue-leona": ("여명의 수호", "턴 시작 시 보호막 8을 얻습니다."),
-    "blue-ashe": ("서리 노출", "거리 3칸 이상에서 가한 피해가 3 증가합니다."),
-    "blue-braum": ("불굴", "턴 시작 시 보호막 12를 얻습니다."),
-    "red-darius": ("학살 본능", "체력이 절반 이하인 적에게 주는 피해가 5 증가합니다."),
-    "red-annie": ("화염 점화", "보호막이 없는 적에게 특수기 피해가 4 증가합니다."),
-    "red-caitlyn": ("헤드샷", "거리 4칸 이상 기본기 피해가 4 증가합니다."),
-    "red-morgana": ("칠흑 보호", "특수기를 쓰면 자신에게 보호막 10을 부여합니다."),
-    "red-yasuo": ("질풍", "이번 턴 이동했다면 공격 피해가 4 증가합니다."),
-    "red-zed": ("그림자 암살", "인접한 아군이 없는 적에게 주는 피해가 6 증가합니다."),
-    "red-lissandra": ("냉기 균열", "기절한 적에게 주는 피해가 5 증가합니다."),
-    "red-katarina": ("연쇄 참수", "적을 처치하면 즉시 보호막 10을 얻습니다."),
-    "red-brand": ("확산 화염", "특수기 피해가 3 증가합니다."),
+    "blue-garen": ("선봉 결의", "이번 턴 이동하지 않았다면 공격 피해가 4 증가합니다. 심판으로 둘 이상 적중하면 보호막 6을 얻습니다."),
+    "blue-ahri": ("매혹의 사냥", "체력이 가득 찬 적에게 주는 피해가 5 증가합니다. 고립 대상에게 혼령 질주를 쓰면 재사용 대기시간이 1 줄어듭니다."),
+    "blue-jinx": ("들뜬 광기", "적을 처치하면 즉시 보호막 10을 얻습니다. 초강력 초토화 로켓이 둘 이상 맞으면 보호막 6을 추가로 얻습니다."),
+    "blue-lux": ("광채 잔향", "최후의 섬광을 쓰면 자신에게 보호막 8을 부여하고 현재 칸을 룬 지대로 바꿉니다."),
+    "blue-vi": ("추격 압박", "이번 턴 2칸 이상 이동했다면 공격 피해가 6 증가합니다. 정지 명령의 기절이 1턴 늘어납니다."),
+    "blue-ezreal": ("원거리 조준", "거리 3칸 이상에서 가한 피해가 4 증가합니다. 기본기 적중 시 정조준 일격 재사용 대기시간이 1 줄어듭니다."),
+    "blue-leona": ("여명의 수호", "보호막이 있는 상태로 인접 공격하면 피해가 3 증가합니다. 태양 폭발이 둘 이상 맞으면 모두 1턴 기절합니다."),
+    "blue-ashe": ("서리 노출", "거리 3칸 이상에서 가한 피해가 3 증가합니다. 먼 거리에서 수정화살을 맞히면 기절이 1턴 늘어납니다."),
+    "blue-braum": ("불굴", "턴 시작 시 보호막 12를 얻습니다. 공격 후 상대가 기절 상태면 보호막 6을 추가로 얻습니다."),
+    "red-darius": ("학살 본능", "체력이 절반 이하인 적에게 주는 피해가 5 증가합니다. 녹서스의 단두대로 처치하면 보호막 12를 얻습니다."),
+    "red-annie": ("화염 점화", "보호막이 없는 적에게 티버 피해가 4 증가합니다. 티버가 둘 이상 맞으면 보호막 8을 얻습니다."),
+    "red-caitlyn": ("헤드샷", "거리 4칸 이상 기본기 피해가 4 증가합니다. 기절한 적을 노리면 피해가 2 더 증가합니다."),
+    "red-morgana": ("칠흑 보호", "영혼의 족쇄를 쓰면 자신에게 보호막 10을 얻습니다. 둘 이상 맞히면 보호막 6을 추가로 얻습니다."),
+    "red-yasuo": ("질풍", "이번 턴 2칸 이상 이동했다면 공격 피해가 6 증가합니다. 기절한 적에게는 피해가 4 더 증가합니다."),
+    "red-zed": ("그림자 암살", "인접한 아군이 없는 적에게 주는 피해가 6 증가합니다. 죽음의 표식으로 고립 대상을 맞히면 보호막 6과 재사용 대기시간 1 감소를 얻습니다."),
+    "red-lissandra": ("냉기 균열", "기절한 적에게 주는 피해가 5 증가합니다. 얼음 무덤이 기절한 적에게 닿으면 기절을 1턴 연장합니다."),
+    "red-katarina": ("연쇄 참수", "적을 처치하면 즉시 보호막 10을 얻습니다. 죽음의 연꽃이 둘 이상 맞으면 보호막 6을 추가로 얻습니다."),
+    "red-brand": ("확산 화염", "파멸의 불덩이 피해가 3 증가합니다. 맞은 타일을 화염 지대로 바꿉니다."),
+}
+
+TACTICAL_ABILITY_OVERRIDES: dict[tuple[str, str], dict[str, int]] = {
+    ("blue-braum", "winters-bite"): {"cast_range": 2},
+    ("blue-ezreal", "mystic-shot"): {"cast_range": 5},
+    ("blue-ezreal", "trueshot-barrage"): {"cast_range": 5},
+    ("blue-lux", "final-spark"): {"cast_range": 5},
+    ("blue-vi", "cease-and-desist"): {"cast_range": 3},
+    ("red-caitlyn", "piltover-peacemaker"): {"cast_range": 5},
+    ("red-caitlyn", "ace-in-the-hole"): {"cast_range": 5},
+    ("red-darius", "noxian-guillotine"): {"cast_range": 2},
+    ("red-zed", "death-mark"): {"cast_range": 3},
+    ("red-brand", "pyroclasm"): {"cast_range": 5},
+}
+
+TACTICAL_SPECIAL_ABILITY_IDS: dict[str, str] = {
+    "blue-garen": "judgment",
+    "blue-ahri": "charm",
+    "blue-jinx": "super-mega-death-rocket",
+    "blue-lux": "final-spark",
+    "blue-vi": "cease-and-desist",
+    "blue-ezreal": "trueshot-barrage",
+    "blue-leona": "solar-flare",
+    "blue-ashe": "enchanted-crystal-arrow",
+    "blue-braum": "glacial-fissure",
+    "red-darius": "noxian-guillotine",
+    "red-annie": "summon-tibbers",
+    "red-caitlyn": "ace-in-the-hole",
+    "red-morgana": "soul-shackles",
+    "red-yasuo": "last-breath",
+    "red-zed": "death-mark",
+    "red-lissandra": "frozen-tomb",
+    "red-katarina": "death-lotus",
+    "red-brand": "pyroclasm",
 }
 
 
@@ -160,6 +194,12 @@ def _damage_total(effects: tuple[AbilityEffect, ...]) -> int:
 
 
 def _pick_special_ability(blueprint: ChampionBlueprint):
+    preferred_id = TACTICAL_SPECIAL_ABILITY_IDS.get(blueprint.id)
+    if preferred_id is not None:
+        for ability in blueprint.abilities:
+            if ability.id == preferred_id:
+                return ability
+
     candidates = blueprint.abilities[1:] or blueprint.abilities[:1]
     return max(
         candidates,
@@ -175,7 +215,7 @@ def _pick_special_ability(blueprint: ChampionBlueprint):
 
 def _build_basic_ability(blueprint: ChampionBlueprint) -> TacticalAbility:
     ability = blueprint.abilities[0]
-    return TacticalAbility(
+    tactical_ability = TacticalAbility(
         id=ability.id,
         name=ability.name,
         description=ability.description,
@@ -185,6 +225,7 @@ def _build_basic_ability(blueprint: ChampionBlueprint) -> TacticalAbility:
         area_radius=0,
         effects=ability.effects,
     )
+    return _apply_tactical_override(blueprint.id, tactical_ability)
 
 
 def _build_special_ability(blueprint: ChampionBlueprint) -> TacticalAbility:
@@ -202,7 +243,7 @@ def _build_special_ability(blueprint: ChampionBlueprint) -> TacticalAbility:
         cast_range = ROLE_BASIC_RANGE[blueprint.role] + (1 if blueprint.role in {"Mage", "Marksman"} else 0)
         area_radius = 0
 
-    return TacticalAbility(
+    tactical_ability = TacticalAbility(
         id=ability.id,
         name=ability.name,
         description=ability.description,
@@ -210,6 +251,23 @@ def _build_special_ability(blueprint: ChampionBlueprint) -> TacticalAbility:
         target_mode=target_mode,
         cast_range=cast_range,
         area_radius=area_radius,
+        effects=ability.effects,
+    )
+    return _apply_tactical_override(blueprint.id, tactical_ability)
+
+
+def _apply_tactical_override(champion_id: str, ability: TacticalAbility) -> TacticalAbility:
+    override = TACTICAL_ABILITY_OVERRIDES.get((champion_id, ability.id))
+    if override is None:
+        return ability
+    return TacticalAbility(
+        id=ability.id,
+        name=ability.name,
+        description=ability.description,
+        cooldown=override.get("cooldown", ability.cooldown),
+        target_mode=ability.target_mode,
+        cast_range=override.get("cast_range", ability.cast_range),
+        area_radius=override.get("area_radius", ability.area_radius),
         effects=ability.effects,
     )
 

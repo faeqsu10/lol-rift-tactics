@@ -55,7 +55,8 @@
   - movement plus action on each turn
   - obstacle tiles and movement range highlighting
   - role-based tactical ranges with champion-specific ability names
-  - champion-specific passive traits
+  - champion-specific passive traits with second-pass differentiation
+  - champion-specific tactical special picks so marquee skills stay consistent
   - enemy intent preview during red turns with predicted damage, threat tiles, multi-target counts, next-enemy warning, and enemy-phase summaries
   - stage-based terrain tiles: brush, rune, hazard
   - elite enemies in later expedition stages
@@ -108,11 +109,11 @@
 
 ## Recommended Next Steps
 
-1. Add stronger champion-specific passive differentiation and more unique tactical triggers to `native_tactics`.
-2. Add a first boss battle layer and distinct elite/objective rules.
-3. Improve intent once more around chained damage text, danger scoring, and elite focus fire.
-4. Add run-map node variety such as rest/event/elite splits on top of the current route flow.
-5. Replace shape-based placeholder characters with real sprite art or sprite sheets.
+1. Add a first boss battle layer and distinct elite/objective rules to `native_tactics`.
+2. Improve intent once more around chained damage text, danger scoring, and elite focus fire.
+3. Add run-map node variety such as rest/event/elite splits on top of the current route flow.
+4. Replace shape-based placeholder characters with real sprite art or sprite sheets.
+5. Expand map and objective variety once the boss loop lands.
 
 ## Resume Prompt
 
