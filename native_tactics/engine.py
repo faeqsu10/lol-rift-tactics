@@ -82,15 +82,25 @@ class TacticalIntent:
     target_id: str | None
     target_tile: GridPos | None
     summary: str
+    target_count: int = 0
     predicted_damage: int = 0
     threat_tiles: list[GridPos] = field(default_factory=list)
+    objective_pressure_label: str | None = None
+    phase_actor_count: int = 1
+    phase_total_damage: int = 0
+    phase_target_count: int = 0
+    phase_summary: str | None = None
+    phase_threat_tiles: list[GridPos] = field(default_factory=list)
+    phase_objective_tiles: list[GridPos] = field(default_factory=list)
     follow_up_actor_id: str | None = None
     follow_up_actor_name: str | None = None
     follow_up_summary: str | None = None
     follow_up_move_to: GridPos | None = None
     follow_up_target_tile: GridPos | None = None
+    follow_up_target_count: int = 0
     follow_up_predicted_damage: int = 0
     follow_up_threat_tiles: list[GridPos] = field(default_factory=list)
+    follow_up_objective_pressure_label: str | None = None
 
 
 @dataclass
@@ -138,6 +148,7 @@ class TacticsController:
         red_positions: Iterable[GridPos] | None = None,
         terrain_tiles: dict[GridPos, TerrainId] | None = None,
         elite_unit_ids: Iterable[str] | None = None,
+        objective_tiles: Iterable[GridPos] | None = None,
     ) -> None:
         self.initial_blue_ids = tuple(blue_ids or ())
         self.initial_red_ids = tuple(red_ids or ())
@@ -145,6 +156,7 @@ class TacticsController:
         self.initial_red_positions = tuple(red_positions or ())
         self.initial_terrain_tiles = dict(terrain_tiles or {})
         self.initial_elite_unit_ids = tuple(elite_unit_ids or ())
+        self.initial_objective_tiles = tuple(objective_tiles or ())
         blue_lineup = tuple(self.initial_blue_ids or ("blue-garen", "blue-ahri", "blue-jinx"))
         red_lineup = tuple(self.initial_red_ids or ("red-darius", "red-annie", "red-caitlyn"))
         blueprints = build_tactical_blueprints(blue_lineup, red_lineup)
@@ -155,6 +167,7 @@ class TacticsController:
         self.blocked_tiles = set(BLOCKED_TILES)
         self.terrain_tiles = dict(self.initial_terrain_tiles)
         self.elite_unit_ids = set(self.initial_elite_unit_ids)
+        self.objective_tiles = set(self.initial_objective_tiles)
         self.state = TacticalState(
             round=1,
             turn_queue=self._build_turn_queue(),
@@ -173,7 +186,11 @@ class TacticsController:
             self.initial_red_positions or None,
             self.initial_terrain_tiles or None,
             self.initial_elite_unit_ids or None,
+            self.initial_objective_tiles or None,
         )
+
+    def set_objective_tiles(self, objective_tiles: Iterable[GridPos] | None) -> None:
+        self.objective_tiles = set(objective_tiles or ())
 
     def get_unit(self, unit_id: str | None) -> TacticalUnit | None:
         if not unit_id:
@@ -327,19 +344,45 @@ class TacticsController:
         actor = self.get_active_unit()
         if actor is None or actor.team != "red" or self.state.winner:
             return None
-        intent = self._preview_actor_intent(actor)
-        next_actor = self._next_red_actor_after(actor.id)
-        if next_actor is None:
+        phase_actors = self._collect_enemy_phase_actors(actor.id)
+        phase_intents = [self._preview_actor_intent(phase_actor) for phase_actor in phase_actors]
+        intent = phase_intents[0]
+        phase_threat_tiles = self._unique_tiles(
+            threat_tile
+            for phase_intent in phase_intents
+            for threat_tile in phase_intent.threat_tiles
+        )
+        phase_objective_tiles = self._unique_tiles(
+            objective_tile
+            for phase_intent in phase_intents
+            for objective_tile in self._objective_tiles_from_preview(phase_intent)
+        )
+        intent.phase_actor_count = len(phase_intents)
+        intent.phase_total_damage = sum(phase_intent.predicted_damage for phase_intent in phase_intents)
+        intent.phase_target_count = len(phase_threat_tiles)
+        intent.phase_threat_tiles = phase_threat_tiles
+        intent.phase_objective_tiles = phase_objective_tiles
+        intent.phase_summary = (
+            f"적 연속 턴 {intent.phase_actor_count}회 · 총 피해 {intent.phase_total_damage} · 위협 {intent.phase_target_count}칸"
+            + (" · 목표 압박" if phase_objective_tiles else "")
+        )
+
+        follow_up_intent: TacticalIntent | None = phase_intents[1] if len(phase_intents) > 1 else None
+        next_actor = phase_actors[1] if len(phase_actors) > 1 else self._next_red_actor_after(actor.id)
+        if follow_up_intent is None and next_actor is not None and next_actor.id != actor.id:
+            follow_up_intent = self._preview_actor_intent(next_actor)
+        if follow_up_intent is None or next_actor is None or next_actor.id == actor.id:
             return intent
 
-        follow_up_intent = self._preview_actor_intent(next_actor)
         intent.follow_up_actor_id = next_actor.id
         intent.follow_up_actor_name = next_actor.name
         intent.follow_up_summary = f"다음 적 차례 예상: {follow_up_intent.summary}"
         intent.follow_up_move_to = follow_up_intent.move_to
         intent.follow_up_target_tile = follow_up_intent.target_tile
+        intent.follow_up_target_count = follow_up_intent.target_count
         intent.follow_up_predicted_damage = follow_up_intent.predicted_damage
         intent.follow_up_threat_tiles = follow_up_intent.threat_tiles
+        intent.follow_up_objective_pressure_label = follow_up_intent.objective_pressure_label
         return intent
 
     def _preview_actor_intent(self, actor: TacticalUnit) -> TacticalIntent:
@@ -353,6 +396,7 @@ class TacticsController:
             target_id = self._pick_ai_target(actor, special_targets, special=True)
             target = self.get_unit(target_id)
             threat_tiles, predicted_damage = self._preview_action_outcome(actor, actor.position, actor.special_ability, "special", target_id)
+            _, objective_pressure_label = self._objective_pressure_preview(actor, actor.position, target.position if target else None)
             return TacticalIntent(
                 actor_id=actor.id,
                 actor_name=actor.name,
@@ -362,8 +406,10 @@ class TacticsController:
                 target_id=target_id,
                 target_tile=target.position if target else None,
                 summary=f"{actor.name}가 {target.name if target else '대상'}에게 {actor.special_ability.name} 사용 예정",
+                target_count=len(threat_tiles),
                 predicted_damage=predicted_damage,
                 threat_tiles=threat_tiles,
+                objective_pressure_label=objective_pressure_label,
             )
 
         basic_targets = self._get_valid_targets_for_position(actor, actor.basic_ability, actor.position)
@@ -371,6 +417,7 @@ class TacticsController:
             target_id = self._pick_ai_target(actor, basic_targets)
             target = self.get_unit(target_id)
             threat_tiles, predicted_damage = self._preview_action_outcome(actor, actor.position, actor.basic_ability, "basic", target_id)
+            _, objective_pressure_label = self._objective_pressure_preview(actor, actor.position, target.position if target else None)
             return TacticalIntent(
                 actor_id=actor.id,
                 actor_name=actor.name,
@@ -380,12 +427,15 @@ class TacticsController:
                 target_id=target_id,
                 target_tile=target.position if target else None,
                 summary=f"{actor.name}가 {target.name if target else '대상'}에게 {actor.basic_ability.name} 사용 예정",
+                target_count=len(threat_tiles),
                 predicted_damage=predicted_damage,
                 threat_tiles=threat_tiles,
+                objective_pressure_label=objective_pressure_label,
             )
 
         destination = self._choose_ai_move(actor)
         if destination is None:
+            _, objective_pressure_label = self._objective_pressure_preview(actor, actor.position, None)
             return TacticalIntent(
                 actor_id=actor.id,
                 actor_name=actor.name,
@@ -395,6 +445,7 @@ class TacticsController:
                 target_id=None,
                 target_tile=None,
                 summary=f"{actor.name}가 이동 없이 턴 종료 예정",
+                objective_pressure_label=objective_pressure_label,
             )
 
         action_kind, action_name, target_id, target_tile = self._predict_follow_up_from_position(actor, destination)
@@ -402,6 +453,7 @@ class TacticsController:
             target = self.get_unit(target_id)
             ability = actor.special_ability if action_kind == "special" else actor.basic_ability
             threat_tiles, predicted_damage = self._preview_action_outcome(actor, destination, ability, action_kind, target_id)
+            _, objective_pressure_label = self._objective_pressure_preview(actor, destination, target_tile)
             return TacticalIntent(
                 actor_id=actor.id,
                 actor_name=actor.name,
@@ -411,10 +463,13 @@ class TacticsController:
                 target_id=target_id,
                 target_tile=target_tile,
                 summary=f"{actor.name}가 {destination}로 이동 후 {target.name if target else '대상'}에게 {action_name} 사용 예정",
+                target_count=len(threat_tiles),
                 predicted_damage=predicted_damage,
                 threat_tiles=threat_tiles,
+                objective_pressure_label=objective_pressure_label,
             )
 
+        _, objective_pressure_label = self._objective_pressure_preview(actor, destination, None)
         return TacticalIntent(
             actor_id=actor.id,
             actor_name=actor.name,
@@ -424,6 +479,7 @@ class TacticsController:
             target_id=None,
             target_tile=None,
             summary=f"{actor.name}가 {destination}로 이동 예정",
+            objective_pressure_label=objective_pressure_label,
         )
 
     def _next_red_actor_after(self, current_actor_id: str) -> TacticalUnit | None:
@@ -453,6 +509,57 @@ class TacticsController:
         if next_red_id is None:
             return None
         return self.get_unit(next_red_id)
+
+    def _collect_enemy_phase_actors(self, current_actor_id: str) -> list[TacticalUnit]:
+        phase_actors: list[TacticalUnit] = []
+        queued_after_current = [current_actor_id, *self.state.turn_queue[1:]]
+        blue_found = False
+        for unit_id in queued_after_current:
+            unit = self.get_unit(unit_id)
+            if unit is None or unit.hp <= 0:
+                continue
+            if unit.team == "blue":
+                blue_found = True
+                break
+            phase_actors.append(unit)
+
+        if blue_found or self.state.winner:
+            return phase_actors
+
+        for unit_id in self._build_turn_queue():
+            unit = self.get_unit(unit_id)
+            if unit is None or unit.hp <= 0:
+                continue
+            if unit.team == "blue":
+                break
+            phase_actors.append(unit)
+
+        return phase_actors
+
+    def _unique_tiles(self, tiles: Iterable[GridPos]) -> list[GridPos]:
+        seen: set[GridPos] = set()
+        ordered: list[GridPos] = []
+        for tile in tiles:
+            if tile in seen:
+                continue
+            seen.add(tile)
+            ordered.append(tile)
+        return ordered
+
+    def _objective_tiles_from_preview(self, intent: TacticalIntent) -> list[GridPos]:
+        if not self.objective_tiles:
+            return []
+        pressure_tiles: list[GridPos] = []
+        for tile in (intent.move_to, intent.target_tile):
+            if tile is None:
+                continue
+            if tile in self.objective_tiles:
+                pressure_tiles.append(tile)
+                continue
+            nearest_objective = min(self.objective_tiles, key=lambda objective_tile: self.distance(tile, objective_tile))
+            if self.distance(tile, nearest_objective) <= 1:
+                pressure_tiles.append(nearest_objective)
+        return pressure_tiles
 
     def distance(self, a: GridPos, b: GridPos) -> int:
         return abs(a[0] - b[0]) + abs(a[1] - b[1])
@@ -884,9 +991,12 @@ class TacticsController:
         if not enemies:
             return None
 
-        def score(tile: GridPos) -> tuple[int, int, int, int, int, int]:
+        def score(tile: GridPos) -> tuple[int, int, int, int, int, int, int]:
             nearest_distance = min(self.distance(tile, enemy.position) for enemy in enemies)
-            action_kind, _, target_id, _ = self._predict_follow_up_from_position(actor, tile)
+            action_kind: ActionKind | None = None
+            target_id: str | None = None
+            if not actor.has_acted:
+                action_kind, _, target_id, _ = self._predict_follow_up_from_position(actor, tile)
             predicted_damage = 0
             if target_id and action_kind in {"basic", "special"}:
                 ability = actor.special_ability if action_kind == "special" else actor.basic_ability
@@ -896,11 +1006,13 @@ class TacticsController:
                 target = self.get_unit(target_id)
                 if target is not None and predicted_damage >= target.hp:
                     kill_bonus = 3
+            objective_pressure = self._objective_pressure_score(actor, tile, target_id)
             terrain_bonus = self._terrain_preference(actor, tile, predicted_damage > 0)
             threat_penalty = self._enemy_threat_on_tile(tile, actor.team)
             return (
                 kill_bonus,
                 2 if action_kind == "special" else 1 if action_kind == "basic" else 0,
+                objective_pressure,
                 terrain_bonus,
                 predicted_damage,
                 -threat_penalty,
@@ -935,3 +1047,45 @@ class TacticsController:
                 return 5 if actor.is_elite else 4
             return 1
         return 0
+
+    def _objective_pressure_preview(
+        self,
+        actor: TacticalUnit,
+        position: GridPos | None,
+        target_tile: GridPos | None,
+    ) -> tuple[GridPos | None, str | None]:
+        if actor.team != "red" or position is None or not self.objective_tiles:
+            return None, None
+        if target_tile is not None:
+            if target_tile in self.objective_tiles:
+                return target_tile, "목표 수비 압박"
+            nearest_to_target = min(self.objective_tiles, key=lambda tile: self.distance(target_tile, tile))
+            if self.distance(target_tile, nearest_to_target) <= 1:
+                return nearest_to_target, "목표 인근 교전"
+        if position in self.objective_tiles:
+            return position, "목표 타일 점유 시도"
+        nearest_objective = min(self.objective_tiles, key=lambda tile: self.distance(position, tile))
+        if self.distance(position, nearest_objective) <= 1:
+            return nearest_objective, "목표 인접 압박"
+        return None, None
+
+    def _objective_pressure_score(self, actor: TacticalUnit, tile: GridPos, target_id: str | None) -> int:
+        if actor.team != "red" or not self.objective_tiles:
+            return 0
+        nearest_distance = min(self.distance(tile, objective_tile) for objective_tile in self.objective_tiles)
+        occupy_bonus = 5 if tile in self.objective_tiles else 0
+        adjacency_bonus = max(0, 3 - nearest_distance)
+        target_bonus = 0
+        target = self.get_unit(target_id)
+        if target is not None:
+            if target.position in self.objective_tiles:
+                target_bonus += 4
+            elif any(self.distance(target.position, objective_tile) <= 1 for objective_tile in self.objective_tiles):
+                target_bonus += 2
+        ally_stack_penalty = 0
+        if tile in self.objective_tiles and any(
+            unit.team == actor.team and unit.id != actor.id and unit.hp > 0 and unit.position == tile
+            for unit in self.units
+        ):
+            ally_stack_penalty = 2
+        return occupy_bonus + adjacency_bonus + target_bonus - ally_stack_penalty

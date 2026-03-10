@@ -116,6 +116,24 @@ class TacticsControllerTests(unittest.TestCase):
         self.assertIsNotNone(intent.follow_up_summary)
         self.assertIn("다음 적 차례 예상", intent.follow_up_summary)
 
+    def test_preview_ai_intent_reports_phase_totals(self) -> None:
+        controller = TacticsController(("blue-garen",), ("red-brand", "red-caitlyn"))
+        controller.blocked_tiles.clear()
+        controller.get_unit("blue-garen").position = (0, 2)
+        controller.get_unit("red-brand").position = (4, 2)
+        controller.get_unit("red-caitlyn").position = (6, 2)
+        controller.state.active_unit_id = "red-brand"
+        controller.state.turn_queue = ["red-brand", "red-caitlyn", "blue-garen"]
+
+        intent = controller.preview_ai_intent()
+
+        self.assertIsNotNone(intent)
+        self.assertEqual(intent.phase_actor_count, 2)
+        self.assertEqual(intent.phase_total_damage, intent.predicted_damage + intent.follow_up_predicted_damage)
+        self.assertGreaterEqual(intent.phase_target_count, 1)
+        self.assertIsNotNone(intent.phase_summary)
+        self.assertIn("적 연속 턴", intent.phase_summary)
+
     def test_hazard_tile_deals_damage_on_move(self) -> None:
         controller = TacticsController(
             ("blue-garen",),
@@ -163,6 +181,27 @@ class TacticsControllerTests(unittest.TestCase):
         destination = controller._choose_ai_move(controller.get_unit("red-brand"))
 
         self.assertNotEqual(destination, (3, 2))
+
+    def test_ai_contests_objective_tile_when_no_attack_available(self) -> None:
+        controller = TacticsController(
+            ("blue-garen",),
+            ("red-brand",),
+            ((0, 0),),
+            ((7, 4),),
+            objective_tiles=((7, 2),),
+        )
+        controller.blocked_tiles.clear()
+        controller.state.active_unit_id = "red-brand"
+        controller.state.turn_queue = ["red-brand", "blue-garen"]
+
+        destination = controller._choose_ai_move(controller.get_unit("red-brand"))
+        intent = controller.preview_ai_intent()
+
+        self.assertEqual(destination, (7, 2))
+        self.assertIsNotNone(intent)
+        self.assertEqual(intent.move_to, (7, 2))
+        self.assertIn((7, 2), intent.phase_objective_tiles)
+        self.assertEqual(intent.objective_pressure_label, "목표 타일 점유 시도")
 
 
 class GameAppFlowTests(unittest.TestCase):
@@ -327,6 +366,20 @@ class GameAppFlowTests(unittest.TestCase):
         self.assertEqual(app.screen_mode, "reward")
         self.assertEqual(app.run_bonuses["bonus-damage"], 1)
         self.assertIn("선제 제압", app.last_objective_summary)
+
+    def test_start_battle_syncs_objective_tiles_to_controller(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
+        app.selected_red_ids = ["red-darius", "red-annie", "red-caitlyn"]
+        app.run_stage = 2
+        app.current_route_id = "supply-line"
+        app._seed_deployment()
+
+        app._start_battle()
+
+        self.assertEqual(app.screen_mode, "battle")
+        self.assertIsNotNone(app.controller)
+        self.assertIn((3, 2), app.controller.objective_tiles)
 
 
 if __name__ == "__main__":

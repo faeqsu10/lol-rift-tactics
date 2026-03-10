@@ -56,7 +56,7 @@
   - obstacle tiles and movement range highlighting
   - role-based tactical ranges with champion-specific ability names
   - champion-specific passive traits
-  - enemy intent preview during red turns with predicted damage, threat tiles, and next-enemy warning
+  - enemy intent preview during red turns with predicted damage, threat tiles, multi-target counts, next-enemy warning, and enemy-phase summaries
   - stage-based terrain tiles: brush, rune, hazard
   - elite enemies in later expedition stages
   - route selection between battles with three risk/reward options and temporary next-battle modifiers
@@ -64,6 +64,7 @@
   - completed objectives grant an automatic run bonus before the normal reward pick
   - battle recap summary before choosing the next route
   - terrain-aware red-team AI movement and targeting
+  - objective-aware red-team AI that contests marked tiles and pressure zones
   - post-victory reward pick with next-enemy preview
   - post-battle overlay with direct return to champion select or rematch
   - headless screenshot capture and tests
@@ -95,17 +96,20 @@
 - Tactics UX research: `docs/TACTICS_UX_RESEARCH.md`
 - Tactics release target: `docs/TACTICS_RELEASE_TARGET.md`
 - Tactics milestones: `docs/TACTICS_MILESTONES.md`
-- Verified locally on March 9, 2026:
+- Verified locally on March 10, 2026:
   - `python -m native_game.tests` passes
   - headless smoke run with SDL dummy drivers passes
   - headless screenshot capture passes
+  - `python -m native_tactics.tests` passes
+  - `npm run tactics:smoke` passes
+  - `npm run tactics:capture` passes
 
 ## Recommended Next Steps
 
-1. Expand enemy intent UI from next-enemy warning to fuller multi-target or sequence preview.
-2. Add route-specific events 2nd pass with stronger objective variety and failure penalties.
-3. Add stronger champion-specific passive differentiation and more unique tactical triggers to `native_tactics`.
-4. Improve AI further around elite focus fire, terrain denial, route-aware pathing, and objective contesting.
+1. Add route-specific events 2nd pass with stronger objective variety and failure penalties.
+2. Add stronger champion-specific passive differentiation and more unique tactical triggers to `native_tactics`.
+3. Add a first boss battle layer and distinct elite/objective rules.
+4. Improve intent once more around chained damage text, danger scoring, and elite focus fire.
 5. Replace shape-based placeholder characters with real sprite art or sprite sheets.
 
 ## Resume Prompt

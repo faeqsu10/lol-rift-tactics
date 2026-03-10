@@ -507,6 +507,22 @@ class GameApp:
             round_limit=definition.get("round_limit"),
         )
 
+    def _objective_focus_tiles(self) -> tuple[GridPos, ...]:
+        objective = self.current_objective
+        if objective is None or objective.completed or objective.failed:
+            return ()
+        if objective.kind == "occupy_tile":
+            return objective.objective_tiles
+        if objective.kind == "move_on_terrain" and objective.terrain_id is not None:
+            terrain_tiles = self.controller.terrain_tiles if self.controller is not None else self._terrain_tiles_for_stage()
+            return tuple(tile for tile, terrain_id in terrain_tiles.items() if terrain_id == objective.terrain_id)
+        return ()
+
+    def _sync_controller_objective_focus(self) -> None:
+        if self.controller is None:
+            return
+        self.controller.set_objective_tiles(self._objective_focus_tiles())
+
     def _summarize_current_objective(self) -> str | None:
         if self.current_objective is None:
             return None
@@ -563,6 +579,7 @@ class GameApp:
         if objective.progress >= objective.target and not objective.completed:
             self._complete_objective()
         self._refresh_objective_failure()
+        self._sync_controller_objective_focus()
 
     def _apply_completed_objective_bonus(self) -> str | None:
         if self.current_objective is None:
@@ -599,11 +616,13 @@ class GameApp:
             red_positions,
             terrain_tiles=self._terrain_tiles_for_stage(),
             elite_unit_ids=self._elite_enemy_ids_for_stage(),
+            objective_tiles=self._objective_focus_tiles(),
         )
 
     def _attach_controller(self, controller: TacticsController) -> None:
         self._apply_run_modifiers(controller)
         self.controller = controller
+        self._sync_controller_objective_focus()
         self._reset_battle_stats()
         self.hit_flash = {unit.id: 0.0 for unit in controller.units}
         self.unit_visual_positions = {
@@ -682,11 +701,11 @@ class GameApp:
             self.selection_message = "세 챔피언 모두 시작 칸에 배치해야 합니다."
             self.audio.play("reset")
             return
-        controller = self._build_controller_from_current_setup()
-        self._attach_controller(controller)
         self.current_objective = self._build_battle_objective()
         self.last_objective_summary = None
         self.objective_bonus_applied = False
+        controller = self._build_controller_from_current_setup()
+        self._attach_controller(controller)
         self.screen_mode = "battle"
         self.status_text = "이동할 칸을 고르거나 스킬을 선택하세요."
         self.audio.play("ui-confirm")
@@ -716,11 +735,11 @@ class GameApp:
     def _reset_battle(self) -> None:
         if self.controller is None:
             return
-        self.controller.reset()
-        self._attach_controller(self.controller)
         self.current_objective = self._build_battle_objective()
         self.last_objective_summary = None
         self.objective_bonus_applied = False
+        self.controller.reset()
+        self._attach_controller(self.controller)
         self.status_text = "전술 전투를 다시 시작했습니다."
         self.audio.play("reset")
 
@@ -1610,6 +1629,20 @@ class GameApp:
             pygame.draw.rect(self.screen, color, rect.inflate(-8, -8), 3, border_radius=18)
 
         if intent is not None:
+            current_threats = set(intent.threat_tiles)
+            follow_up_threats = set(intent.follow_up_threat_tiles)
+            for threat_tile in intent.phase_threat_tiles:
+                if threat_tile in current_threats or threat_tile in follow_up_threats:
+                    continue
+                rect = self.tile_rects[threat_tile]
+                overlay = pygame.Surface(rect.size, pygame.SRCALPHA)
+                overlay.fill((198, 113, 255, 20))
+                self.screen.blit(overlay, rect.topleft)
+            for objective_tile in intent.phase_objective_tiles:
+                rect = self.tile_rects.get(objective_tile)
+                if rect is None:
+                    continue
+                pygame.draw.rect(self.screen, (255, 122, 122), rect.inflate(-26, -26), 2, border_radius=14)
             for threat_tile in intent.threat_tiles:
                 rect = self.tile_rects[threat_tile]
                 overlay = pygame.Surface(rect.size, pygame.SRCALPHA)
@@ -1720,29 +1753,39 @@ class GameApp:
             self._draw_text(active.passive_name, self.font_ui, accent, (passive_rect.x + 16, passive_rect.y + 42))
             self._draw_wrapped_text(active.passive_description, self.font_small, (208, 219, 226), pygame.Rect(passive_rect.x + 16, passive_rect.y + 68, passive_rect.width - 32, 26), max_lines=2)
 
-        intent_rect = pygame.Rect(LEFT_PANEL.x + 16, LEFT_PANEL.y + 436, LEFT_PANEL.width - 32, 144)
+        intent_rect = pygame.Rect(LEFT_PANEL.x + 16, LEFT_PANEL.y + 436, LEFT_PANEL.width - 32, 166)
         pygame.draw.rect(self.screen, (11, 20, 31), intent_rect, border_radius=24)
         pygame.draw.rect(self.screen, (236, 218, 176), intent_rect, 1, border_radius=24)
         self._draw_text("적 의도", self.font_ui, (229, 210, 164), (intent_rect.x + 18, intent_rect.y + 18))
         if intent is not None:
-            self._draw_wrapped_text(intent.summary, self.font_small, (214, 191, 184), pygame.Rect(intent_rect.x + 18, intent_rect.y + 52, intent_rect.width - 36, 54), max_lines=2)
+            self._draw_wrapped_text(intent.summary, self.font_small, (214, 191, 184), pygame.Rect(intent_rect.x + 18, intent_rect.y + 52, intent_rect.width - 36, 42), max_lines=2)
             current_parts = []
             if intent.move_to is not None:
                 current_parts.append(f"이동 {intent.move_to}")
             if intent.target_tile is not None:
                 current_parts.append(f"대상 {intent.target_tile}")
+            if intent.target_count > 1:
+                current_parts.append(f"광역 {intent.target_count}명")
             current_parts.append(f"피해 {intent.predicted_damage}")
-            self._draw_text("이번 적 차례 · " + " / ".join(current_parts), self.font_tiny, (255, 213, 150), (intent_rect.x + 18, intent_rect.y + 108))
+            if intent.objective_pressure_label:
+                current_parts.append("목표 압박")
+            self._draw_text("이번 적 차례 · " + " / ".join(current_parts), self.font_tiny, (255, 213, 150), (intent_rect.x + 18, intent_rect.y + 104))
+            if intent.phase_summary:
+                self._draw_text(intent.phase_summary, self.font_tiny, (221, 188, 255), (intent_rect.x + 18, intent_rect.y + 124))
             if intent.follow_up_actor_name:
                 next_parts = [f"다음 {intent.follow_up_actor_name}"]
                 if intent.follow_up_target_tile is not None:
                     next_parts.append(f"대상 {intent.follow_up_target_tile}")
+                if intent.follow_up_target_count > 1:
+                    next_parts.append(f"광역 {intent.follow_up_target_count}명")
                 next_parts.append(f"피해 {intent.follow_up_predicted_damage}")
-                self._draw_text(" / ".join(next_parts), self.font_tiny, (242, 201, 133), (intent_rect.x + 18, intent_rect.y + 128))
+                if intent.follow_up_objective_pressure_label:
+                    next_parts.append("목표 압박")
+                self._draw_text(" / ".join(next_parts), self.font_tiny, (242, 201, 133), (intent_rect.x + 18, intent_rect.y + 144))
         else:
-            self._draw_wrapped_text("현재는 플레이어 턴입니다. 적 차례가 오면 이동 칸과 공격 대상을 미리 보여 줍니다.", self.font_small, (208, 219, 226), pygame.Rect(intent_rect.x + 18, intent_rect.y + 52, intent_rect.width - 36, 64), max_lines=3)
+            self._draw_wrapped_text("현재는 플레이어 턴입니다. 적 차례가 오면 이동 칸, 예상 피해, 연속 턴 압박을 미리 보여 줍니다.", self.font_small, (208, 219, 226), pygame.Rect(intent_rect.x + 18, intent_rect.y + 52, intent_rect.width - 36, 72), max_lines=3)
 
-        guide_rect = pygame.Rect(LEFT_PANEL.x + 16, LEFT_PANEL.y + 594, LEFT_PANEL.width - 32, 178)
+        guide_rect = pygame.Rect(LEFT_PANEL.x + 16, LEFT_PANEL.y + 616, LEFT_PANEL.width - 32, 176)
         pygame.draw.rect(self.screen, (11, 20, 31), guide_rect, border_radius=24)
         pygame.draw.rect(self.screen, (236, 218, 176), guide_rect, 1, border_radius=24)
         self._draw_text("조작", self.font_ui, (229, 210, 164), (guide_rect.x + 18, guide_rect.y + 18))
