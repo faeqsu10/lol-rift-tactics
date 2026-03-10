@@ -94,6 +94,17 @@ ROUTE_RISK_BY_ID = {
     "rapid-flank": "적 전원 속도 +2",
     "scorched-march": "추가 화염 지대 2개 + 적 피해 +1",
 }
+MODIFIER_LABEL_BY_ID = {
+    "blue_hp": "아군 체력",
+    "blue_damage": "아군 피해",
+    "blue_speed": "아군 속도",
+    "blue_move": "아군 이동력",
+    "blue_shield": "아군 시작 보호막",
+    "enemy_hp": "적 전원 체력",
+    "enemy_damage": "적 전원 피해",
+    "enemy_speed": "적 전원 속도",
+    "enemy_shield": "적 전원 시작 보호막",
+}
 ROUTE_BONUSES = {
     "supply-line": {"blue_shield": 8},
     "assault-line": {"blue_damage": 2, "enemy_damage": 1},
@@ -268,6 +279,33 @@ ROUTE_EVENT_TEMPLATES = {
         },
     ),
 }
+RUN_NODE_TEMPLATES = {
+    "rest-camp": {
+        "name": "휴식 거점",
+        "category": "정비 노드",
+        "description": "짧은 재정비로 전열을 복구하고 예약 페널티를 지워 냅니다.",
+        "effect_label": "아군 체력 +12 · 보호막 +6 · 예약 페널티 해제",
+        "stage_modifiers": {"blue_hp": 12, "blue_shield": 6},
+        "clears_pending_penalty": True,
+    },
+    "event-surge": {
+        "name": "변수 균열",
+        "category": "증폭 노드",
+        "description": "경로 이벤트가 과충전되어 보너스와 실패 페널티가 모두 커집니다.",
+        "effect_label": "경로 이벤트 수치 +100% · 실패 페널티도 강화",
+        "stage_modifiers": {},
+        "event_modifier_scale": 2,
+        "penalty_modifier_scale": 2,
+    },
+    "elite-contract": {
+        "name": "정예 수배",
+        "category": "고위험 노드",
+        "description": "추가 정예가 난입하지만 승리 시 런 강화를 하나 더 챙깁니다.",
+        "effect_label": "적 정예 +1 · 승리 시 추가 강화 1개",
+        "stage_modifiers": {},
+        "extra_elites": 1,
+    },
+}
 
 
 @dataclass
@@ -313,6 +351,22 @@ class RouteEvent:
     penalty_modifiers: dict[str, int]
 
 
+@dataclass(frozen=True)
+class RunNode:
+    id: str
+    name: str
+    category: str
+    description: str
+    effect_label: str
+    stage_modifiers: dict[str, int]
+    event_modifier_scale: int = 1
+    penalty_modifier_scale: int = 1
+    clears_pending_penalty: bool = False
+    extra_elites: int = 0
+    victory_reward_id: str | None = None
+    victory_reward_label: str | None = None
+
+
 @dataclass
 class BattleRecap:
     stage_label: str
@@ -324,6 +378,7 @@ class BattleRecap:
     red_kills: int
     highlight: str
     objective_summary: str | None = None
+    route_node_summary: str | None = None
     route_event_summary: str | None = None
     penalty_summary: str | None = None
 
@@ -423,13 +478,16 @@ class GameApp:
         self.selected_reward_id: str | None = None
         self.route_option_ids: list[str] = []
         self.route_event_by_route_id: dict[str, RouteEvent] = {}
+        self.route_node_by_route_id: dict[str, RunNode] = {}
         self.selected_route_id: str | None = None
         self.current_route_id: str | None = None
         self.current_route_event: RouteEvent | None = None
+        self.current_route_node: RunNode | None = None
         self.pending_red_ids: list[str] = []
         self.pending_stage_penalty: StageModifier | None = None
         self.active_stage_penalty: StageModifier | None = None
         self.last_penalty_summary: str | None = None
+        self.last_node_summary: str | None = None
         self.objective_failure_penalty_applied = False
         self.last_battle_recap: BattleRecap | None = None
         self.current_objective: BattleObjective | None = None
@@ -519,20 +577,37 @@ class GameApp:
             return None
         return max(enemy_ids, key=lambda champion_id: (TACTICAL_BLUEPRINTS_BY_ID[champion_id].max_hp, TACTICAL_BLUEPRINTS_BY_ID[champion_id].speed))
 
-    def _elite_enemy_ids_for_stage(self, stage: int | None = None, lineup: list[str] | None = None) -> tuple[str, ...]:
+    def _elite_enemy_ids_for_stage(
+        self,
+        stage: int | None = None,
+        lineup: list[str] | None = None,
+        route_node: RunNode | None = None,
+    ) -> tuple[str, ...]:
         current_stage = stage or self.run_stage
         enemy_ids = tuple(lineup or self.selected_red_ids)
         if current_stage <= 1 or not enemy_ids:
             return ()
+        resolved_route_node = route_node if route_node is not None else self.current_route_node
+        extra_elites = resolved_route_node.extra_elites if resolved_route_node is not None else 0
         leader = self._boss_enemy_id_for_stage(current_stage, list(enemy_ids)) or max(
             enemy_ids,
             key=lambda champion_id: (TACTICAL_BLUEPRINTS_BY_ID[champion_id].max_hp, TACTICAL_BLUEPRINTS_BY_ID[champion_id].speed),
         )
         if current_stage == 2 or len(enemy_ids) == 1:
-            return (leader,)
-        lieutenant_candidates = [champion_id for champion_id in enemy_ids if champion_id != leader]
-        lieutenant = max(lieutenant_candidates, key=lambda champion_id: TACTICAL_BLUEPRINTS_BY_ID[champion_id].speed) if lieutenant_candidates else leader
-        return tuple(dict.fromkeys((lieutenant,)))
+            ranked_ids = sorted(
+                enemy_ids,
+                key=lambda champion_id: (TACTICAL_BLUEPRINTS_BY_ID[champion_id].max_hp, TACTICAL_BLUEPRINTS_BY_ID[champion_id].speed),
+                reverse=True,
+            )
+            elite_count = min(len(enemy_ids), 1 + extra_elites)
+            return tuple(ranked_ids[:elite_count])
+        lieutenant_candidates = sorted(
+            (champion_id for champion_id in enemy_ids if champion_id != leader),
+            key=lambda champion_id: (TACTICAL_BLUEPRINTS_BY_ID[champion_id].speed, TACTICAL_BLUEPRINTS_BY_ID[champion_id].max_hp),
+            reverse=True,
+        )
+        elite_count = min(len(lieutenant_candidates), 1 + extra_elites)
+        return tuple(lieutenant_candidates[:elite_count])
 
     def _elite_trait_id_for_enemy(self, champion_id: str) -> str | None:
         blueprint = TACTICAL_BLUEPRINTS_BY_ID.get(champion_id)
@@ -551,13 +626,16 @@ class GameApp:
         self.selected_reward_id = None
         self.route_option_ids = []
         self.route_event_by_route_id = {}
+        self.route_node_by_route_id = {}
         self.selected_route_id = None
         self.current_route_id = None
         self.current_route_event = None
+        self.current_route_node = None
         self.pending_red_ids = []
         self.pending_stage_penalty = None
         self.active_stage_penalty = None
         self.last_penalty_summary = None
+        self.last_node_summary = None
         self.objective_failure_penalty_applied = False
         self.last_battle_recap = None
         self.current_objective = None
@@ -590,15 +668,25 @@ class GameApp:
         self.pending_red_ids = self._random_enemy_lineup(self.run_stage + 1)
         self.current_route_id = None
         self.current_route_event = None
+        self.current_route_node = None
         self.active_stage_penalty = None
         self.current_objective = None
         self.screen_mode = "reward"
         objective_line = self.last_objective_summary
         penalty_line = self.last_penalty_summary
-        if objective_line and penalty_line:
+        node_line = self.last_node_summary
+        if objective_line and penalty_line and node_line:
+            self.selection_message = f"{objective_line} · {node_line} · {penalty_line} · 보상 하나를 고르세요."
+        elif objective_line and penalty_line:
             self.selection_message = f"{objective_line} · {penalty_line} · 보상 하나를 고르세요."
+        elif objective_line and node_line:
+            self.selection_message = f"{objective_line} · {node_line} · 보상 하나를 고르세요."
+        elif penalty_line and node_line:
+            self.selection_message = f"{node_line} · {penalty_line} · 보상 하나를 고르세요."
         elif objective_line is not None:
             self.selection_message = f"{objective_line} · 보상 하나를 고르세요."
+        elif node_line is not None:
+            self.selection_message = f"{node_line} · 보상 하나를 고르세요."
         elif penalty_line is not None:
             self.selection_message = f"{penalty_line} · 보상 하나를 고르세요."
         else:
@@ -606,9 +694,14 @@ class GameApp:
 
     def _prepare_route_phase(self) -> None:
         self.route_option_ids = random.sample(list(self.route_options), 3)
+        node_ids = random.sample(list(RUN_NODE_TEMPLATES), len(self.route_option_ids))
         self.route_event_by_route_id = {
             route_id: self._roll_route_event(route_id)
             for route_id in self.route_option_ids
+        }
+        self.route_node_by_route_id = {
+            route_id: self._roll_route_node(node_id)
+            for route_id, node_id in zip(self.route_option_ids, node_ids)
         }
         self.selected_route_id = None
         self.current_objective = None
@@ -623,8 +716,13 @@ class GameApp:
             return
         self.selected_route_id = route_id
         route_event = self.route_event_by_route_id.get(route_id)
+        route_node = self.route_node_by_route_id.get(route_id)
+        node_line = "" if route_node is None else f" · 노드 {route_node.name}"
         event_line = "" if route_event is None else f" · 이벤트 {route_event.name}"
-        self.selection_message = f"{self.route_options[route_id].name} 선택{event_line}. 다음 전투 배치를 시작할 수 있습니다."
+        penalty_line = ""
+        if route_node is not None and route_node.clears_pending_penalty and self.pending_stage_penalty is not None:
+            penalty_line = " · 예약 페널티 해제"
+        self.selection_message = f"{self.route_options[route_id].name} 선택{node_line}{event_line}{penalty_line}. 다음 전투 배치를 시작할 수 있습니다."
         self.audio.play("ui-confirm")
 
     def _advance_after_route(self) -> None:
@@ -634,17 +732,22 @@ class GameApp:
             return
         self.current_route_id = self.selected_route_id
         self.current_route_event = self.route_event_by_route_id.get(self.current_route_id)
-        self.active_stage_penalty = self.pending_stage_penalty
+        self.current_route_node = self.route_node_by_route_id.get(self.current_route_id)
+        cleared_penalty = self.current_route_node is not None and self.current_route_node.clears_pending_penalty
+        self.active_stage_penalty = None if cleared_penalty else self.pending_stage_penalty
         self.pending_stage_penalty = None
         self.route_option_ids = []
         self.route_event_by_route_id = {}
+        self.route_node_by_route_id = {}
         self.selected_route_id = None
         self._seed_deployment()
         self.screen_mode = "deploy"
         route_name = self.route_options[self.current_route_id].name
+        node_line = "" if self.current_route_node is None else f" · 노드 {self.current_route_node.name}"
         event_line = "" if self.current_route_event is None else f" · 이벤트 {self.current_route_event.name}"
         penalty_line = "" if self.active_stage_penalty is None else f" · 주의 {self.active_stage_penalty.name}"
-        self.selection_message = f"{self._current_stage_label()} · {route_name}{event_line}{penalty_line}. 시작 위치를 다시 배치하세요."
+        rest_line = " · 예약 페널티 정리" if cleared_penalty else ""
+        self.selection_message = f"{self._current_stage_label()} · {route_name}{node_line}{event_line}{penalty_line}{rest_line}. 시작 위치를 다시 배치하세요."
         self.audio.play("ui-confirm")
 
     def _select_reward(self, reward_id: str) -> None:
@@ -680,6 +783,7 @@ class GameApp:
         self.reward_option_ids = []
         self.selected_reward_id = None
         self.last_penalty_summary = None
+        self.last_node_summary = None
         self._prepare_route_phase()
 
     def _build_battle_recap(self, result_label: str) -> BattleRecap | None:
@@ -696,6 +800,7 @@ class GameApp:
             red_kills=self.battle_stats["red_kills"],
             highlight=highlight,
             objective_summary=self.last_objective_summary or self._summarize_current_objective(),
+            route_node_summary=self._current_route_node_summary(),
             route_event_summary=self._current_route_event_summary(),
             penalty_summary=self.last_penalty_summary or self._active_stage_penalty_summary(),
         )
@@ -714,10 +819,80 @@ class GameApp:
             penalty_modifiers=dict(template["penalty_modifiers"]),
         )
 
+    def _roll_route_node(self, node_id: str) -> RunNode:
+        template = RUN_NODE_TEMPLATES[node_id]
+        victory_reward_id = None
+        victory_reward_label = None
+        effect_label = template["effect_label"]
+        if node_id == "elite-contract":
+            victory_reward_id = random.choice(list(self.run_rewards))
+            victory_reward_label = f"{self.run_rewards[victory_reward_id].name} +1"
+            effect_label = f"적 정예 +1 · 승리 시 {victory_reward_label}"
+        return RunNode(
+            id=node_id,
+            name=template["name"],
+            category=template["category"],
+            description=template["description"],
+            effect_label=effect_label,
+            stage_modifiers=dict(template["stage_modifiers"]),
+            event_modifier_scale=template.get("event_modifier_scale", 1),
+            penalty_modifier_scale=template.get("penalty_modifier_scale", 1),
+            clears_pending_penalty=template.get("clears_pending_penalty", False),
+            extra_elites=template.get("extra_elites", 0),
+            victory_reward_id=victory_reward_id,
+            victory_reward_label=victory_reward_label,
+        )
+
+    def _scale_modifiers(self, modifiers: dict[str, int], scale: int) -> dict[str, int]:
+        if scale == 1:
+            return dict(modifiers)
+        return {key: value * scale for key, value in modifiers.items()}
+
+    def _modifier_summary(self, modifiers: dict[str, int]) -> str:
+        lines = []
+        for modifier_id in MODIFIER_LABEL_BY_ID:
+            value = modifiers.get(modifier_id)
+            if not value:
+                continue
+            lines.append(f"{MODIFIER_LABEL_BY_ID[modifier_id]} {value:+d}")
+        return " · ".join(lines) if lines else "변화 없음"
+
+    def _route_event_stage_modifiers(self, route_event: RouteEvent | None, route_node: RunNode | None) -> dict[str, int]:
+        if route_event is None:
+            return {}
+        scale = route_node.event_modifier_scale if route_node is not None else 1
+        return self._scale_modifiers(route_event.stage_modifiers, scale)
+
+    def _route_event_penalty_modifiers(self, route_event: RouteEvent | None, route_node: RunNode | None) -> dict[str, int]:
+        if route_event is None:
+            return {}
+        scale = route_node.penalty_modifier_scale if route_node is not None else 1
+        return self._scale_modifiers(route_event.penalty_modifiers, scale)
+
+    def _route_event_effect_label(self, route_event: RouteEvent | None, route_node: RunNode | None) -> str | None:
+        if route_event is None:
+            return None
+        if route_node is None or route_node.event_modifier_scale == 1:
+            return route_event.effect_label
+        return self._modifier_summary(self._route_event_stage_modifiers(route_event, route_node))
+
+    def _route_event_penalty_label(self, route_event: RouteEvent | None, route_node: RunNode | None) -> str | None:
+        if route_event is None:
+            return None
+        if route_node is None or route_node.penalty_modifier_scale == 1:
+            return route_event.failure_penalty_label
+        return self._modifier_summary(self._route_event_penalty_modifiers(route_event, route_node))
+
+    def _current_route_node_summary(self) -> str | None:
+        if self.current_route_node is None:
+            return None
+        return f"{self.current_route_node.name} · {self.current_route_node.effect_label}"
+
     def _current_route_event_summary(self) -> str | None:
         if self.current_route_event is None:
             return None
-        return f"{self.current_route_event.name} · {self.current_route_event.effect_label}"
+        effect_label = self._route_event_effect_label(self.current_route_event, self.current_route_node)
+        return f"{self.current_route_event.name} · {effect_label}"
 
     def _active_stage_penalty_summary(self) -> str | None:
         if self.active_stage_penalty is None:
@@ -728,7 +903,8 @@ class GameApp:
         totals: dict[str, int] = {}
         sources = [
             ROUTE_BONUSES.get(self.current_route_id or "", {}),
-            self.current_route_event.stage_modifiers if self.current_route_event is not None else {},
+            self._route_event_stage_modifiers(self.current_route_event, self.current_route_node),
+            self.current_route_node.stage_modifiers if self.current_route_node is not None else {},
             self.active_stage_penalty.modifiers if self.active_stage_penalty is not None else {},
         ]
         for source in sources:
@@ -794,7 +970,7 @@ class GameApp:
     def _objective_failure_penalty_preview(self) -> str | None:
         if self.current_route_event is None or not self.current_route_event.penalty_modifiers:
             return None
-        return self.current_route_event.failure_penalty_label
+        return self._route_event_penalty_label(self.current_route_event, self.current_route_node)
 
     def _refresh_objective_failure(self) -> None:
         if self.current_objective is None or self.current_objective.completed or self.current_objective.failed:
@@ -818,10 +994,12 @@ class GameApp:
             return None
         if not self.current_route_event.penalty_modifiers:
             return None
+        penalty_modifiers = self._route_event_penalty_modifiers(self.current_route_event, self.current_route_node)
+        penalty_label = self._route_event_penalty_label(self.current_route_event, self.current_route_node) or self.current_route_event.failure_penalty_label
         self.pending_stage_penalty = StageModifier(
             name=self.current_route_event.failure_penalty_name,
-            description=self.current_route_event.failure_penalty_label,
-            modifiers=dict(self.current_route_event.penalty_modifiers),
+            description=penalty_label,
+            modifiers=penalty_modifiers,
         )
         self.last_penalty_summary = f"목표 실패 페널티 예약 · {self.pending_stage_penalty.description}"
         self.objective_failure_penalty_applied = True
@@ -872,6 +1050,15 @@ class GameApp:
         self.last_objective_summary = self._summarize_current_objective()
         return self.last_objective_summary
 
+    def _apply_route_node_victory_bonus(self) -> str | None:
+        if self.current_route_node is None or self.current_route_node.victory_reward_id is None:
+            self.last_node_summary = None
+            return None
+        self.run_bonuses[self.current_route_node.victory_reward_id] += 1
+        reward_label = self.current_route_node.victory_reward_label or f"{self.run_rewards[self.current_route_node.victory_reward_id].name} +1"
+        self.last_node_summary = f"{self.current_route_node.name} 보상 · {reward_label}"
+        return self.last_node_summary
+
     def _seed_deployment(self) -> None:
         self.deploy_assignments = {
             tile: champion_id
@@ -909,6 +1096,10 @@ class GameApp:
             trait = ELITE_TRAITS_BY_ID.get(elite_unit.elite_trait_id or "")
             if trait is not None:
                 controller._push_log(f"{elite_unit.name} 엘리트 특성 · {trait.name}.")
+        if self.current_route_node is not None:
+            controller._push_log(f"{self.current_route_node.name} 적용 · {self.current_route_node.effect_label}.")
+        if self.current_route_event is not None:
+            controller._push_log(f"{self.current_route_event.name} 적용 · {self._route_event_effect_label(self.current_route_event, self.current_route_node)}.")
         self._reset_battle_stats()
         self.hit_flash = {unit.id: 0.0 for unit in controller.units}
         self.unit_visual_positions = {
@@ -1005,6 +1196,7 @@ class GameApp:
             return
         self.current_objective = self._build_battle_objective()
         self.last_objective_summary = None
+        self.last_node_summary = None
         self.objective_bonus_applied = False
         self.objective_failure_penalty_applied = False
         controller = self._build_controller_from_current_setup()
@@ -1473,20 +1665,26 @@ class GameApp:
         if self.controller and self.controller.state.winner == "blue":
             self.audio.play("victory")
             objective_summary = self._apply_completed_objective_bonus()
+            node_summary = self._apply_route_node_victory_bonus()
             penalty_summary = self._queue_objective_failure_penalty()
             self.last_battle_recap = self._build_battle_recap("승리")
             if self.run_stage < RUN_STAGE_COUNT:
                 self.status_text = f"{self._current_stage_label()} 승리. 전투 보상을 선택하세요."
                 if objective_summary:
                     self.status_text = f"{self.status_text} {objective_summary}"
+                if node_summary:
+                    self.status_text = f"{self.status_text} {node_summary}"
                 if penalty_summary:
                     self.status_text = f"{self.status_text} {penalty_summary}"
                 self._prepare_reward_phase()
             else:
                 self.status_text = "최종 결전을 승리했습니다."
+                if node_summary:
+                    self.status_text = f"{self.status_text} {node_summary}"
         elif self.controller and self.controller.state.winner == "red":
             self.audio.play("defeat")
             self.last_objective_summary = self._summarize_current_objective()
+            self.last_node_summary = None
             self.last_battle_recap = self._build_battle_recap("패배")
             self.status_text = f"{self._current_stage_label()}에서 패배했습니다."
 
@@ -1695,10 +1893,10 @@ class GameApp:
         self._draw_text("전투 요약", self.font_heading, (244, 239, 225), (SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 18))
         self._draw_text(self.selection_message, self.font_small, (167, 192, 212), (SELECT_LEFT_PANEL.x + 24, SELECT_LEFT_PANEL.y + 52))
         self._draw_text("다음 경로 선택", self.font_heading, (244, 239, 225), (SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.y + 18))
-        self._draw_text("3안 중 하나를 골라 다음 전투에 적용하세요", self.font_small, (198, 176, 168), (SELECT_RIGHT_PANEL.x + 24, SELECT_RIGHT_PANEL.y + 52))
+        self._draw_text("경로와 노드 조합 3안 중 하나를 골라 다음 전투에 적용하세요", self.font_small, (198, 176, 168), (SELECT_RIGHT_PANEL.x + 24, SELECT_RIGHT_PANEL.y + 52))
 
         recap = self.last_battle_recap
-        overview_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 96, SELECT_LEFT_PANEL.width - 44, 120)
+        overview_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 96, SELECT_LEFT_PANEL.width - 44, 136)
         pygame.draw.rect(self.screen, (11, 20, 31), overview_rect, border_radius=24)
         pygame.draw.rect(self.screen, (236, 218, 176), overview_rect, 1, border_radius=24)
         if recap is not None:
@@ -1708,15 +1906,17 @@ class GameApp:
             self._draw_wrapped_text(recap.highlight, self.font_small, (208, 219, 226), highlight_rect, max_lines=1)
             if recap.objective_summary:
                 self._draw_wrapped_text(recap.objective_summary, self.font_tiny, (255, 213, 150), pygame.Rect(overview_rect.x + 18, overview_rect.y + 100, overview_rect.width - 36, 16), max_lines=1)
+            if recap.route_node_summary:
+                self._draw_wrapped_text(recap.route_node_summary, self.font_tiny, (170, 222, 210), pygame.Rect(overview_rect.x + 18, overview_rect.y + 116, overview_rect.width - 36, 16), max_lines=1)
             if recap.route_event_summary:
-                self._draw_wrapped_text(recap.route_event_summary, self.font_tiny, (174, 208, 235), pygame.Rect(overview_rect.x + 18, overview_rect.y + 116, overview_rect.width - 36, 16), max_lines=1)
+                self._draw_wrapped_text(recap.route_event_summary, self.font_tiny, (174, 208, 235), pygame.Rect(overview_rect.x + 18, overview_rect.y + 132, overview_rect.width - 36, 16), max_lines=1)
             elif recap.penalty_summary:
-                self._draw_wrapped_text(recap.penalty_summary, self.font_tiny, (235, 156, 140), pygame.Rect(overview_rect.x + 18, overview_rect.y + 116, overview_rect.width - 36, 16), max_lines=1)
+                self._draw_wrapped_text(recap.penalty_summary, self.font_tiny, (235, 156, 140), pygame.Rect(overview_rect.x + 18, overview_rect.y + 132, overview_rect.width - 36, 16), max_lines=1)
         else:
             self._draw_text("직전 전투 기록 없음", self.font_heading, (244, 239, 225), (overview_rect.x + 18, overview_rect.y + 28))
             self._draw_text("전투 종료 후 핵심 수치와 마지막 로그를 여기서 보여 줍니다.", self.font_small, (208, 219, 226), (overview_rect.x + 18, overview_rect.y + 72))
 
-        stat_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 238, SELECT_LEFT_PANEL.width - 44, 188)
+        stat_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 254, SELECT_LEFT_PANEL.width - 44, 188)
         pygame.draw.rect(self.screen, (11, 20, 31), stat_rect, border_radius=24)
         pygame.draw.rect(self.screen, (236, 218, 176), stat_rect, 1, border_radius=24)
         self._draw_text("핵심 수치", self.font_ui, (229, 210, 164), (stat_rect.x + 18, stat_rect.y + 14))
@@ -1732,25 +1932,31 @@ class GameApp:
         else:
             self._draw_text("전투 종료 후 자동 집계", self.font_small, (209, 220, 227), (stat_rect.x + 18, stat_rect.y + 52))
 
-        stage_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 452, SELECT_LEFT_PANEL.width - 44, 400)
+        stage_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 468, SELECT_LEFT_PANEL.width - 44, 384)
         pygame.draw.rect(self.screen, (11, 20, 31), stage_rect, border_radius=24)
         pygame.draw.rect(self.screen, (236, 218, 176), stage_rect, 1, border_radius=24)
         self._draw_text("다음 전투 정보", self.font_ui, (229, 210, 164), (stage_rect.x + 18, stage_rect.y + 14))
         self._draw_text(f"다음 스테이지: {self._current_stage_label()}", self.font_heading, (244, 239, 225), (stage_rect.x + 18, stage_rect.y + 48))
         selected_route = self.selected_route_id or self.current_route_id
+        selected_node = self.route_node_by_route_id.get(selected_route) if self.selected_route_id else self.current_route_node
         route_hint = "현재 경로 없음" if selected_route is None else f"선택 경로: {self.route_options[selected_route].name}"
         self._draw_text(route_hint, self.font_small, (171, 193, 208), (stage_rect.x + 18, stage_rect.y + 84))
         if selected_route is not None:
             self._draw_text(f"보상: {ROUTE_REWARD_BY_ID[selected_route]}", self.font_small, (228, 214, 167), (stage_rect.x + 18, stage_rect.y + 108))
             self._draw_text(f"위험: {ROUTE_RISK_BY_ID[selected_route]}", self.font_small, (233, 156, 140), (stage_rect.x + 18, stage_rect.y + 132))
-            self._draw_text(f"맵 목표: {self.route_options[selected_route].description.replace('목표: ', '')}", self.font_small, (174, 208, 235), (stage_rect.x + 18, stage_rect.y + 156))
+            if selected_node is not None:
+                self._draw_text(f"노드: {selected_node.name} · {selected_node.category}", self.font_small, (170, 222, 210), (stage_rect.x + 18, stage_rect.y + 156))
+                self._draw_wrapped_text(selected_node.effect_label, self.font_tiny, (209, 220, 227), pygame.Rect(stage_rect.x + 18, stage_rect.y + 178, stage_rect.width - 36, 18), max_lines=1)
+            self._draw_text(f"맵 목표: {self.route_options[selected_route].description.replace('목표: ', '')}", self.font_small, (174, 208, 235), (stage_rect.x + 18, stage_rect.y + 202))
             selected_event = self.route_event_by_route_id.get(selected_route) if self.selected_route_id else self.current_route_event
             if selected_event is not None:
-                self._draw_text(f"경로 이벤트: {selected_event.name}", self.font_small, (170, 222, 210), (stage_rect.x + 18, stage_rect.y + 180))
-                self._draw_wrapped_text(selected_event.effect_label, self.font_tiny, (209, 220, 227), pygame.Rect(stage_rect.x + 18, stage_rect.y + 202, stage_rect.width - 36, 18), max_lines=1)
-                self._draw_wrapped_text(f"실패 시: {selected_event.failure_penalty_label}", self.font_tiny, (235, 156, 140), pygame.Rect(stage_rect.x + 18, stage_rect.y + 222, stage_rect.width - 36, 18), max_lines=1)
+                self._draw_text(f"경로 이벤트: {selected_event.name}", self.font_small, (170, 222, 210), (stage_rect.x + 18, stage_rect.y + 226))
+                self._draw_wrapped_text(self._route_event_effect_label(selected_event, selected_node), self.font_tiny, (209, 220, 227), pygame.Rect(stage_rect.x + 18, stage_rect.y + 248, stage_rect.width - 36, 18), max_lines=1)
+                self._draw_wrapped_text(f"실패 시: {self._route_event_penalty_label(selected_event, selected_node)}", self.font_tiny, (235, 156, 140), pygame.Rect(stage_rect.x + 18, stage_rect.y + 268, stage_rect.width - 36, 18), max_lines=1)
         if self.pending_stage_penalty is not None:
-            self._draw_wrapped_text(f"예약 페널티: {self.pending_stage_penalty.description}", self.font_tiny, (235, 156, 140), pygame.Rect(stage_rect.x + 18, stage_rect.y + 246, stage_rect.width - 36, 18), max_lines=1)
+            penalty_color = (138, 234, 171) if selected_node is not None and selected_node.clears_pending_penalty else (235, 156, 140)
+            penalty_prefix = "해제 예정" if selected_node is not None and selected_node.clears_pending_penalty else "예약 페널티"
+            self._draw_wrapped_text(f"{penalty_prefix}: {self.pending_stage_penalty.description}", self.font_tiny, penalty_color, pygame.Rect(stage_rect.x + 18, stage_rect.y + 290, stage_rect.width - 36, 18), max_lines=1)
         terrain_lines = []
         terrain_counts: dict[str, int] = {}
         preview_route_id = self.selected_route_id or self.current_route_id
@@ -1758,22 +1964,26 @@ class GameApp:
             terrain_counts[terrain_id] = terrain_counts.get(terrain_id, 0) + 1
         for terrain_id, count in terrain_counts.items():
             terrain_lines.append(f"{TERRAIN_BY_ID[terrain_id].name} {count}칸")
-        terrain_y = 258 if selected_route is not None else 126
-        enemy_y = 330 if selected_route is not None else 252
-        self._draw_text("지형 구성", self.font_ui, (223, 206, 164), (stage_rect.x + 18, terrain_y))
+        terrain_y = 314 if selected_route is not None else 126
+        enemy_y = 380 if selected_route is not None else 252
+        self._draw_text("지형 구성", self.font_ui, (223, 206, 164), (stage_rect.x + 18, stage_rect.y + terrain_y))
         for index, line in enumerate(terrain_lines or ["특수 지형 없음"]):
             self._draw_text(line, self.font_small, hex_to_rgb(TERRAIN_BY_ID[list(terrain_counts)[index]].color) if terrain_counts and index < len(terrain_counts) else (209, 220, 227), (stage_rect.x + 18, stage_rect.y + terrain_y + 34 + index * 26))
         enemy_line = " · ".join(BLUEPRINTS_BY_ID[champion_id].name for champion_id in self.selected_red_ids)
         self._draw_wrapped_text(f"적 조합: {enemy_line}", self.font_small, (209, 220, 227), pygame.Rect(stage_rect.x + 18, stage_rect.y + enemy_y, stage_rect.width - 36, 40), max_lines=2)
+        elite_count = len(self._elite_enemy_ids_for_stage(lineup=self.selected_red_ids, route_node=selected_node))
+        if elite_count:
+            self._draw_text(f"예상 정예: {elite_count}명", self.font_small, (255, 213, 150), (stage_rect.x + 18, stage_rect.y + enemy_y + 52))
         preview_boss_id = self._boss_enemy_id_for_stage(lineup=self.selected_red_ids)
         if preview_boss_id is not None:
-            self._draw_text(f"예상 보스: {BLUEPRINTS_BY_ID[preview_boss_id].name}", self.font_small, (236, 126, 90), (stage_rect.x + 18, stage_rect.y + enemy_y + 52))
+            self._draw_text(f"예상 보스: {BLUEPRINTS_BY_ID[preview_boss_id].name}", self.font_small, (236, 126, 90), (stage_rect.x + 180, stage_rect.y + enemy_y + 52))
 
         for index, route_id in enumerate(self.route_option_ids):
             rect = pygame.Rect(SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.y + 96 + index * 182, SELECT_RIGHT_PANEL.width - 44, 170)
             self.route_card_rects[route_id] = rect
             option = self.route_options[route_id]
             route_event = self.route_event_by_route_id.get(route_id)
+            route_node = self.route_node_by_route_id.get(route_id)
             selected = route_id == self.selected_route_id
             card = pygame.Surface(rect.size, pygame.SRCALPHA)
             draw_vertical_gradient(card, card.get_rect(), (22, 46, 58) if selected else (15, 26, 39), (26, 68, 76) if selected else (20, 32, 46))
@@ -1782,12 +1992,13 @@ class GameApp:
             self.screen.blit(card, rect.topleft)
             self._draw_text(option.name, self.font_heading, (244, 239, 225), (rect.x + 18, rect.y + 22))
             self._draw_text(ROUTE_STYLE_BY_ID[route_id], self.font_small, (223, 206, 164), (rect.x + 18, rect.y + 58))
-            self._draw_wrapped_text(option.description, self.font_tiny, (208, 219, 226), pygame.Rect(rect.x + 18, rect.y + 82, rect.width - 36, 24), max_lines=2)
+            self._draw_wrapped_text(option.description, self.font_tiny, (208, 219, 226), pygame.Rect(rect.x + 18, rect.y + 82, rect.width - 36, 16), max_lines=1)
+            if route_node is not None:
+                self._draw_wrapped_text(f"노드: {route_node.name} · {route_node.category}", self.font_tiny, (170, 222, 210), pygame.Rect(rect.x + 18, rect.y + 106, rect.width - 36, 16), max_lines=1)
             if route_event is not None:
-                self._draw_wrapped_text(f"이벤트: {route_event.name}", self.font_tiny, (170, 222, 210), pygame.Rect(rect.x + 18, rect.y + 106, rect.width - 36, 16), max_lines=1)
-                self._draw_wrapped_text(route_event.effect_label, self.font_tiny, (209, 220, 227), pygame.Rect(rect.x + 18, rect.y + 122, rect.width - 36, 16), max_lines=1)
-                self._draw_wrapped_text(f"실패: {route_event.failure_penalty_label}", self.font_tiny, (231, 168, 152), pygame.Rect(rect.x + 18, rect.y + 138, rect.width - 36, 16), max_lines=1)
-            self._draw_wrapped_text(f"보상: {ROUTE_REWARD_BY_ID[route_id]}", self.font_tiny, (221, 215, 178), pygame.Rect(rect.x + 18, rect.y + 154, rect.width - 36, 14), max_lines=1)
+                self._draw_wrapped_text(f"이벤트: {route_event.name}", self.font_tiny, (214, 203, 156), pygame.Rect(rect.x + 18, rect.y + 122, rect.width - 36, 16), max_lines=1)
+            self._draw_wrapped_text(f"위험: {ROUTE_RISK_BY_ID[route_id]}", self.font_tiny, (231, 168, 152), pygame.Rect(rect.x + 18, rect.y + 138, rect.width - 36, 16), max_lines=1)
+            self._draw_wrapped_text(f"보상: {ROUTE_REWARD_BY_ID[route_id]}", self.font_tiny, (221, 215, 178), pygame.Rect(rect.x + 250, rect.y + 22, rect.width - 268, 16), max_lines=1)
 
         select_rect = pygame.Rect(SELECT_RIGHT_PANEL.x + 32, SELECT_RIGHT_PANEL.bottom - 118, 190, 48)
         next_rect = pygame.Rect(SELECT_RIGHT_PANEL.right - 242, SELECT_RIGHT_PANEL.bottom - 118, 190, 48)
@@ -1847,12 +2058,14 @@ class GameApp:
     def _draw_deploy_left_panel(self) -> None:
         self._draw_text("배치 브리핑", self.font_heading, (244, 239, 225), (LEFT_PANEL.x + 18, LEFT_PANEL.y + 18))
         self._draw_text(self.selection_message, self.font_small, (167, 192, 212), (LEFT_PANEL.x + 18, LEFT_PANEL.y + 54))
+        if self.current_route_node is not None:
+            self._draw_text(f"런 노드 · {self.current_route_node.name}", self.font_small, (170, 222, 210), (LEFT_PANEL.x + 18, LEFT_PANEL.y + 82))
         if self.current_route_event is not None:
-            self._draw_text(f"전술 이벤트 · {self.current_route_event.name}", self.font_small, (170, 222, 210), (LEFT_PANEL.x + 18, LEFT_PANEL.y + 82))
-        self._draw_text("선택한 챔피언", self.font_ui, (229, 210, 164), (LEFT_PANEL.x + 18, LEFT_PANEL.y + 108))
+            self._draw_text(f"전술 이벤트 · {self.current_route_event.name}", self.font_small, (223, 206, 164), (LEFT_PANEL.x + 18, LEFT_PANEL.y + 104))
+        self._draw_text("선택한 챔피언", self.font_ui, (229, 210, 164), (LEFT_PANEL.x + 18, LEFT_PANEL.y + 132))
         self.deploy_roster_rects.clear()
         for index, champion_id in enumerate(self.selected_blue_ids):
-            rect = pygame.Rect(LEFT_PANEL.x + 18, LEFT_PANEL.y + 142 + index * 116, LEFT_PANEL.width - 36, 98)
+            rect = pygame.Rect(LEFT_PANEL.x + 18, LEFT_PANEL.y + 166 + index * 116, LEFT_PANEL.width - 36, 98)
             self.deploy_roster_rects[champion_id] = rect
             self._draw_champion_card(rect, champion_id, compact=True, selected=champion_id == self.selected_deploy_champion_id)
 
@@ -1897,14 +2110,20 @@ class GameApp:
         self._draw_text("현재 선택", self.font_small, (223, 206, 164), (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 18))
         champion_name = BLUEPRINTS_BY_ID[self.selected_deploy_champion_id].name if self.selected_deploy_champion_id else "없음"
         self._draw_text(champion_name, self.font_heading, (244, 239, 225), (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 38))
-        if self.current_route_event is not None:
-            self._draw_text(f"이벤트 · {self.current_route_event.effect_label}", self.font_tiny, (170, 222, 210), (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 46))
+        if self.current_route_node is not None:
+            self._draw_text(f"노드 · {self.current_route_node.effect_label}", self.font_tiny, (170, 222, 210), (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 46))
+        elif self.current_route_event is not None:
+            self._draw_text(f"이벤트 · {self._route_event_effect_label(self.current_route_event, self.current_route_node)}", self.font_tiny, (170, 222, 210), (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 46))
         else:
             self._draw_text("파란 시작 칸을 눌러 위치를 바꾸세요", self.font_small, (184, 205, 221), (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 46))
         penalty_line = (
             f"적용 페널티 · {self.active_stage_penalty.description}"
             if self.active_stage_penalty is not None
-            else "수풀=보호막 · 룬=피해 +3 · 화염=이동 피해"
+            else (
+                f"이벤트 · {self._route_event_effect_label(self.current_route_event, self.current_route_node)}"
+                if self.current_route_event is not None and self.current_route_node is not None
+                else "수풀=보호막 · 룬=피해 +3 · 화염=이동 피해"
+            )
         )
         penalty_color = (235, 156, 140) if self.active_stage_penalty is not None else (174, 208, 235)
         self._draw_text(penalty_line, self.font_tiny if self.active_stage_penalty is not None else self.font_small, penalty_color, (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 68))
@@ -2071,8 +2290,12 @@ class GameApp:
         intent = self.controller.preview_ai_intent() if self.controller and active and active.team == "red" else None
         self._draw_text("전술 브리핑", self.font_heading, (244, 239, 225), (LEFT_PANEL.x + 18, LEFT_PANEL.y + 18))
         self._draw_text(self.status_text, self.font_small, (167, 192, 212), (LEFT_PANEL.x + 18, LEFT_PANEL.y + 54))
+        if self.current_route_node is not None:
+            self._draw_text(f"런 노드 · {self.current_route_node.name}", self.font_small, (170, 222, 210), (LEFT_PANEL.x + 18, LEFT_PANEL.y + 78))
+        elif self.current_route_event is not None:
+            self._draw_text(f"전술 이벤트 · {self.current_route_event.name}", self.font_small, (170, 222, 210), (LEFT_PANEL.x + 18, LEFT_PANEL.y + 78))
 
-        info_rect = pygame.Rect(LEFT_PANEL.x + 16, LEFT_PANEL.y + 96, LEFT_PANEL.width - 32, 214)
+        info_rect = pygame.Rect(LEFT_PANEL.x + 16, LEFT_PANEL.y + 104, LEFT_PANEL.width - 32, 206)
         pygame.draw.rect(self.screen, (13, 24, 37), info_rect, border_radius=24)
         pygame.draw.rect(self.screen, (236, 218, 176), info_rect, 1, border_radius=24)
         if active is not None:
@@ -2235,7 +2458,10 @@ class GameApp:
 
         info_x = BOTTOM_PANEL.right - 340
         objective = self.current_objective
-        self._draw_text("현재 턴", self.font_small, (223, 206, 164), (info_x, BOTTOM_PANEL.y + 18))
+        if self.current_route_node is not None:
+            self._draw_text(f"노드 효과 · {self.current_route_node.effect_label}", self.font_tiny, (170, 222, 210), (info_x, BOTTOM_PANEL.y + 18))
+        else:
+            self._draw_text("현재 턴", self.font_small, (223, 206, 164), (info_x, BOTTOM_PANEL.y + 18))
         self._draw_text(active.name, self.font_heading, (244, 239, 225), (info_x, BOTTOM_PANEL.y + 38))
         if active.team == "blue":
             move_state = "완료" if active.has_moved else "가능"

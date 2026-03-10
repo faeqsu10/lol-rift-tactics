@@ -9,8 +9,11 @@ os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 
 from .app import GameApp
+from .app import BattleObjective
 from .app import RouteEvent
+from .app import RunNode
 from .app import RUN_STAGE_COUNT
+from .app import StageModifier
 from .data import TACTICAL_BLUEPRINTS_BY_ID
 from .engine import TacticsController
 
@@ -454,6 +457,8 @@ class GameAppFlowTests(unittest.TestCase):
 
         self.assertEqual(len(app.route_option_ids), 3)
         self.assertEqual(set(app.route_option_ids), set(app.route_event_by_route_id))
+        self.assertEqual(set(app.route_option_ids), set(app.route_node_by_route_id))
+        self.assertEqual(len({node.id for node in app.route_node_by_route_id.values()}), 3)
 
     def test_route_event_modifies_next_battle_stats(self) -> None:
         app = GameApp(headless=True)
@@ -483,6 +488,131 @@ class GameAppFlowTests(unittest.TestCase):
         self.assertEqual(app.screen_mode, "deploy")
         self.assertIsNotNone(app.current_route_event)
         self.assertEqual(app.controller.get_unit("blue-garen").shield, 14)
+
+    def test_rest_node_clears_pending_penalty_and_grants_recovery_stats(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
+        app.selected_red_ids = ["red-darius", "red-annie", "red-caitlyn"]
+        app.run_stage = 2
+        app.route_option_ids = ["supply-line"]
+        app.route_event_by_route_id = {}
+        app.route_node_by_route_id = {
+            "supply-line": RunNode(
+                id="rest-camp",
+                name="휴식 거점",
+                category="정비 노드",
+                description="테스트용",
+                effect_label="아군 체력 +12 · 보호막 +6 · 예약 페널티 해제",
+                stage_modifiers={"blue_hp": 12, "blue_shield": 6},
+                clears_pending_penalty=True,
+            )
+        }
+        app.pending_stage_penalty = StageModifier(
+            name="역습 준비",
+            description="다음 전투 적 전원 피해 +2",
+            modifiers={"enemy_damage": 2},
+        )
+        app.selected_route_id = "supply-line"
+
+        app._advance_after_route()
+        controller = app._build_controller_from_current_setup()
+        app._attach_controller(controller)
+
+        garen = app.controller.get_unit("blue-garen")
+        self.assertIsNone(app.active_stage_penalty)
+        self.assertEqual(garen.max_hp, TACTICAL_BLUEPRINTS_BY_ID["blue-garen"].max_hp + 12)
+        self.assertEqual(garen.shield, 14)
+
+    def test_event_node_amplifies_route_event_and_failure_penalty(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
+        app.selected_red_ids = ["red-darius", "red-annie", "red-caitlyn"]
+        app.run_stage = 2
+        app.route_option_ids = ["assault-line"]
+        route_event = RouteEvent(
+            id="test-assault-event",
+            route_id="assault-line",
+            name="테스트 돌격",
+            description="테스트용",
+            effect_label="아군 피해 +2",
+            stage_modifiers={"blue_damage": 2},
+            failure_penalty_name="역습 준비",
+            failure_penalty_label="적 전원 피해 +2",
+            penalty_modifiers={"enemy_damage": 2},
+        )
+        app.route_event_by_route_id = {"assault-line": route_event}
+        app.route_node_by_route_id = {
+            "assault-line": RunNode(
+                id="event-surge",
+                name="변수 균열",
+                category="증폭 노드",
+                description="테스트용",
+                effect_label="경로 이벤트 수치 +100% · 실패 페널티도 강화",
+                stage_modifiers={},
+                event_modifier_scale=2,
+                penalty_modifier_scale=2,
+            )
+        }
+        app.selected_route_id = "assault-line"
+
+        app._advance_after_route()
+        controller = app._build_controller_from_current_setup()
+        app._attach_controller(controller)
+
+        garen = app.controller.get_unit("blue-garen")
+        base_damage = next(
+            effect.amount
+            for effect in TACTICAL_BLUEPRINTS_BY_ID["blue-garen"].basic_ability.effects
+            if effect.kind == "damage"
+        )
+        boosted_damage = next(effect.amount for effect in garen.basic_ability.effects if effect.kind == "damage")
+        self.assertEqual(boosted_damage, base_damage + 6)
+
+        app.current_objective = BattleObjective(
+            route_id="assault-line",
+            name="선제 제압",
+            description="목표: 2라운드 이내 적 1명 처치",
+            kind="kill_before_round",
+            target=1,
+            reward_id="bonus-damage",
+            reward_label="날 선 무기 +1",
+            failed=True,
+        )
+        app.run_stage = 1
+
+        summary = app._queue_objective_failure_penalty()
+
+        self.assertIsNotNone(summary)
+        self.assertEqual(app.pending_stage_penalty.modifiers["enemy_damage"], 4)
+        self.assertIn("+4", app.pending_stage_penalty.description)
+
+    def test_elite_node_adds_extra_elite_and_bonus_reward(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
+        app.selected_red_ids = ["red-darius", "red-zed", "red-brand"]
+        app.run_stage = 2
+        app.current_route_id = "assault-line"
+        app.current_route_node = RunNode(
+            id="elite-contract",
+            name="정예 수배",
+            category="고위험 노드",
+            description="테스트용",
+            effect_label="적 정예 +1 · 승리 시 기동 훈련 +1",
+            stage_modifiers={},
+            extra_elites=1,
+            victory_reward_id="bonus-move",
+            victory_reward_label="기동 훈련 +1",
+        )
+        app._seed_deployment()
+
+        controller = app._build_controller_from_current_setup()
+        app._attach_controller(controller)
+
+        elite_units = [unit for unit in app.controller.units if unit.team == "red" and unit.is_elite]
+        self.assertEqual(len(elite_units), 2)
+        node_summary = app._apply_route_node_victory_bonus()
+        self.assertEqual(app.run_bonuses["bonus-move"], 1)
+        self.assertIn("기동 훈련 +1", node_summary or "")
 
     def test_assault_route_boosts_next_battle_damage(self) -> None:
         app = GameApp(headless=True)

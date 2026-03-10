@@ -63,9 +63,11 @@
   - stage 3 boss battle with a marked boss unit and one-time phase shift
   - route selection between battles with three risk/reward options and temporary next-battle modifiers
   - route cards now include a second-pass battle event for the next fight
+  - route cards now also include a run node branch with rest/event/elite variants
   - route-specific map objectives during battles with progress HUD and marked objective tiles
   - completed objectives grant an automatic run bonus before the normal reward pick
   - failed objectives can queue a next-battle penalty that persists through the next route/deploy step
+  - rest nodes can clear queued penalties, event nodes can amplify route-event bonuses/penalties, and elite nodes can add extra elite enemies plus a victory bonus
   - battle recap summary before choosing the next route
   - terrain-aware red-team AI movement and targeting
   - objective-aware red-team AI that contests marked tiles and pressure zones
@@ -110,9 +112,9 @@
 
 ## Recommended Next Steps
 
-1. Add run-map node variety such as rest/event/elite splits on top of the current route flow.
-2. Add a second boss pass with boss-only objectives, stronger phase scripting, and finale presentation.
-3. Add a run-end summary layer that pushes immediate replays and build comparison.
+1. Add a second boss pass with boss-only objectives, stronger phase scripting, and finale presentation.
+2. Add a run-end summary layer that pushes immediate replays and build comparison.
+3. Add node-specific follow-up events and presentation so rest/event/elite branches feel more distinct.
 4. Replace shape-based placeholder characters with real sprite art or sprite sheets.
 5. Expand map and objective variety on top of the boss loop.
 
