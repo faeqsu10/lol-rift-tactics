@@ -66,10 +66,31 @@ class TacticalTerrain:
     color: str
 
 
+@dataclass(frozen=True)
+class EliteTrait:
+    id: str
+    name: str
+    description: str
+    color: str
+
+
 TERRAIN_BY_ID: dict[TerrainId, TacticalTerrain] = {
     "brush": TacticalTerrain("brush", "수풀", "턴 시작 시 보호막 4를 얻습니다.", "#5f9f78"),
     "rune": TacticalTerrain("rune", "룬 지대", "턴 시작 시 이번 턴 피해가 3 증가합니다.", "#6fa9d8"),
     "hazard": TacticalTerrain("hazard", "화염 지대", "이동해 들어오면 즉시 피해 6을 받습니다.", "#d46d4f"),
+}
+
+ELITE_TRAITS_BY_ID: dict[str, EliteTrait] = {
+    "bulwark": EliteTrait("bulwark", "철벽", "턴 시작 시 보호막 6을 얻습니다.", "#d7bc73"),
+    "relentless": EliteTrait("relentless", "맹추격", "이번 턴 2칸 이상 이동 후 공격하면 피해가 4 증가합니다.", "#d76f6f"),
+    "spellburst": EliteTrait("spellburst", "비전 폭주", "특수기 피해가 4 증가하고 턴 시작 시 이번 턴 피해 +2를 얻습니다.", "#7aa9e7"),
+}
+
+ROLE_ELITE_TRAIT_ID: dict[str, str] = {
+    "Vanguard": "bulwark",
+    "Mage": "spellburst",
+    "Marksman": "relentless",
+    "Assassin": "relentless",
 }
 
 STAGE_TERRAIN_TILES: dict[int, dict[GridPos, TerrainId]] = {

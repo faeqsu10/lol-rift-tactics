@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import deque
+from dataclasses import replace
 from dataclasses import dataclass, field
 from itertools import count
 from typing import Iterable
@@ -12,6 +13,7 @@ from native_game.data import TeamId
 from .data import BLOCKED_TILES
 from .data import DEFAULT_BLUE_DEPLOY_TILES
 from .data import DEFAULT_RED_DEPLOY_TILES
+from .data import ELITE_TRAITS_BY_ID
 from .data import GRID_HEIGHT
 from .data import GRID_WIDTH
 from .data import GridPos
@@ -49,6 +51,9 @@ class TacticalUnit:
     moved_distance_this_turn: int
     temporary_damage_bonus: int
     is_elite: bool
+    elite_trait_id: str | None
+    is_boss: bool
+    boss_phase_triggered: bool
 
 
 @dataclass
@@ -138,6 +143,9 @@ def unit_from_blueprint(blueprint: TacticalBlueprint, position: GridPos) -> Tact
         moved_distance_this_turn=0,
         temporary_damage_bonus=0,
         is_elite=False,
+        elite_trait_id=None,
+        is_boss=False,
+        boss_phase_triggered=False,
     )
 
 
@@ -589,6 +597,7 @@ class TacticsController:
             impact = self._apply_effects(target_unit_id, modified_effects)
             impacts.append(impact)
             notes.extend(passive_notes)
+            notes.extend(self._apply_post_impact_modifiers(target_unit_id, impact))
         actor.has_acted = True
         if ability_kind == "special":
             actor.cooldowns[ability.id] = ability.cooldown
@@ -711,6 +720,13 @@ class TacticsController:
         if actor.temporary_damage_bonus > 0:
             bonus_damage += actor.temporary_damage_bonus
             notes.append("룬 지대 강화 발동.")
+
+        if actor.is_elite and actor.elite_trait_id == "relentless" and movement_distance >= 2:
+            bonus_damage += 4
+            notes.append("맹추격 발동.")
+        elif actor.is_elite and actor.elite_trait_id == "spellburst" and ability_kind == "special":
+            bonus_damage += 4
+            notes.append("비전 폭주 발동.")
 
         if actor.id == "blue-garen" and movement_distance == 0:
             bonus_damage += 4
@@ -867,6 +883,36 @@ class TacticsController:
                 notes.append("불씨 잔류 발동.")
         return notes
 
+    def _boost_ability_damage(self, ability: TacticalAbility, bonus_damage: int) -> TacticalAbility:
+        boosted_effects = tuple(
+            replace(effect, amount=effect.amount + bonus_damage) if effect.kind == "damage" else effect
+            for effect in ability.effects
+        )
+        return replace(ability, effects=boosted_effects)
+
+    def _apply_post_impact_modifiers(self, target_id: str, impact: TacticalImpact) -> list[str]:
+        target = self.get_unit(target_id)
+        if target is None:
+            return []
+
+        notes: list[str] = []
+        if (
+            target.is_boss
+            and not target.boss_phase_triggered
+            and target.hp > 0
+            and target.hp <= target.max_hp // 2
+        ):
+            target.boss_phase_triggered = True
+            target.shield += 18
+            target.speed += 2
+            target.move_range += 1
+            target.basic_ability = self._boost_ability_damage(target.basic_ability, 4)
+            target.special_ability = self._boost_ability_damage(target.special_ability, 4)
+            target.cooldowns[target.special_ability.id] = max(0, target.cooldowns.get(target.special_ability.id, 0) - 1)
+            notes.append("결전 각성 발동.")
+            self._push_log(f"{target.name}, 체력이 절반 이하가 되어 결전 각성 발동.")
+        return notes
+
     def _apply_turn_start_passives(self, actor: TacticalUnit) -> None:
         if actor.id == "blue-leona":
             actor.shield += 8
@@ -874,6 +920,15 @@ class TacticsController:
         elif actor.id == "blue-braum":
             actor.shield += 12
             self._push_log(f"{actor.name}, {actor.passive_name}으로 보호막 12 획득.")
+        if actor.is_elite and actor.elite_trait_id == "bulwark":
+            actor.shield += 6
+            self._push_log(f"{actor.name}, 엘리트 특성 철벽으로 보호막 6 획득.")
+        elif actor.is_elite and actor.elite_trait_id == "spellburst":
+            actor.temporary_damage_bonus += 2
+            self._push_log(f"{actor.name}, 엘리트 특성 비전 폭주로 이번 턴 피해 +2.")
+        if actor.is_boss:
+            actor.temporary_damage_bonus += 2
+            self._push_log(f"{actor.name}, 보스 압박으로 이번 턴 피해 +2.")
 
     def _terrain_at(self, position: GridPos) -> TerrainId | None:
         return self.terrain_tiles.get(position)

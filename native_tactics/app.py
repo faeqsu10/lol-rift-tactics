@@ -18,9 +18,11 @@ from native_game.runtime import project_root
 from .data import ART_FILE_BY_UNIT_ID
 from .data import DEFAULT_BLUE_DEPLOY_TILES
 from .data import DEFAULT_RED_DEPLOY_TILES
+from .data import ELITE_TRAITS_BY_ID
 from .data import GRID_HEIGHT
 from .data import GRID_WIDTH
 from .data import GridPos
+from .data import ROLE_ELITE_TRAIT_ID
 from .data import STAGE_TERRAIN_TILES
 from .data import TACTICAL_BLUEPRINTS_BY_ID
 from .data import TERRAIN_BY_ID
@@ -510,17 +512,33 @@ class GameApp:
                 tiles[tile] = terrain_id
         return tiles
 
+    def _boss_enemy_id_for_stage(self, stage: int | None = None, lineup: list[str] | None = None) -> str | None:
+        current_stage = stage or self.run_stage
+        enemy_ids = tuple(lineup or self.selected_red_ids)
+        if current_stage < RUN_STAGE_COUNT or not enemy_ids:
+            return None
+        return max(enemy_ids, key=lambda champion_id: (TACTICAL_BLUEPRINTS_BY_ID[champion_id].max_hp, TACTICAL_BLUEPRINTS_BY_ID[champion_id].speed))
+
     def _elite_enemy_ids_for_stage(self, stage: int | None = None, lineup: list[str] | None = None) -> tuple[str, ...]:
         current_stage = stage or self.run_stage
         enemy_ids = tuple(lineup or self.selected_red_ids)
         if current_stage <= 1 or not enemy_ids:
             return ()
-        leader = max(enemy_ids, key=lambda champion_id: (TACTICAL_BLUEPRINTS_BY_ID[champion_id].max_hp, TACTICAL_BLUEPRINTS_BY_ID[champion_id].speed))
+        leader = self._boss_enemy_id_for_stage(current_stage, list(enemy_ids)) or max(
+            enemy_ids,
+            key=lambda champion_id: (TACTICAL_BLUEPRINTS_BY_ID[champion_id].max_hp, TACTICAL_BLUEPRINTS_BY_ID[champion_id].speed),
+        )
         if current_stage == 2 or len(enemy_ids) == 1:
             return (leader,)
         lieutenant_candidates = [champion_id for champion_id in enemy_ids if champion_id != leader]
         lieutenant = max(lieutenant_candidates, key=lambda champion_id: TACTICAL_BLUEPRINTS_BY_ID[champion_id].speed) if lieutenant_candidates else leader
-        return tuple(dict.fromkeys((leader, lieutenant)))
+        return tuple(dict.fromkeys((lieutenant,)))
+
+    def _elite_trait_id_for_enemy(self, champion_id: str) -> str | None:
+        blueprint = TACTICAL_BLUEPRINTS_BY_ID.get(champion_id)
+        if blueprint is None:
+            return None
+        return ROLE_ELITE_TRAIT_ID.get(blueprint.role)
 
     def _random_enemy_lineup(self, stage: int | None = None) -> list[str]:
         current_stage = stage or self.run_stage
@@ -884,6 +902,13 @@ class GameApp:
         self._apply_run_modifiers(controller)
         self.controller = controller
         self._sync_controller_objective_focus()
+        boss_unit = next((unit for unit in controller.units if unit.team == "red" and unit.is_boss), None)
+        if boss_unit is not None:
+            controller._push_log(f"{boss_unit.name} 보스 개체 등장 · 체력 절반 이하 시 결전 각성.")
+        for elite_unit in [unit for unit in controller.units if unit.team == "red" and unit.is_elite and not unit.is_boss]:
+            trait = ELITE_TRAITS_BY_ID.get(elite_unit.elite_trait_id or "")
+            if trait is not None:
+                controller._push_log(f"{elite_unit.name} 엘리트 특성 · {trait.name}.")
         self._reset_battle_stats()
         self.hit_flash = {unit.id: 0.0 for unit in controller.units}
         self.unit_visual_positions = {
@@ -908,7 +933,9 @@ class GameApp:
         move_bonus = self.run_bonuses["bonus-move"]
         shield_bonus = self.run_bonuses["bonus-shield"] * 12
         enemy_tier = max(0, self.run_stage - 1)
-        elite_ids = self._elite_enemy_ids_for_stage(lineup=[unit.id for unit in controller.units if unit.team == "red"])
+        enemy_lineup = [unit.id for unit in controller.units if unit.team == "red"]
+        boss_id = self._boss_enemy_id_for_stage(lineup=enemy_lineup)
+        elite_ids = self._elite_enemy_ids_for_stage(lineup=enemy_lineup)
         stage_modifiers = self._stage_modifier_total()
         route_damage_bonus = stage_modifiers.get("blue_damage", 0)
         route_shield_bonus = stage_modifiers.get("blue_shield", 0)
@@ -936,8 +963,19 @@ class GameApp:
                 unit.shield += enemy_route_shield_bonus
                 unit.basic_ability = self._boost_damage_effects(unit.basic_ability, enemy_tier * 2 + enemy_route_damage_bonus)
                 unit.special_ability = self._boost_damage_effects(unit.special_ability, enemy_tier * 2 + enemy_route_damage_bonus)
-                if unit.id in elite_ids:
+                if boss_id is not None and unit.id == boss_id:
+                    unit.is_boss = True
                     unit.is_elite = True
+                    unit.max_hp += 36
+                    unit.hp = unit.max_hp
+                    unit.speed += 4
+                    unit.move_range += 1
+                    unit.shield += 14
+                    unit.basic_ability = self._boost_damage_effects(unit.basic_ability, 6, range_bonus=1)
+                    unit.special_ability = self._boost_damage_effects(unit.special_ability, 6, range_bonus=1)
+                elif unit.id in elite_ids:
+                    unit.is_elite = True
+                    unit.elite_trait_id = self._elite_trait_id_for_enemy(unit.id)
                     unit.max_hp += 16 if self.run_stage == 2 else 24
                     unit.hp = unit.max_hp
                     unit.speed += 2
@@ -1727,6 +1765,9 @@ class GameApp:
             self._draw_text(line, self.font_small, hex_to_rgb(TERRAIN_BY_ID[list(terrain_counts)[index]].color) if terrain_counts and index < len(terrain_counts) else (209, 220, 227), (stage_rect.x + 18, stage_rect.y + terrain_y + 34 + index * 26))
         enemy_line = " · ".join(BLUEPRINTS_BY_ID[champion_id].name for champion_id in self.selected_red_ids)
         self._draw_wrapped_text(f"적 조합: {enemy_line}", self.font_small, (209, 220, 227), pygame.Rect(stage_rect.x + 18, stage_rect.y + enemy_y, stage_rect.width - 36, 40), max_lines=2)
+        preview_boss_id = self._boss_enemy_id_for_stage(lineup=self.selected_red_ids)
+        if preview_boss_id is not None:
+            self._draw_text(f"예상 보스: {BLUEPRINTS_BY_ID[preview_boss_id].name}", self.font_small, (236, 126, 90), (stage_rect.x + 18, stage_rect.y + enemy_y + 52))
 
         for index, route_id in enumerate(self.route_option_ids):
             rect = pygame.Rect(SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.y + 96 + index * 182, SELECT_RIGHT_PANEL.width - 44, 170)
@@ -1832,11 +1873,19 @@ class GameApp:
     def _draw_deploy_right_panel(self) -> None:
         self._draw_text("적 시작 위치", self.font_heading, (244, 239, 225), (RIGHT_PANEL.x + 18, RIGHT_PANEL.y + 18))
         self._draw_text("적은 자동으로 배치되며 순서가 바뀔 수 있습니다", self.font_small, (198, 176, 168), (RIGHT_PANEL.x + 18, RIGHT_PANEL.y + 52))
+        boss_id = self._boss_enemy_id_for_stage()
         elite_ids = set(self._elite_enemy_ids_for_stage())
         for index, champion_id in enumerate(self.selected_red_ids):
             rect = pygame.Rect(RIGHT_PANEL.x + 18, RIGHT_PANEL.y + 98 + index * 172, RIGHT_PANEL.width - 36, 150)
             tile = self._tile_for_deployed_champion(champion_id, self.red_deploy_assignments)
-            footer = f"{'엘리트 · ' if champion_id in elite_ids else ''}시작 칸 {tile}"
+            if champion_id == boss_id:
+                footer = f"보스 · 결전 각성 · 시작 칸 {tile}"
+            elif champion_id in elite_ids:
+                trait = ELITE_TRAITS_BY_ID.get(self._elite_trait_id_for_enemy(champion_id) or "")
+                trait_label = trait.name if trait is not None else "엘리트"
+                footer = f"엘리트 · {trait_label} · 시작 칸 {tile}"
+            else:
+                footer = f"시작 칸 {tile}"
             self._draw_champion_card(rect, champion_id, compact=True, enemy=True, footer=footer)
 
     def _draw_deploy_bottom_panel(self) -> None:
@@ -1979,6 +2028,7 @@ class GameApp:
         tile_rect = self.tile_rects[unit.position]
         accent = hex_to_rgb(unit.accent)
         pulse = 0.2 + 0.2 * self.hit_flash.get(unit.id, 0.0)
+        badge_text, badge_color = self._encounter_badge_for_unit(unit)
 
         shadow_rect = pygame.Rect(0, 0, 64, 18)
         shadow_rect.center = (int(center.x), int(center.y + 28))
@@ -1989,16 +2039,16 @@ class GameApp:
 
         frame_rect = pygame.Rect(0, 0, 74, 74)
         frame_rect.center = (int(center.x), int(center.y - 2))
-        frame_fill = (214, 182, 112) if unit.is_elite else mix(accent, (255, 255, 255), pulse)
+        frame_fill = badge_color if badge_text is not None else mix(accent, (255, 255, 255), pulse)
         pygame.draw.rect(self.screen, frame_fill, frame_rect, border_radius=22)
-        pygame.draw.rect(self.screen, (255, 244, 217), frame_rect, 2 if unit.is_elite else 1, border_radius=22)
+        pygame.draw.rect(self.screen, (255, 244, 217), frame_rect, 2 if badge_text is not None else 1, border_radius=22)
 
         art = self.champion_art.get(unit.id)
         if art is not None:
             portrait = self._masked_art_surface(art, (66, 66), border_radius=18)
             self.screen.blit(portrait, portrait.get_rect(center=frame_rect.center))
-        if unit.is_elite:
-            self._draw_text("E", self.font_tiny, (13, 21, 31), (frame_rect.centerx, frame_rect.y + 8), center=True)
+        if badge_text is not None:
+            self._draw_text(badge_text, self.font_tiny, (13, 21, 31), (frame_rect.centerx, frame_rect.y + 8), center=True)
 
         hp_ratio = unit.hp / unit.max_hp
         hp_rect = pygame.Rect(frame_rect.x, frame_rect.y - 14, frame_rect.width, 8)
@@ -2031,7 +2081,14 @@ class GameApp:
                 self.screen.blit(portrait, portrait.get_rect(center=portrait_rect.center))
             self._draw_text(active.name, self.font_heading, (244, 239, 225), (info_rect.x + 128, info_rect.y + 20))
             self._draw_text(active.title, self.font_small, (170, 191, 207), (info_rect.x + 128, info_rect.y + 54))
-            self._draw_text(f"{active.role} · 체력 {active.hp}/{active.max_hp}", self.font_small, accent, (info_rect.x + 128, info_rect.y + 82))
+            encounter_label = active.role
+            if active.is_boss:
+                encounter_label = f"{active.role} · 보스 결전 각성"
+            elif active.is_elite and active.elite_trait_id is not None:
+                trait = ELITE_TRAITS_BY_ID.get(active.elite_trait_id)
+                if trait is not None:
+                    encounter_label = f"{active.role} · 엘리트 {trait.name}"
+            self._draw_text(f"{encounter_label} · 체력 {active.hp}/{active.max_hp}", self.font_small, accent, (info_rect.x + 128, info_rect.y + 82))
             self._draw_text(f"이동 {active.move_range}칸 · 속도 {active.speed}", self.font_small, (206, 215, 222), (info_rect.x + 18, info_rect.y + 126))
             self._draw_text(f"기본기: {active.basic_ability.name}", self.font_small, (223, 206, 164), (info_rect.x + 18, info_rect.y + 154))
             special_label = f"특수기: {active.special_ability.name}"
@@ -2119,7 +2176,8 @@ class GameApp:
     def _draw_roster_row(self, unit, x: int, y: int) -> None:
         row_rect = pygame.Rect(x, y, RIGHT_PANEL.width - 36, 52)
         pygame.draw.rect(self.screen, (15, 26, 39), row_rect, border_radius=16)
-        border_color = (214, 182, 112) if unit.is_elite else (236, 218, 176)
+        badge_text, badge_color = self._encounter_badge_for_unit(unit)
+        border_color = badge_color if badge_text is not None else (236, 218, 176)
         pygame.draw.rect(self.screen, border_color, row_rect, 1, border_radius=16)
         accent = hex_to_rgb(unit.accent)
         pygame.draw.circle(self.screen, accent, (row_rect.x + 22, row_rect.y + 26), 10)
@@ -2132,8 +2190,11 @@ class GameApp:
             status.append("기절")
         if unit.hp <= 0:
             status.append("전투불능")
-        if unit.is_elite:
-            status.append("Elite")
+        if unit.is_boss:
+            status.append("Boss")
+        elif unit.is_elite:
+            trait = ELITE_TRAITS_BY_ID.get(unit.elite_trait_id or "")
+            status.append(f"Elite {trait.name}" if trait is not None else "Elite")
         self._draw_text(" · ".join(status) if status else unit.role, self.font_tiny, accent, (row_rect.right - 12, row_rect.y + 18), align_right=True)
 
     def _draw_battle_bottom_panel(self) -> None:
@@ -2256,12 +2317,29 @@ class GameApp:
         initial = terrain.name[0]
         self._draw_text(initial, self.font_small, hex_to_rgb(terrain.color), rect.center, center=True)
 
+    def _encounter_badge_for_unit(self, unit) -> tuple[str | None, tuple[int, int, int]]:
+        if unit.is_boss:
+            return "B", (236, 126, 90)
+        if unit.is_elite:
+            trait = ELITE_TRAITS_BY_ID.get(unit.elite_trait_id or "")
+            return "E", hex_to_rgb(trait.color) if trait is not None else (214, 182, 112)
+        return None, (236, 218, 176)
+
+    def _encounter_badge_for_champion(self, champion_id: str) -> tuple[str | None, tuple[int, int, int]]:
+        if champion_id == self._boss_enemy_id_for_stage():
+            return "B", (236, 126, 90)
+        if champion_id in set(self._elite_enemy_ids_for_stage()):
+            trait_id = self._elite_trait_id_for_enemy(champion_id)
+            trait = ELITE_TRAITS_BY_ID.get(trait_id or "")
+            return "E", hex_to_rgb(trait.color) if trait is not None else (214, 182, 112)
+        return None, (236, 218, 176)
+
     def _draw_static_unit(self, champion_id: str, tile: tuple[int, int], *, selected: bool) -> None:
         center = self._tile_center(tile)
         rect = self.tile_rects[tile]
         blueprint = BLUEPRINTS_BY_ID[champion_id]
         accent = hex_to_rgb(blueprint.accent)
-        is_elite = champion_id in self._elite_enemy_ids_for_stage()
+        badge_text, badge_color = self._encounter_badge_for_champion(champion_id)
         shadow_rect = pygame.Rect(0, 0, 64, 18)
         shadow_rect.center = (center[0], center[1] + 28)
         pygame.draw.ellipse(self.screen, (0, 0, 0, 90), shadow_rect)
@@ -2270,15 +2348,15 @@ class GameApp:
 
         frame_rect = pygame.Rect(0, 0, 74, 74)
         frame_rect.center = (center[0], center[1] - 2)
-        frame_fill = (214, 182, 112) if is_elite else accent
+        frame_fill = badge_color if badge_text is not None else accent
         pygame.draw.rect(self.screen, frame_fill, frame_rect, border_radius=22)
-        pygame.draw.rect(self.screen, (255, 244, 217), frame_rect, 2 if is_elite else 1, border_radius=22)
+        pygame.draw.rect(self.screen, (255, 244, 217), frame_rect, 2 if badge_text is not None else 1, border_radius=22)
         art = self.champion_art.get(champion_id)
         if art is not None:
             portrait = self._masked_art_surface(art, (66, 66), border_radius=18)
             self.screen.blit(portrait, portrait.get_rect(center=frame_rect.center))
-        if is_elite:
-            self._draw_text("E", self.font_tiny, (13, 21, 31), (frame_rect.centerx, frame_rect.y + 8), center=True)
+        if badge_text is not None:
+            self._draw_text(badge_text, self.font_tiny, (13, 21, 31), (frame_rect.centerx, frame_rect.y + 8), center=True)
         self._draw_text(blueprint.name, self.font_small, (244, 239, 225), (frame_rect.centerx, frame_rect.bottom + 18), center=True)
 
     def _draw_portrait_art(self, champion_id: str, rect: pygame.Rect, accent: tuple[int, int, int]) -> None:

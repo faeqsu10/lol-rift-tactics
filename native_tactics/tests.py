@@ -84,6 +84,21 @@ class TacticsControllerTests(unittest.TestCase):
         self.assertEqual(braum.shield, 12)
         self.assertTrue(any("보호막 12 획득" in line for line in controller.state.log))
 
+    def test_elite_bulwark_trait_grants_shield_on_turn_start(self) -> None:
+        controller = TacticsController(("blue-garen",), ("red-darius",))
+        controller.get_unit("blue-garen").speed = 1
+        darius = controller.get_unit("red-darius")
+        darius.is_elite = True
+        darius.elite_trait_id = "bulwark"
+        controller.state.turn_queue = ["red-darius"]
+        controller.state.active_unit_id = None
+
+        controller._prime_next_turn()
+
+        self.assertEqual(controller.get_active_unit().id, "red-darius")
+        self.assertEqual(darius.shield, 6)
+        self.assertTrue(any("철벽" in line for line in controller.state.log))
+
     def test_vi_special_after_long_move_increases_damage_and_stun(self) -> None:
         controller = TacticsController(("blue-vi",), ("red-darius",))
         controller.blocked_tiles.clear()
@@ -179,6 +194,24 @@ class TacticsControllerTests(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(controller.get_unit("red-zed").shield, 6)
         self.assertEqual(controller.get_unit("red-zed").cooldowns["death-mark"], controller.get_unit("red-zed").special_ability.cooldown - 1)
+
+    def test_boss_phase_triggers_once_below_half_hp(self) -> None:
+        controller = TacticsController(("blue-garen",), ("red-darius",))
+        controller.blocked_tiles.clear()
+        boss = controller.get_unit("red-darius")
+        boss.position = (1, 1)
+        boss.hp = 35
+        boss.is_boss = True
+        controller.get_unit("blue-garen").position = (0, 1)
+
+        result = controller.use_basic("red-darius")
+
+        self.assertIsNotNone(result)
+        self.assertTrue(boss.boss_phase_triggered)
+        self.assertEqual(boss.shield, 18)
+        self.assertEqual(boss.speed, TACTICAL_BLUEPRINTS_BY_ID["red-darius"].speed + 2)
+        self.assertEqual(boss.move_range, TACTICAL_BLUEPRINTS_BY_ID["red-darius"].move_range + 1)
+        self.assertTrue(any("결전 각성 발동." in note for note in result.notes))
 
     def test_preview_ai_intent_reports_target(self) -> None:
         controller = TacticsController(("blue-garen",), ("red-brand",))
@@ -344,6 +377,25 @@ class GameAppFlowTests(unittest.TestCase):
         elite_units = [unit for unit in app.controller.units if unit.team == "red" and unit.is_elite]
         self.assertEqual(len(elite_units), 1)
         self.assertGreater(elite_units[0].max_hp, 102)
+        self.assertIsNotNone(elite_units[0].elite_trait_id)
+
+    def test_stage_three_marks_boss_and_lieutenant_elite(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
+        app.selected_red_ids = ["red-darius", "red-zed", "red-brand"]
+        app.run_stage = 3
+        app._seed_deployment()
+
+        controller = app._build_controller_from_current_setup()
+        app._attach_controller(controller)
+
+        boss_units = [unit for unit in app.controller.units if unit.team == "red" and unit.is_boss]
+        lieutenant_elites = [unit for unit in app.controller.units if unit.team == "red" and unit.is_elite and not unit.is_boss]
+        self.assertEqual(len(boss_units), 1)
+        self.assertTrue(boss_units[0].is_elite)
+        self.assertGreater(boss_units[0].max_hp, TACTICAL_BLUEPRINTS_BY_ID[boss_units[0].id].max_hp + 20)
+        self.assertEqual(len(lieutenant_elites), 1)
+        self.assertIsNotNone(lieutenant_elites[0].elite_trait_id)
 
     def test_reward_then_route_choice_advances_to_deploy(self) -> None:
         app = GameApp(headless=True)

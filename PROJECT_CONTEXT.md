@@ -59,7 +59,8 @@
   - champion-specific tactical special picks so marquee skills stay consistent
   - enemy intent preview during red turns with predicted damage, threat tiles, multi-target counts, next-enemy warning, and enemy-phase summaries
   - stage-based terrain tiles: brush, rune, hazard
-  - elite enemies in later expedition stages
+  - elite enemies in later expedition stages with trait rules
+  - stage 3 boss battle with a marked boss unit and one-time phase shift
   - route selection between battles with three risk/reward options and temporary next-battle modifiers
   - route cards now include a second-pass battle event for the next fight
   - route-specific map objectives during battles with progress HUD and marked objective tiles
@@ -109,11 +110,11 @@
 
 ## Recommended Next Steps
 
-1. Add a first boss battle layer and distinct elite/objective rules to `native_tactics`.
-2. Improve intent once more around chained damage text, danger scoring, and elite focus fire.
-3. Add run-map node variety such as rest/event/elite splits on top of the current route flow.
+1. Improve intent once more around chained damage text, danger scoring, and elite focus fire.
+2. Add run-map node variety such as rest/event/elite splits on top of the current route flow.
+3. Add a second boss pass with boss-only objectives, stronger phase scripting, and finale presentation.
 4. Replace shape-based placeholder characters with real sprite art or sprite sheets.
-5. Expand map and objective variety once the boss loop lands.
+5. Expand map and objective variety on top of the boss loop.
 
 ## Resume Prompt
 
