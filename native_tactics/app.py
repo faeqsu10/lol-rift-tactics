@@ -1117,9 +1117,15 @@ class GameApp:
     def _current_route_node_summary(self) -> str | None:
         if self.current_route_node is None:
             return None
-        if self.current_node_follow_up is None:
-            return f"{self.current_route_node.name} · {self.current_route_node.effect_label}"
-        return f"{self.current_route_node.name} · {self.current_node_follow_up.name} · {self.current_node_follow_up.effect_label}"
+        effect_label = self._node_effect_preview_label(self.current_route_node, self.current_node_follow_up)
+        return f"{self.current_route_node.name} · {effect_label}"
+
+    def _node_effect_preview_label(self, node: RunNode | None, follow_up: NodeFollowUp | None) -> str:
+        if node is None:
+            return ""
+        if follow_up is None:
+            return node.effect_label
+        return f"{node.effect_label} / 후속 {follow_up.name}: {follow_up.effect_label}"
 
     def _current_route_event_summary(self) -> str | None:
         if self.current_route_event is None:
@@ -1680,8 +1686,7 @@ class GameApp:
             if self.screen_mode == "battle":
                 self._return_to_select()
             elif self.screen_mode == "deploy":
-                self.screen_mode = "select"
-                self.audio.play("ui-select")
+                self._return_to_select()
             else:
                 self.running = False
             return
@@ -1724,8 +1729,7 @@ class GameApp:
             elif self.screen_mode == "summary":
                 self._return_to_select()
             elif self.screen_mode == "deploy":
-                self.screen_mode = "select"
-                self.audio.play("ui-select")
+                self._return_to_select()
             else:
                 self.running = False
             return
@@ -2314,9 +2318,7 @@ class GameApp:
             self._draw_text(f"위험: {ROUTE_RISK_BY_ID[selected_route]}", self.font_small, (233, 156, 140), (stage_rect.x + 18, stage_rect.y + 132))
             if selected_node is not None:
                 self._draw_text(f"노드: {selected_node.name} · {selected_node.category}", self.font_small, (170, 222, 210), (stage_rect.x + 18, stage_rect.y + 156))
-                follow_up_line = selected_node.effect_label
-                if selected_follow_up is not None:
-                    follow_up_line = f"{selected_node.effect_label} / 후속 {selected_follow_up.name}: {selected_follow_up.effect_label}"
+                follow_up_line = self._node_effect_preview_label(selected_node, selected_follow_up)
                 self._draw_wrapped_text(follow_up_line, self.font_tiny, (209, 220, 227), pygame.Rect(stage_rect.x + 18, stage_rect.y + 178, stage_rect.width - 36, 32), max_lines=2)
             objective_preview_text = (
                 preview_objective.description.replace("목표: ", "")
@@ -2607,10 +2609,9 @@ class GameApp:
         champion_name = BLUEPRINTS_BY_ID[self.selected_deploy_champion_id].name if self.selected_deploy_champion_id else "없음"
         self._draw_text(champion_name, self.font_heading, (244, 239, 225), (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 38))
         deploy_preview_objective = self._preview_battle_objective()
-        if self.current_node_follow_up is not None:
-            self._draw_text(f"후속 · {self.current_node_follow_up.name}", self.font_tiny, (170, 222, 210), (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 46))
-        elif self.current_route_node is not None:
-            self._draw_text(f"노드 · {self.current_route_node.effect_label}", self.font_tiny, (170, 222, 210), (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 46))
+        combined_node_effect = self._node_effect_preview_label(self.current_route_node, self.current_node_follow_up)
+        if self.current_route_node is not None:
+            self._draw_text(f"노드 · {self.current_route_node.name}", self.font_tiny, (170, 222, 210), (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 46))
         elif self.current_route_event is not None:
             self._draw_text(f"이벤트 · {self._route_event_effect_label(self.current_route_event, self.current_route_node)}", self.font_tiny, (170, 222, 210), (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 46))
         else:
@@ -2619,8 +2620,8 @@ class GameApp:
             f"적용 페널티 · {self.active_stage_penalty.description}"
             if self.active_stage_penalty is not None
             else (
-                f"후속 효과 · {self.current_node_follow_up.effect_label}"
-                if self.current_node_follow_up is not None
+                f"노드 효과 · {combined_node_effect}"
+                if self.current_route_node is not None
                 else (
                 f"결전 목표 · {deploy_preview_objective.description.replace('목표: ', '')}"
                 if deploy_preview_objective is not None and deploy_preview_objective.is_finale
@@ -2978,10 +2979,8 @@ class GameApp:
 
         info_x = BOTTOM_PANEL.right - 340
         objective = self.current_objective
-        if self.current_node_follow_up is not None:
-            self._draw_text(f"후속 효과 · {self.current_node_follow_up.effect_label}", self.font_tiny, (170, 222, 210), (info_x, BOTTOM_PANEL.y + 18))
-        elif self.current_route_node is not None:
-            self._draw_text(f"노드 효과 · {self.current_route_node.effect_label}", self.font_tiny, (170, 222, 210), (info_x, BOTTOM_PANEL.y + 18))
+        if self.current_route_node is not None:
+            self._draw_text(f"노드 효과 · {self._node_effect_preview_label(self.current_route_node, self.current_node_follow_up)}", self.font_tiny, (170, 222, 210), (info_x, BOTTOM_PANEL.y + 18))
         else:
             self._draw_text("현재 턴", self.font_small, (223, 206, 164), (info_x, BOTTOM_PANEL.y + 18))
         self._draw_text(active.name, self.font_heading, (244, 239, 225), (info_x, BOTTOM_PANEL.y + 38))

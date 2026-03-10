@@ -689,7 +689,80 @@ class GameAppFlowTests(unittest.TestCase):
         self.assertEqual(app.current_node_follow_up.name, "신속 재집결")
         self.assertEqual(garen.speed, TACTICAL_BLUEPRINTS_BY_ID["blue-garen"].speed + 4)
         self.assertEqual(garen.move_range, TACTICAL_BLUEPRINTS_BY_ID["blue-garen"].move_range + 1)
-        self.assertIn("신속 재집결", app._current_route_node_summary() or "")
+        node_summary = app._current_route_node_summary() or ""
+        self.assertIn("휴식 거점", node_summary)
+        self.assertIn("아군 체력 +12", node_summary)
+        self.assertIn("신속 재집결", node_summary)
+        self.assertIn("이동력 +1", node_summary)
+
+    def test_deploy_escape_returns_to_clean_select_state(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
+        app.selected_red_ids = ["red-darius", "red-annie", "red-caitlyn"]
+        app.run_stage = 2
+        app.current_route_id = "supply-line"
+        app.current_route_node = RunNode(
+            id="rest-camp",
+            name="휴식 거점",
+            category="정비 노드",
+            description="테스트용",
+            effect_label="아군 체력 +12 · 보호막 +6 · 예약 페널티 해제",
+            stage_modifiers={"blue_hp": 12, "blue_shield": 6},
+            clears_pending_penalty=True,
+        )
+        app.current_node_follow_up = NodeFollowUp(
+            id="rest-regroup",
+            node_id="rest-camp",
+            name="신속 재집결",
+            description="테스트용",
+            effect_label="이번 전투 아군 속도 +4 · 이동력 +1",
+            stage_modifiers={"blue_speed": 4, "blue_move": 1},
+        )
+        app._seed_deployment()
+        app.screen_mode = "deploy"
+
+        app._handle_keydown(pygame.K_ESCAPE)
+
+        self.assertEqual(app.screen_mode, "select")
+        self.assertEqual(app.run_stage, 1)
+        self.assertIsNone(app.current_route_id)
+        self.assertIsNone(app.current_route_node)
+        self.assertIsNone(app.current_node_follow_up)
+
+    def test_deploy_header_action_returns_to_clean_select_state(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
+        app.selected_red_ids = ["red-darius", "red-annie", "red-caitlyn"]
+        app.run_stage = 2
+        app.current_route_id = "supply-line"
+        app.current_route_node = RunNode(
+            id="rest-camp",
+            name="휴식 거점",
+            category="정비 노드",
+            description="테스트용",
+            effect_label="아군 체력 +12 · 보호막 +6 · 예약 페널티 해제",
+            stage_modifiers={"blue_hp": 12, "blue_shield": 6},
+            clears_pending_penalty=True,
+        )
+        app.current_node_follow_up = NodeFollowUp(
+            id="rest-regroup",
+            node_id="rest-camp",
+            name="신속 재집결",
+            description="테스트용",
+            effect_label="이번 전투 아군 속도 +4 · 이동력 +1",
+            stage_modifiers={"blue_speed": 4, "blue_move": 1},
+        )
+        app._seed_deployment()
+        app.screen_mode = "deploy"
+        app._draw()
+
+        app._handle_click(app.button_rects["header-action"].center)
+
+        self.assertEqual(app.screen_mode, "select")
+        self.assertEqual(app.run_stage, 1)
+        self.assertIsNone(app.current_route_id)
+        self.assertIsNone(app.current_route_node)
+        self.assertIsNone(app.current_node_follow_up)
 
     def test_route_event_modifies_next_battle_stats(self) -> None:
         app = GameApp(headless=True)
@@ -1001,6 +1074,7 @@ class GameAppFlowTests(unittest.TestCase):
             )
         }
         app.route_node_by_route_id = {}
+        app.node_follow_up_by_route_id = {}
         app.selected_route_id = "supply-line"
         app._advance_after_route()
 
