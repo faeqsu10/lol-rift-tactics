@@ -75,6 +75,7 @@
   - battle recap summary before choosing the next route
   - run-end summary screen with cumulative stats, build highlights, battle timeline, and direct replay/select actions
   - persisted run history with best-run comparison on the summary screen
+  - node-specific and finale-specific battle-start cut-in presentation with a short intro lock
   - terrain-aware red-team AI movement and targeting
   - objective-aware red-team AI that contests marked tiles and pressure zones
   - post-victory reward pick with next-enemy preview
@@ -118,11 +119,11 @@
 
 ## Recommended Next Steps
 
-1. Add node-specific cut-ins or start-of-battle presentation so rest/event/elite branches feel more authored.
-2. Replace shape-based placeholder characters with real sprite art or sprite sheets.
-3. Expand map and objective variety on top of the boss loop.
-4. Add more authored boss variants or finale-only special rules on top of the new boss pattern system.
-5. Add richer meta progression or unlock structure on top of the saved run-history layer.
+1. Replace shape-based placeholder characters with real sprite art or sprite sheets.
+2. Expand map and objective variety on top of the boss loop.
+3. Add more authored boss variants or finale-only special rules on top of the new boss pattern system.
+4. Add richer meta progression or unlock structure on top of the saved run-history layer.
+5. Add more authored node/event presentation on top of the new cut-in system.
 
 ## Resume Prompt
 

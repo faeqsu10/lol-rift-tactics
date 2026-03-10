@@ -373,6 +373,15 @@ class FloatingText:
     lifetime: float = 0.8
 
 
+@dataclass
+class BattleIntroCard:
+    title: str
+    subtitle: str
+    detail_lines: list[str]
+    color: tuple[int, int, int]
+    timer: float = 1.65
+
+
 @dataclass(frozen=True)
 class RunReward:
     id: str
@@ -608,6 +617,7 @@ class GameApp:
         self.finale_banner_subtitle: str | None = None
         self.finale_banner_color: tuple[int, int, int] = (236, 126, 90)
         self.finale_banner_timer = 0.0
+        self.battle_intro_card: BattleIntroCard | None = None
 
         self.tile_rects: dict[tuple[int, int], pygame.Rect] = {}
         self.button_rects: dict[str, pygame.Rect] = {}
@@ -774,6 +784,7 @@ class GameApp:
         self.finale_banner_title = None
         self.finale_banner_subtitle = None
         self.finale_banner_timer = 0.0
+        self.battle_intro_card = None
         self.selected_red_ids = self._random_enemy_lineup(self.run_stage)
 
     def _reset_battle_stats(self) -> None:
@@ -798,6 +809,7 @@ class GameApp:
         available_ids = list(self.run_rewards)
         self.reward_option_ids = random.sample(available_ids, 3)
         self.selected_reward_id = None
+        self.battle_intro_card = None
         self.pending_red_ids = self._random_enemy_lineup(self.run_stage + 1)
         self.current_route_id = None
         self.current_route_event = None
@@ -1036,6 +1048,7 @@ class GameApp:
         history_summary = self.history_store.record_summary(self.run_summary, stage_number=self.run_stage)
         self.run_summary.history_overview_lines = history_summary.overview_lines
         self.run_summary.history_comparison_lines = history_summary.comparison_lines
+        self.battle_intro_card = None
         self.screen_mode = "summary"
         self.mode = "move"
         self.finale_banner_title = None
@@ -1183,6 +1196,40 @@ class GameApp:
         self.finale_banner_subtitle = subtitle
         self.finale_banner_color = color
         self.finale_banner_timer = 1.75
+
+    def _trigger_battle_intro(self) -> None:
+        detail_lines: list[str] = []
+        color = (108, 224, 203)
+        title = f"{self._current_stage_label()} 시작"
+        subtitle = "전술 상황을 확인하고 첫 턴 계획을 세우세요."
+
+        if self.current_route_node is not None:
+            title = f"{self.current_route_node.name} 진입"
+            subtitle = self.current_route_node.description
+            detail_lines.append(f"노드 효과 · {self.current_route_node.effect_label}")
+            if self.current_route_node.id == "rest-camp":
+                color = (128, 214, 174)
+            elif self.current_route_node.id == "event-surge":
+                color = (123, 151, 236)
+            elif self.current_route_node.id == "elite-contract":
+                color = (236, 126, 90)
+        if self.current_node_follow_up is not None:
+            detail_lines.append(f"후속 · {self.current_node_follow_up.name} · {self.current_node_follow_up.effect_label}")
+        if self.current_route_event is not None:
+            detail_lines.append(f"이벤트 · {self.current_route_event.name} · {self._route_event_effect_label(self.current_route_event, self.current_route_node)}")
+        if self.active_stage_penalty is not None:
+            detail_lines.append(f"주의 · {self.active_stage_penalty.description}")
+        if self.current_objective is not None:
+            objective_text = self.current_objective.description.replace("목표: ", "")
+            if self.current_objective.is_finale:
+                boss_profile = self._boss_profile_for_stage()
+                finale_variant = self._finale_variant_for_stage()
+                color = (236, 126, 90)
+                title = finale_variant.name if finale_variant is not None else "결전 개시"
+                profile_text = boss_profile.name if boss_profile is not None else "보스 패턴 미확인"
+                subtitle = f"{profile_text} · {objective_text}"
+            detail_lines.append(f"목표 · {objective_text}")
+        self.battle_intro_card = BattleIntroCard(title=title, subtitle=subtitle, detail_lines=detail_lines[:3], color=color)
 
     def _preview_battle_objective(
         self,
@@ -1568,6 +1615,7 @@ class GameApp:
         self.finale_banner_timer = 0.0
         controller = self._build_controller_from_current_setup()
         self._attach_controller(controller)
+        self._trigger_battle_intro()
         self.screen_mode = "battle"
         self.status_text = "이동할 칸을 고르거나 스킬을 선택하세요."
         self.audio.play("ui-confirm")
@@ -1578,6 +1626,7 @@ class GameApp:
         self.mode = "move"
         self.last_active_id = None
         self.selected_deploy_champion_id = None
+        self.battle_intro_card = None
         self._reset_run_progress()
         self.deploy_assignments.clear()
         self.red_deploy_assignments.clear()
@@ -1604,6 +1653,7 @@ class GameApp:
         self.finale_banner_title = None
         self.finale_banner_subtitle = None
         self.finale_banner_timer = 0.0
+        self.battle_intro_card = None
         self.controller.reset()
         self._attach_controller(self.controller)
         self.status_text = "전술 전투를 다시 시작했습니다."
@@ -1739,6 +1789,9 @@ class GameApp:
         if self.screen_mode == "deploy":
             if key == pygame.K_RETURN:
                 self._start_battle()
+            return
+
+        if self.screen_mode == "battle" and self.battle_intro_card is not None:
             return
 
         if key == pygame.K_m:
@@ -1878,6 +1931,8 @@ class GameApp:
                     self._reset_battle()
                 return
             return
+        if self.battle_intro_card is not None:
+            return
 
         active = controller.get_active_unit()
         if active is None or active.team != "blue":
@@ -1954,8 +2009,14 @@ class GameApp:
     def _update(self, dt: float) -> None:
         if self.finale_banner_timer > 0:
             self.finale_banner_timer = max(0.0, self.finale_banner_timer - dt)
+        if self.battle_intro_card is not None:
+            self.battle_intro_card.timer = max(0.0, self.battle_intro_card.timer - dt)
+            if self.battle_intro_card.timer <= 0:
+                self.battle_intro_card = None
 
         if self.screen_mode != "battle" or self.controller is None:
+            return
+        if self.battle_intro_card is not None:
             return
 
         active = self.controller.get_active_unit()
@@ -2107,6 +2168,7 @@ class GameApp:
         else:
             self._draw_battle_screen()
         self._draw_finale_banner()
+        self._draw_battle_intro()
 
     def _draw_header(self, title: str, subtitle: str, center_text: str, action_label: str) -> None:
         panel = pygame.Surface(HEADER_RECT.size, pygame.SRCALPHA)
@@ -3224,6 +3286,37 @@ class GameApp:
         self.screen.blit(banner, banner_rect.topleft)
         self._draw_text(self.finale_banner_title, self.font_heading, (255, 244, 217), (banner_rect.centerx, banner_rect.y + 16), center=True)
         self._draw_text(self.finale_banner_subtitle, self.font_small, (223, 231, 238), (banner_rect.centerx, banner_rect.y + 48), center=True)
+
+    def _draw_battle_intro(self) -> None:
+        if self.screen_mode != "battle" or self.battle_intro_card is None:
+            return
+        intro = self.battle_intro_card
+        progress = clamp(intro.timer / 1.65, 0.0, 1.0)
+        alpha = int(214 * progress)
+        shade = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+        shade.fill((7, 13, 21, min(120, alpha // 2)))
+        self.screen.blit(shade, (0, 0))
+
+        card_rect = pygame.Rect(WINDOW_WIDTH // 2 - 310, WINDOW_HEIGHT // 2 - 128, 620, 212)
+        card = pygame.Surface(card_rect.size, pygame.SRCALPHA)
+        draw_vertical_gradient(
+            card,
+            card.get_rect(),
+            mix((14, 24, 37), intro.color, 0.18),
+            mix((9, 18, 29), intro.color, 0.06),
+        )
+        pygame.draw.rect(card, (*intro.color, 36), card.get_rect(), border_radius=28)
+        pygame.draw.rect(card, (255, 244, 217), card.get_rect(), 1, border_radius=28)
+        card.set_alpha(alpha)
+        self.screen.blit(card, card_rect.topleft)
+
+        slash_rect = pygame.Rect(card_rect.x + 24, card_rect.y + 24, 96, 8)
+        pygame.draw.rect(self.screen, intro.color, slash_rect, border_radius=4)
+        pygame.draw.rect(self.screen, intro.color, slash_rect.move(0, 14), border_radius=4)
+        self._draw_text(intro.title, self.font_title, (255, 244, 217), (card_rect.x + 28, card_rect.y + 46))
+        self._draw_wrapped_text(intro.subtitle, self.font_ui, (216, 226, 233), pygame.Rect(card_rect.x + 28, card_rect.y + 94, card_rect.width - 56, 32), max_lines=2)
+        for index, line in enumerate(intro.detail_lines[:3]):
+            self._draw_wrapped_text(line, self.font_small, (203, 214, 221), pygame.Rect(card_rect.x + 28, card_rect.y + 138 + index * 22, card_rect.width - 56, 18), max_lines=1)
 
     def _draw_winner_overlay(self) -> None:
         if self.controller is None or not self.controller.state.winner:

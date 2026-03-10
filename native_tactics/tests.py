@@ -743,6 +743,65 @@ class GameAppFlowTests(unittest.TestCase):
         self.assertEqual(app.controller.blocked_tiles, set(FINALE_VARIANTS_BY_ID["runic-nexus"].blocked_tiles))
         self.assertEqual(boss.boss_profile_id, "spellstorm")
 
+    def test_start_battle_triggers_node_intro_card(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
+        app.selected_red_ids = ["red-darius", "red-annie", "red-caitlyn"]
+        app.run_stage = 2
+        app.current_route_node = RunNode(
+            id="rest-camp",
+            name="휴식 거점",
+            category="정비 노드",
+            description="짧은 재정비로 전열을 복구하고 예약 페널티를 지워 냅니다.",
+            effect_label="아군 체력 +12 · 보호막 +6 · 예약 페널티 해제",
+            stage_modifiers={"blue_hp": 12, "blue_shield": 6},
+            clears_pending_penalty=True,
+        )
+        app.current_node_follow_up = NodeFollowUp(
+            id="rest-regroup",
+            node_id="rest-camp",
+            name="신속 재집결",
+            description="짧은 정비 후 재빠르게 재집결해 선턴 대응을 준비합니다.",
+            effect_label="이번 전투 아군 속도 +4 · 이동력 +1",
+            stage_modifiers={"blue_speed": 4, "blue_move": 1},
+        )
+        app.current_route_event = RouteEvent(
+            id="supply-medic",
+            route_id="supply-line",
+            name="응급 보급품",
+            description="보급대가 먼저 도착해 전열을 단단히 잡아 줍니다.",
+            effect_label="이번 전투 아군 시작 보호막 +6",
+            stage_modifiers={"blue_shield": 6},
+            failure_penalty_name="보급 탈취",
+            failure_penalty_label="다음 전투 적 전원 시작 보호막 +10",
+            penalty_modifiers={"enemy_shield": 10},
+        )
+        app._seed_deployment()
+
+        app._start_battle()
+
+        self.assertEqual(app.screen_mode, "battle")
+        self.assertIsNotNone(app.battle_intro_card)
+        self.assertEqual(app.battle_intro_card.title, "휴식 거점 진입")
+        self.assertIn("노드 효과", app.battle_intro_card.detail_lines[0])
+        self.assertTrue(any("후속" in line for line in app.battle_intro_card.detail_lines))
+        self.assertTrue(any("이벤트" in line for line in app.battle_intro_card.detail_lines))
+
+    def test_start_battle_triggers_finale_intro_card(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
+        app.selected_red_ids = ["red-brand", "red-zed", "red-katarina"]
+        app.run_stage = RUN_STAGE_COUNT
+        app._seed_deployment()
+
+        app._start_battle()
+
+        self.assertEqual(app.screen_mode, "battle")
+        self.assertIsNotNone(app.battle_intro_card)
+        self.assertEqual(app.battle_intro_card.title, "룬 폭주 회랑")
+        self.assertIn("룬 폭주", app.battle_intro_card.subtitle)
+        self.assertTrue(any("목표" in line for line in app.battle_intro_card.detail_lines))
+
     def test_finale_objective_success_weakens_boss_phase(self) -> None:
         app = GameApp(headless=True)
         app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
