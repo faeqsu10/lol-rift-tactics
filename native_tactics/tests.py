@@ -403,6 +403,118 @@ class GameAppFlowTests(unittest.TestCase):
         self.assertEqual(app.run_stage, 1)
         self.assertEqual(app.screen_mode, "deploy")
 
+    def test_intermediate_victory_records_history_and_enters_reward_phase(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_blue_ids = ["blue-garen"]
+        app.selected_red_ids = ["red-darius"]
+        app.run_stage = 1
+        app.deploy_assignments = {(0, 1): "blue-garen"}
+        app.red_deploy_assignments = {(1, 1): "red-darius"}
+        app.current_objective = BattleObjective(
+            route_id="assault-line",
+            name="선제 제압",
+            description="목표: 2라운드 이내 적 1명 처치",
+            kind="kill_before_round",
+            target=1,
+            reward_id="bonus-damage",
+            reward_label="날 선 무기 +1",
+        )
+
+        controller = app._build_controller_from_current_setup()
+        app._attach_controller(controller)
+        app.controller.state.active_unit_id = "blue-garen"
+        app.controller.state.turn_queue = ["blue-garen"]
+        app.controller.get_unit("red-darius").hp = 1
+
+        result = app.controller.use_basic("red-darius")
+        app._apply_action_result(result)
+
+        self.assertEqual(app.screen_mode, "reward")
+        self.assertIsNone(app.run_summary)
+        self.assertEqual(len(app.run_history), 1)
+        self.assertEqual(app.run_history[0].result_label, "승리")
+
+    def test_final_victory_enters_run_summary_screen(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
+        app.selected_red_ids = ["red-darius"]
+        app.run_stage = RUN_STAGE_COUNT
+        app.deploy_assignments = {(0, 1): "blue-garen", (0, 3): "blue-ahri", (1, 5): "blue-jinx"}
+        app.red_deploy_assignments = {(1, 1): "red-darius"}
+        app.current_objective = app._build_battle_objective()
+
+        controller = app._build_controller_from_current_setup()
+        app._attach_controller(controller)
+        app.controller.state.active_unit_id = "blue-garen"
+        app.controller.state.turn_queue = ["blue-garen"]
+        app.controller.get_unit("red-darius").hp = 1
+
+        result = app.controller.use_basic("red-darius")
+        app._apply_action_result(result)
+
+        self.assertEqual(app.screen_mode, "summary")
+        self.assertIsNotNone(app.run_summary)
+        self.assertEqual(app.run_summary.result_label, "원정 성공")
+        self.assertEqual(app.run_summary.stage_label, "결전 완주")
+        self.assertEqual(len(app.run_history), 1)
+
+    def test_defeat_enters_run_summary_screen(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_blue_ids = ["blue-garen"]
+        app.selected_red_ids = ["red-darius"]
+        app.run_stage = 2
+        app.deploy_assignments = {(0, 1): "blue-garen"}
+        app.red_deploy_assignments = {(1, 1): "red-darius"}
+        app.current_objective = BattleObjective(
+            route_id="supply-line",
+            name="보급 확보",
+            description="목표: 중앙 보급 칸 진입 1회",
+            kind="occupy_tile",
+            target=1,
+            reward_id="bonus-shield",
+            reward_label="수호 문장 +1",
+        )
+
+        controller = app._build_controller_from_current_setup()
+        app._attach_controller(controller)
+        app.controller.state.active_unit_id = "red-darius"
+        app.controller.state.turn_queue = ["red-darius"]
+        app.controller.get_unit("blue-garen").hp = 1
+
+        result = app.controller.use_basic("blue-garen")
+        app._apply_action_result(result)
+
+        self.assertEqual(app.screen_mode, "summary")
+        self.assertIsNotNone(app.run_summary)
+        self.assertEqual(app.run_summary.result_label, "원정 실패")
+        self.assertIn("엘리트전", app.run_summary.stage_label)
+        self.assertEqual(len(app.run_history), 1)
+
+    def test_summary_enter_starts_new_run_and_clears_history(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
+        app.selected_red_ids = ["red-darius"]
+        app.run_stage = RUN_STAGE_COUNT
+        app.deploy_assignments = {(0, 1): "blue-garen", (0, 3): "blue-ahri", (1, 5): "blue-jinx"}
+        app.red_deploy_assignments = {(1, 1): "red-darius"}
+        app.current_objective = app._build_battle_objective()
+
+        controller = app._build_controller_from_current_setup()
+        app._attach_controller(controller)
+        app.controller.state.active_unit_id = "blue-garen"
+        app.controller.state.turn_queue = ["blue-garen"]
+        app.controller.get_unit("red-darius").hp = 1
+
+        result = app.controller.use_basic("red-darius")
+        app._apply_action_result(result)
+        app._handle_keydown(pygame.K_RETURN)
+
+        self.assertEqual(app.screen_mode, "deploy")
+        self.assertEqual(app.run_stage, 1)
+        self.assertEqual(len(app.run_history), 0)
+        self.assertIsNone(app.run_summary)
+        self.assertEqual(len(app.deploy_assignments), 3)
+
     def test_stage_two_marks_elite_enemy(self) -> None:
         app = GameApp(headless=True)
         app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]

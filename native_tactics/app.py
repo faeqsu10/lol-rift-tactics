@@ -409,6 +409,22 @@ class BattleRecap:
 
 
 @dataclass
+class RunSummary:
+    result_label: str
+    stage_label: str
+    lineup_label: str
+    total_rounds: int
+    total_blue_damage: int
+    total_red_damage: int
+    total_blue_kills: int
+    total_red_kills: int
+    build_lines: list[str]
+    best_reward_line: str
+    recommendation: str
+    recap_entries: list[BattleRecap]
+
+
+@dataclass
 class BattleObjective:
     route_id: str
     name: str
@@ -494,7 +510,7 @@ class GameApp:
         self.champion_art = self._load_champion_art()
         self.background_cache = self._build_background()
 
-        self.screen_mode: Literal["select", "deploy", "battle", "reward", "route"] = "select"
+        self.screen_mode: Literal["select", "deploy", "battle", "reward", "route", "summary"] = "select"
         self.mode = "move"
         self.status_text = ""
         self.selection_message = ""
@@ -519,6 +535,8 @@ class GameApp:
         self.last_node_summary: str | None = None
         self.objective_failure_penalty_applied = False
         self.last_battle_recap: BattleRecap | None = None
+        self.run_history: list[BattleRecap] = []
+        self.run_summary: RunSummary | None = None
         self.current_objective: BattleObjective | None = None
         self.last_objective_summary: str | None = None
         self.objective_bonus_applied = False
@@ -671,6 +689,8 @@ class GameApp:
         self.last_node_summary = None
         self.objective_failure_penalty_applied = False
         self.last_battle_recap = None
+        self.run_history = []
+        self.run_summary = None
         self.current_objective = None
         self.last_objective_summary = None
         self.objective_bonus_applied = False
@@ -802,6 +822,9 @@ class GameApp:
         if len(self.selected_blue_ids) != 3:
             self.selected_blue_ids = list(DEFAULT_BLUE_IDS)
         self._reset_run_progress()
+        self.controller = None
+        self.last_active_id = None
+        self.selected_deploy_champion_id = None
         self._seed_deployment()
         self.screen_mode = "deploy"
         self.selection_message = f"{self._current_stage_label()} 시작 위치를 조정하세요."
@@ -840,6 +863,93 @@ class GameApp:
             route_event_summary=self._current_route_event_summary(),
             penalty_summary=self.last_penalty_summary or self._active_stage_penalty_summary(),
         )
+
+    def _current_lineup_label(self) -> str:
+        return " · ".join(BLUEPRINTS_BY_ID[champion_id].name for champion_id in self.selected_blue_ids)
+
+    def _best_reward_line(self) -> str:
+        active_rewards = [(reward_id, stacks) for reward_id, stacks in self.run_bonuses.items() if stacks > 0]
+        if not active_rewards:
+            return "주요 강화 없음"
+        reward_id, stacks = max(active_rewards, key=lambda item: (item[1], self.run_rewards[item[0]].name))
+        reward_name = self.run_rewards[reward_id].name
+        suffix = f" x{stacks}" if stacks > 1 else ""
+        return f"{reward_name}{suffix}"
+
+    def _build_run_recommendation(
+        self,
+        result_label: str,
+        recaps: list[BattleRecap],
+        total_blue_damage: int,
+        total_red_damage: int,
+    ) -> str:
+        objective_failures = sum(1 for recap in recaps if recap.objective_summary and "실패" in recap.objective_summary)
+        if result_label == "원정 성공":
+            if objective_failures == 0 and total_red_damage <= max(45, total_blue_damage // 2):
+                return "깔끔한 완주였습니다. 같은 조합으로 더 공격적인 경로와 정예 수배 노드를 노려볼 만합니다."
+            if self._best_reward_line() != "주요 강화 없음":
+                return f"{self._best_reward_line()} 빌드가 잘 맞았습니다. 같은 조합으로 다른 경로를 타며 확장해보세요."
+            return "완주는 했지만 빌드 여지는 남아 있습니다. 같은 조합 재도전이나 새 조합 실험 둘 다 좋습니다."
+        if self.run_stage == 1:
+            return "정찰전에서 끊겼습니다. 브라움·레오나 같은 전열과 기절 연계를 늘리면 안정감이 확 올라갑니다."
+        if total_red_damage > total_blue_damage + 25:
+            return "받는 피해가 컸습니다. 보급로, 전장 보급, 수호 문장처럼 생존 보강부터 챙기는 편이 좋습니다."
+        if total_blue_damage < 70:
+            return "화력이 부족했습니다. 날 선 무기, 룬 회랑, 원거리 압박 조합을 더 적극적으로 노려보세요."
+        if objective_failures:
+            return "경로 목표를 여러 번 놓쳤습니다. 다음 런에서는 조합과 목표가 맞는 경로만 골라 효율을 높이세요."
+        return "조합은 나쁘지 않았습니다. 같은 조합으로 바로 한 판 더 돌리면서 경로 선택만 더 공격적으로 조정해보세요."
+
+    def _build_run_summary(self, result_label: str) -> RunSummary:
+        recaps = list(self.run_history)
+        total_rounds = sum(recap.rounds for recap in recaps)
+        total_blue_damage = sum(recap.blue_damage for recap in recaps)
+        total_red_damage = sum(recap.red_damage for recap in recaps)
+        total_blue_kills = sum(recap.blue_kills for recap in recaps)
+        total_red_kills = sum(recap.red_kills for recap in recaps)
+        stage_label = "결전 완주" if result_label == "원정 성공" else f"{self._current_stage_label()}에서 원정 종료"
+        build_lines: list[str] = []
+        for line in self._run_bonus_lines()[:3]:
+            build_lines.append(f"강화 · {line}")
+        if recaps:
+            last_recap = recaps[-1]
+            if last_recap.route_node_summary:
+                build_lines.append(f"노드 · {last_recap.route_node_summary}")
+            if last_recap.route_event_summary:
+                build_lines.append(f"이벤트 · {last_recap.route_event_summary}")
+            if last_recap.objective_summary:
+                build_lines.append(f"목표 · {last_recap.objective_summary}")
+        build_lines = build_lines[:5]
+        return RunSummary(
+            result_label=result_label,
+            stage_label=stage_label,
+            lineup_label=self._current_lineup_label(),
+            total_rounds=total_rounds,
+            total_blue_damage=total_blue_damage,
+            total_red_damage=total_red_damage,
+            total_blue_kills=total_blue_kills,
+            total_red_kills=total_red_kills,
+            build_lines=build_lines,
+            best_reward_line=self._best_reward_line(),
+            recommendation=self._build_run_recommendation(result_label, recaps, total_blue_damage, total_red_damage),
+            recap_entries=recaps,
+        )
+
+    def _record_battle_recap(self, result_label: str) -> BattleRecap | None:
+        recap = self._build_battle_recap(result_label)
+        self.last_battle_recap = recap
+        if recap is not None:
+            self.run_history.append(recap)
+        return recap
+
+    def _enter_run_summary(self, result_label: str) -> None:
+        self.run_summary = self._build_run_summary(result_label)
+        self.screen_mode = "summary"
+        self.mode = "move"
+        self.finale_banner_title = None
+        self.finale_banner_subtitle = None
+        self.finale_banner_timer = 0.0
+        self.selection_message = self.run_summary.recommendation
 
     def _roll_route_event(self, route_id: str) -> RouteEvent:
         template = random.choice(ROUTE_EVENT_TEMPLATES[route_id])
@@ -1429,6 +1539,14 @@ class GameApp:
                 self._handle_click(event.pos)
 
     def _handle_keydown(self, key: int) -> None:
+        if self.screen_mode == "summary":
+            if key in {pygame.K_RETURN, pygame.K_SPACE, pygame.K_r}:
+                self._start_run_with_current_lineup()
+                return
+            if key == pygame.K_ESCAPE:
+                self._return_to_select()
+                return
+
         if self.screen_mode == "route":
             if key in {pygame.K_ESCAPE}:
                 self._return_to_select()
@@ -1513,6 +1631,8 @@ class GameApp:
                 self._return_to_select()
             elif self.screen_mode == "reward":
                 self._return_to_select()
+            elif self.screen_mode == "summary":
+                self._return_to_select()
             elif self.screen_mode == "deploy":
                 self.screen_mode = "select"
                 self.audio.play("ui-select")
@@ -1534,6 +1654,10 @@ class GameApp:
 
         if self.screen_mode == "deploy":
             self._handle_deploy_click(position)
+            return
+
+        if self.screen_mode == "summary":
+            self._handle_summary_click(position)
             return
 
         self._handle_battle_click(position)
@@ -1599,6 +1723,15 @@ class GameApp:
             if rect.collidepoint(position):
                 self._select_route(route_id)
                 return
+
+    def _handle_summary_click(self, position: tuple[int, int]) -> None:
+        rerun_rect = self.button_rects.get("summary-rerun")
+        select_rect = self.button_rects.get("summary-select")
+        if rerun_rect and rerun_rect.collidepoint(position):
+            self._start_run_with_current_lineup()
+            return
+        if select_rect and select_rect.collidepoint(position):
+            self._return_to_select()
 
     def _handle_battle_click(self, position: tuple[int, int]) -> None:
         controller = self.controller
@@ -1803,7 +1936,7 @@ class GameApp:
             objective_summary = self._apply_completed_objective_bonus()
             node_summary = self._apply_route_node_victory_bonus()
             penalty_summary = self._queue_objective_failure_penalty()
-            self.last_battle_recap = self._build_battle_recap("승리")
+            self._record_battle_recap("승리")
             if self.run_stage < RUN_STAGE_COUNT:
                 self.status_text = f"{self._current_stage_label()} 승리. 전투 보상을 선택하세요."
                 if objective_summary:
@@ -1819,12 +1952,14 @@ class GameApp:
                     self.status_text = f"{self.status_text} {objective_summary}"
                 if node_summary:
                     self.status_text = f"{self.status_text} {node_summary}"
+                self._enter_run_summary("원정 성공")
         elif self.controller and self.controller.state.winner == "red":
             self.audio.play("defeat")
             self.last_objective_summary = self._summarize_current_objective()
             self.last_node_summary = None
-            self.last_battle_recap = self._build_battle_recap("패배")
+            self._record_battle_recap("패배")
             self.status_text = f"{self._current_stage_label()}에서 패배했습니다."
+            self._enter_run_summary("원정 실패")
 
     def _draw(self) -> None:
         self.screen.blit(self.background_cache, (0, 0))
@@ -1838,6 +1973,8 @@ class GameApp:
             self._draw_reward_screen()
         elif self.screen_mode == "route":
             self._draw_route_screen()
+        elif self.screen_mode == "summary":
+            self._draw_summary_screen()
         elif self.screen_mode == "deploy":
             self._draw_deploy_screen()
         else:
@@ -2156,6 +2293,119 @@ class GameApp:
         pygame.draw.rect(self.screen, (214, 182, 112) if enabled else (76, 84, 96), next_rect, border_radius=15)
         pygame.draw.rect(self.screen, (255, 244, 217), next_rect, 1, border_radius=15)
         self._draw_text("다음 전투 배치", self.font_ui, (12, 20, 31) if enabled else (188, 196, 204), next_rect.center, center=True)
+
+    def _draw_summary_screen(self) -> None:
+        summary = self.run_summary
+        success = summary is not None and summary.result_label == "원정 성공"
+        accent = (108, 224, 203) if success else (236, 126, 90)
+        center_text = summary.stage_label if summary is not None else "원정 종료"
+        self._draw_header("리그 오브 레전드: 리프트 택틱스", "원정 결산", center_text, "선택으로")
+        self._draw_panel(SELECT_LEFT_PANEL, (74, 157, 214))
+        self._draw_panel(SELECT_RIGHT_PANEL, accent)
+        self._draw_text("원정 결과", self.font_heading, (244, 239, 225), (SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 18))
+        self._draw_text(
+            "같은 조합으로 바로 새 런을 시작하거나 챔피언을 다시 고를 수 있습니다.",
+            self.font_small,
+            (167, 192, 212),
+            (SELECT_LEFT_PANEL.x + 24, SELECT_LEFT_PANEL.y + 52),
+        )
+        self._draw_text("전투 타임라인", self.font_heading, (244, 239, 225), (SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.y + 18))
+        self._draw_text("이번 런의 각 전투 기록과 핵심 선택을 한눈에 정리했습니다.", self.font_small, (198, 176, 168), (SELECT_RIGHT_PANEL.x + 24, SELECT_RIGHT_PANEL.y + 52))
+
+        if summary is None:
+            fallback_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 96, SELECT_LEFT_PANEL.width - 44, 200)
+            pygame.draw.rect(self.screen, (11, 20, 31), fallback_rect, border_radius=24)
+            pygame.draw.rect(self.screen, (236, 218, 176), fallback_rect, 1, border_radius=24)
+            self._draw_text("결산 정보를 불러오는 중입니다.", self.font_heading, (244, 239, 225), (fallback_rect.x + 18, fallback_rect.y + 26))
+            self._draw_text("Enter로 같은 조합 새 런 · ESC로 선택 화면", self.font_small, (209, 220, 227), (fallback_rect.x + 18, fallback_rect.y + 72))
+            return
+
+        result_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 96, SELECT_LEFT_PANEL.width - 44, 164)
+        pygame.draw.rect(self.screen, (11, 20, 31), result_rect, border_radius=24)
+        pygame.draw.rect(self.screen, (*accent, 42), result_rect, 1, border_radius=24)
+        badge_rect = pygame.Rect(result_rect.x + 18, result_rect.y + 18, 118, 30)
+        pygame.draw.rect(self.screen, accent, badge_rect, border_radius=12)
+        pygame.draw.rect(self.screen, (10, 18, 29), badge_rect, 1, border_radius=12)
+        self._draw_text(summary.result_label, self.font_small, (10, 18, 29), badge_rect.center, center=True)
+        self._draw_text(summary.stage_label, self.font_heading, (244, 239, 225), (result_rect.x + 18, result_rect.y + 62))
+        self._draw_wrapped_text(f"출전 조합: {summary.lineup_label}", self.font_small, (208, 219, 226), pygame.Rect(result_rect.x + 18, result_rect.y + 96, result_rect.width - 36, 24), max_lines=1)
+        self._draw_text(f"주력 강화: {summary.best_reward_line}", self.font_small, (255, 213, 150), (result_rect.x + 18, result_rect.y + 128))
+
+        stats_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 278, SELECT_LEFT_PANEL.width - 44, 148)
+        pygame.draw.rect(self.screen, (11, 20, 31), stats_rect, border_radius=24)
+        pygame.draw.rect(self.screen, (236, 218, 176), stats_rect, 1, border_radius=24)
+        self._draw_text("원정 누적 수치", self.font_ui, (229, 210, 164), (stats_rect.x + 18, stats_rect.y + 14))
+        stat_lines = [
+            f"총 라운드 {summary.total_rounds}",
+            f"아군 누적 피해 {summary.total_blue_damage}",
+            f"적 누적 피해 {summary.total_red_damage}",
+            f"아군 처치 {summary.total_blue_kills} · 적 처치 {summary.total_red_kills}",
+        ]
+        for index, line in enumerate(stat_lines):
+            self._draw_text(line, self.font_small, (209, 220, 227), (stats_rect.x + 18, stats_rect.y + 48 + index * 24))
+
+        build_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 444, SELECT_LEFT_PANEL.width - 44, 166)
+        pygame.draw.rect(self.screen, (11, 20, 31), build_rect, border_radius=24)
+        pygame.draw.rect(self.screen, (236, 218, 176), build_rect, 1, border_radius=24)
+        self._draw_text("이번 런 빌드 포인트", self.font_ui, (229, 210, 164), (build_rect.x + 18, build_rect.y + 14))
+        for index, line in enumerate(summary.build_lines or ["강화 · 아직 강화 없음"]):
+            self._draw_wrapped_text(line, self.font_small, (209, 220, 227), pygame.Rect(build_rect.x + 18, build_rect.y + 48 + index * 24, build_rect.width - 36, 20), max_lines=1)
+
+        guide_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 628, SELECT_LEFT_PANEL.width - 44, 106)
+        pygame.draw.rect(self.screen, (11, 20, 31), guide_rect, border_radius=24)
+        pygame.draw.rect(self.screen, (*accent, 42), guide_rect, 1, border_radius=24)
+        self._draw_text("다음 추천", self.font_ui, (229, 210, 164), (guide_rect.x + 18, guide_rect.y + 14))
+        self._draw_wrapped_text(summary.recommendation, self.font_small, (208, 219, 226), pygame.Rect(guide_rect.x + 18, guide_rect.y + 44, guide_rect.width - 36, 44), max_lines=2)
+
+        rerun_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 32, SELECT_LEFT_PANEL.bottom - 86, 246, 52)
+        select_rect = pygame.Rect(SELECT_LEFT_PANEL.right - 278, SELECT_LEFT_PANEL.bottom - 86, 246, 52)
+        self.button_rects["summary-rerun"] = rerun_rect
+        self.button_rects["summary-select"] = select_rect
+        pygame.draw.rect(self.screen, accent, rerun_rect, border_radius=16)
+        pygame.draw.rect(self.screen, (255, 244, 217), rerun_rect, 1, border_radius=16)
+        self._draw_text("같은 조합 새 원정", self.font_ui, (13, 21, 31), rerun_rect.center, center=True)
+        pygame.draw.rect(self.screen, (70, 80, 92), select_rect, border_radius=16)
+        pygame.draw.rect(self.screen, (255, 244, 217), select_rect, 1, border_radius=16)
+        self._draw_text("캐릭터 다시 선택", self.font_ui, (231, 236, 240), select_rect.center, center=True)
+        self._draw_text("Enter 또는 R로 즉시 새 원정 · ESC로 캐릭터 선택", self.font_small, (208, 219, 226), (SELECT_LEFT_PANEL.centerx, SELECT_LEFT_PANEL.bottom - 18), center=True)
+
+        if not summary.recap_entries:
+            empty_rect = pygame.Rect(SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.y + 96, SELECT_RIGHT_PANEL.width - 44, 160)
+            pygame.draw.rect(self.screen, (11, 20, 31), empty_rect, border_radius=24)
+            pygame.draw.rect(self.screen, (236, 218, 176), empty_rect, 1, border_radius=24)
+            self._draw_text("전투 기록 없음", self.font_heading, (244, 239, 225), (empty_rect.x + 18, empty_rect.y + 26))
+            return
+
+        for index, recap in enumerate(summary.recap_entries[:RUN_STAGE_COUNT]):
+            rect = pygame.Rect(SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.y + 96 + index * 196, SELECT_RIGHT_PANEL.width - 44, 182)
+            card = pygame.Surface(rect.size, pygame.SRCALPHA)
+            draw_vertical_gradient(card, card.get_rect(), (15, 26, 39), (20, 32, 46))
+            pygame.draw.rect(card, (*accent, 16), card.get_rect(), border_radius=24)
+            pygame.draw.rect(card, (236, 218, 176), card.get_rect(), 1, border_radius=24)
+            self.screen.blit(card, rect.topleft)
+            stage_badge = pygame.Rect(rect.x + 18, rect.y + 18, 62, 28)
+            pygame.draw.rect(self.screen, accent, stage_badge, border_radius=10)
+            pygame.draw.rect(self.screen, (10, 18, 29), stage_badge, 1, border_radius=10)
+            self._draw_text(f"{index + 1}전", self.font_small, (10, 18, 29), stage_badge.center, center=True)
+            self._draw_text(f"{recap.stage_label} · {recap.result_label}", self.font_heading, (244, 239, 225), (rect.x + 94, rect.y + 20))
+            self._draw_text(f"라운드 {recap.rounds} · 아군 피해 {recap.blue_damage} · 적 피해 {recap.red_damage}", self.font_small, (223, 206, 164), (rect.x + 18, rect.y + 60))
+            self._draw_text(f"아군 처치 {recap.blue_kills} · 적 처치 {recap.red_kills}", self.font_small, (174, 208, 235), (rect.x + 18, rect.y + 84))
+            self._draw_wrapped_text(recap.highlight, self.font_small, (208, 219, 226), pygame.Rect(rect.x + 18, rect.y + 112, rect.width - 36, 22), max_lines=1)
+            detail_line = recap.objective_summary or recap.route_node_summary or recap.route_event_summary or recap.penalty_summary or "핵심 보조 정보 없음"
+            detail_color = (
+                (255, 213, 150)
+                if recap.objective_summary
+                else (170, 222, 210)
+                if recap.route_node_summary
+                else (174, 208, 235)
+                if recap.route_event_summary
+                else (235, 156, 140)
+            )
+            self._draw_wrapped_text(detail_line, self.font_tiny, detail_color, pygame.Rect(rect.x + 18, rect.y + 138, rect.width - 36, 16), max_lines=1)
+            secondary_line = recap.route_event_summary if recap.objective_summary and recap.route_event_summary else recap.penalty_summary if recap.penalty_summary and detail_line != recap.penalty_summary else None
+            if secondary_line:
+                secondary_color = (174, 208, 235) if secondary_line == recap.route_event_summary else (235, 156, 140)
+                self._draw_wrapped_text(secondary_line, self.font_tiny, secondary_color, pygame.Rect(rect.x + 18, rect.y + 154, rect.width - 36, 16), max_lines=1)
 
     def _draw_deploy_screen(self) -> None:
         self._draw_header("리그 오브 레전드: 리프트 택틱스", "원정 전술 배치", f"{self._current_stage_label()} · {self.run_stage}/{RUN_STAGE_COUNT}", "선택으로")

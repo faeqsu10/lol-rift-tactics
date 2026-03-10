@@ -71,10 +71,10 @@
   - rest nodes can clear queued penalties, event nodes can amplify route-event bonuses/penalties, and elite nodes can add extra elite enemies plus a victory bonus
   - boss awakening now creates a hazard pulse on adjacent tiles and drives a dedicated finale banner/panel presentation
   - battle recap summary before choosing the next route
+  - run-end summary screen with cumulative stats, build highlights, battle timeline, and direct replay/select actions
   - terrain-aware red-team AI movement and targeting
   - objective-aware red-team AI that contests marked tiles and pressure zones
   - post-victory reward pick with next-enemy preview
-  - post-battle overlay with direct return to champion select or rematch
   - headless screenshot capture and tests
 - Initial roster:
   - Blue team: Garen, Ahri, Jinx
@@ -114,9 +114,9 @@
 
 ## Recommended Next Steps
 
-1. Add a run-end summary layer that pushes immediate replays and build comparison.
-2. Add node-specific follow-up events and presentation so rest/event/elite branches feel more distinct.
-3. Add more than one boss pattern and finale-stage variation on top of the current boss pass.
+1. Add node-specific follow-up events and presentation so rest/event/elite branches feel more distinct.
+2. Add more than one boss pattern and finale-stage variation on top of the current boss pass.
+3. Add run-history persistence or best-run comparison on top of the new run-end summary screen.
 4. Replace shape-based placeholder characters with real sprite art or sprite sheets.
 5. Expand map and objective variety on top of the boss loop.
 
