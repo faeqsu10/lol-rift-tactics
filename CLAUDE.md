@@ -86,6 +86,7 @@ src/
 - 필요하면 `--screenshot`으로 결과 캡처
 - 상태가 여러 단계인 흐름은 화면 진입뿐 아니라 실제 상태 전환까지 별도 검증
 - 전술 리텐션 관련 근거는 `docs/TACTICS_UX_RESEARCH.md`에 함께 업데이트
+- 출시 목표 변화가 생기면 `docs/TACTICS_RELEASE_TARGET.md`와 `docs/TACTICS_MILESTONES.md`를 먼저 갱신
 
 ### Frequent Commits
 

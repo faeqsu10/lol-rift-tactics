@@ -177,3 +177,5 @@ SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./release/rift-tactics --headless --
 - 챔피언 테마 효과음은 공식 Riot 음원을 가져오지 않고, 각 챔피언 성격을 반영한 오리지널 신스 모티프로 구성했습니다.
 - 작업 추적은 `tasks/todo.md`, 교정 기록은 `tasks/lessons.md`, 개발 기록은 `docs/DEVLOG.md`를 사용합니다.
 - 전술 UX 설계 근거는 `docs/TACTICS_UX_RESEARCH.md`에 정리했습니다.
+- 출시 목표와 완성 기준은 `docs/TACTICS_RELEASE_TARGET.md`를 기준으로 봅니다.
+- 단계별 실행 계획은 `docs/TACTICS_MILESTONES.md`에 정리했습니다.

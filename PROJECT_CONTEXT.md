@@ -93,6 +93,8 @@
 - Dev log: `docs/DEVLOG.md`
 - Tactics fun roadmap: `docs/TACTICS_FUN_ROADMAP.md`
 - Tactics UX research: `docs/TACTICS_UX_RESEARCH.md`
+- Tactics release target: `docs/TACTICS_RELEASE_TARGET.md`
+- Tactics milestones: `docs/TACTICS_MILESTONES.md`
 - Verified locally on March 9, 2026:
   - `python -m native_game.tests` passes
   - headless smoke run with SDL dummy drivers passes
@@ -100,9 +102,9 @@
 
 ## Recommended Next Steps
 
-1. Add stronger champion-specific passive differentiation and more unique tactical triggers to `native_tactics`.
-2. Expand enemy intent UI from next-enemy warning to fuller multi-target or sequence preview.
-3. Add route-specific events 2nd pass with stronger objective variety, failure penalties, and encounter variants.
+1. Expand enemy intent UI from next-enemy warning to fuller multi-target or sequence preview.
+2. Add route-specific events 2nd pass with stronger objective variety and failure penalties.
+3. Add stronger champion-specific passive differentiation and more unique tactical triggers to `native_tactics`.
 4. Improve AI further around elite focus fire, terrain denial, route-aware pathing, and objective contesting.
 5. Replace shape-based placeholder characters with real sprite art or sprite sheets.
 

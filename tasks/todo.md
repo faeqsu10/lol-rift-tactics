@@ -65,6 +65,7 @@
 ## 리뷰 메모
 
 - 현재 목표는 "게임처럼 보이는가"를 우선 해결하는 것
+- 완성 기준과 우선순위는 `docs/TACTICS_RELEASE_TARGET.md`, `docs/TACTICS_MILESTONES.md`를 기준으로 관리
 - 도형 프로토타입 느낌을 줄이기 위해 캐릭터 실루엣과 전장 레이어를 먼저 강화함
 - 스크린샷 캡처 커맨드는 `npm run native:capture`
 - 전술 실험은 기존 아레나 버전 위에 덮어쓰지 말고 별도 패키지로 병행 유지
