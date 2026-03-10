@@ -15,6 +15,7 @@ from .app import NodeFollowUp
 from .app import RunNode
 from .app import RUN_STAGE_COUNT
 from .app import StageModifier
+from .data import FINALE_VARIANTS_BY_ID
 from .data import TACTICAL_BLUEPRINTS_BY_ID
 from .engine import TacticsController
 
@@ -206,6 +207,7 @@ class TacticsControllerTests(unittest.TestCase):
         boss.position = (1, 1)
         boss.hp = 35
         boss.is_boss = True
+        boss.boss_profile_id = "warlord"
         controller.get_unit("blue-garen").position = (0, 1)
 
         result = controller.use_basic("red-darius")
@@ -219,6 +221,35 @@ class TacticsControllerTests(unittest.TestCase):
         self.assertTrue(any("결전 파동 확산" in note for note in result.notes))
         self.assertEqual(controller.terrain_tiles[(2, 1)], "hazard")
         self.assertEqual(controller.terrain_tiles[(0, 1)], "hazard")
+
+    def test_spellstorm_boss_phase_creates_runes_and_refreshes_special(self) -> None:
+        controller = TacticsController(("blue-garen",), ("red-brand",), objective_tiles=((3, 2), (4, 3)))
+        controller.blocked_tiles.clear()
+        boss = controller.get_unit("red-brand")
+        boss.position = (1, 1)
+        boss.hp = 28
+        boss.is_boss = True
+        boss.boss_profile_id = "spellstorm"
+        boss.cooldowns[boss.special_ability.id] = 2
+        controller.get_unit("blue-garen").position = (0, 1)
+        controller.state.active_unit_id = "blue-garen"
+        controller.state.turn_queue = ["blue-garen"]
+        base_basic_range = TACTICAL_BLUEPRINTS_BY_ID["red-brand"].basic_ability.cast_range
+        base_special_range = TACTICAL_BLUEPRINTS_BY_ID["red-brand"].special_ability.cast_range
+
+        result = controller.use_basic("red-brand")
+
+        self.assertIsNotNone(result)
+        self.assertTrue(boss.boss_phase_triggered)
+        self.assertEqual(boss.shield, 14)
+        self.assertEqual(boss.speed, TACTICAL_BLUEPRINTS_BY_ID["red-brand"].speed + 1)
+        self.assertEqual(boss.basic_ability.cast_range, base_basic_range + 1)
+        self.assertEqual(boss.special_ability.cast_range, base_special_range + 1)
+        self.assertEqual(boss.cooldowns[boss.special_ability.id], 0)
+        self.assertEqual(controller.terrain_tiles[(3, 2)], "rune")
+        self.assertEqual(controller.terrain_tiles[(4, 3)], "rune")
+        self.assertTrue(any("비전 과부하 발동." in note for note in result.notes))
+        self.assertTrue(any("룬 장막 전개" in note for note in result.notes))
 
     def test_preview_ai_intent_reports_target(self) -> None:
         controller = TacticsController(("blue-garen",), ("red-brand",))
@@ -563,6 +594,25 @@ class GameAppFlowTests(unittest.TestCase):
         self.assertEqual(objective.name, "결전 봉쇄")
         self.assertEqual(objective.target, 2)
         self.assertEqual(objective.objective_tiles, ((3, 2), (4, 2)))
+
+    def test_stage_three_builds_spellstorm_finale_variant_for_mage_boss(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
+        app.selected_red_ids = ["red-brand", "red-zed", "red-katarina"]
+        app.run_stage = 3
+        app._seed_deployment()
+
+        objective = app._build_battle_objective()
+        controller = app._build_controller_from_current_setup()
+        app._attach_controller(controller)
+        boss = next(unit for unit in app.controller.units if unit.team == "red" and unit.is_boss)
+
+        self.assertIsNotNone(objective)
+        self.assertEqual(objective.boss_id, "red-brand")
+        self.assertEqual(objective.name, "룬 핵 봉쇄")
+        self.assertEqual(objective.objective_tiles, ((3, 2), (4, 3)))
+        self.assertEqual(app.controller.blocked_tiles, set(FINALE_VARIANTS_BY_ID["runic-nexus"].blocked_tiles))
+        self.assertEqual(boss.boss_profile_id, "spellstorm")
 
     def test_finale_objective_success_weakens_boss_phase(self) -> None:
         app = GameApp(headless=True)

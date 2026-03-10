@@ -11,6 +11,7 @@ from native_game.data import AbilityEffect
 from native_game.data import TeamId
 
 from .data import BLOCKED_TILES
+from .data import BOSS_PROFILES_BY_ID
 from .data import DEFAULT_BLUE_DEPLOY_TILES
 from .data import DEFAULT_RED_DEPLOY_TILES
 from .data import ELITE_TRAITS_BY_ID
@@ -53,6 +54,7 @@ class TacticalUnit:
     is_elite: bool
     elite_trait_id: str | None
     is_boss: bool
+    boss_profile_id: str | None
     boss_phase_triggered: bool
 
 
@@ -154,6 +156,7 @@ def unit_from_blueprint(blueprint: TacticalBlueprint, position: GridPos) -> Tact
         is_elite=False,
         elite_trait_id=None,
         is_boss=False,
+        boss_profile_id=None,
         boss_phase_triggered=False,
     )
 
@@ -168,6 +171,7 @@ class TacticsController:
         terrain_tiles: dict[GridPos, TerrainId] | None = None,
         elite_unit_ids: Iterable[str] | None = None,
         objective_tiles: Iterable[GridPos] | None = None,
+        blocked_tiles: Iterable[GridPos] | None = None,
     ) -> None:
         self.initial_blue_ids = tuple(blue_ids or ())
         self.initial_red_ids = tuple(red_ids or ())
@@ -176,6 +180,7 @@ class TacticsController:
         self.initial_terrain_tiles = dict(terrain_tiles or {})
         self.initial_elite_unit_ids = tuple(elite_unit_ids or ())
         self.initial_objective_tiles = tuple(objective_tiles or ())
+        self.initial_blocked_tiles = tuple(BLOCKED_TILES if blocked_tiles is None else blocked_tiles)
         blue_lineup = tuple(self.initial_blue_ids or ("blue-garen", "blue-ahri", "blue-jinx"))
         red_lineup = tuple(self.initial_red_ids or ("red-darius", "red-annie", "red-caitlyn"))
         blueprints = build_tactical_blueprints(blue_lineup, red_lineup)
@@ -183,7 +188,7 @@ class TacticsController:
         resolved_red_positions = tuple(self.initial_red_positions or DEFAULT_RED_DEPLOY_TILES)[: len(red_lineup)]
         positions = (*resolved_blue_positions, *resolved_red_positions)
         self.units = [unit_from_blueprint(blueprint, position) for blueprint, position in zip(blueprints, positions)]
-        self.blocked_tiles = set(BLOCKED_TILES)
+        self.blocked_tiles = set(self.initial_blocked_tiles)
         self.terrain_tiles = dict(self.initial_terrain_tiles)
         self.elite_unit_ids = set(self.initial_elite_unit_ids)
         self.objective_tiles = set(self.initial_objective_tiles)
@@ -206,6 +211,7 @@ class TacticsController:
             self.initial_terrain_tiles or None,
             self.initial_elite_unit_ids or None,
             self.initial_objective_tiles or None,
+            self.initial_blocked_tiles,
         )
 
     def set_objective_tiles(self, objective_tiles: Iterable[GridPos] | None) -> None:
@@ -227,6 +233,11 @@ class TacticsController:
 
     def living_team_units(self, team: TeamId) -> list[TacticalUnit]:
         return [unit for unit in self.living_units() if unit.team == team]
+
+    def _boss_profile(self, unit: TacticalUnit | None):
+        if unit is None or unit.boss_profile_id is None:
+            return None
+        return BOSS_PROFILES_BY_ID.get(unit.boss_profile_id)
 
     def get_reachable_tiles(self, unit_id: str | None = None) -> set[GridPos]:
         unit = self.get_unit(unit_id) if unit_id else self.get_active_unit()
@@ -1021,6 +1032,54 @@ class TacticsController:
         )
         return replace(ability, effects=boosted_effects)
 
+    def _trigger_boss_phase(self, target: TacticalUnit) -> list[str]:
+        profile = self._boss_profile(target)
+        notes = ["결전 각성 발동."]
+        if profile is None or profile.id == "warlord":
+            target.shield += 18
+            target.speed += 2
+            target.move_range += 1
+            target.basic_ability = self._boost_ability_damage(target.basic_ability, 4)
+            target.special_ability = self._boost_ability_damage(target.special_ability, 4)
+            target.cooldowns[target.special_ability.id] = max(0, target.cooldowns.get(target.special_ability.id, 0) - 1)
+            hazard_tiles: list[GridPos] = []
+            for tile in self._neighbors(target.position):
+                if tile in self.blocked_tiles:
+                    continue
+                self.terrain_tiles[tile] = "hazard"
+                hazard_tiles.append(tile)
+            notes.append("화염 돌파 발동.")
+            if hazard_tiles:
+                notes.append(f"결전 파동 확산 {len(hazard_tiles)}칸.")
+            self._push_log(f"{target.name}, 체력이 절반 이하가 되어 결전 각성 발동.")
+            self._push_log(f"{target.name}, 화염 돌파로 전면 압박 강화.")
+            if hazard_tiles:
+                self._push_log(f"{target.name}, 결전 파동으로 주변 {len(hazard_tiles)}칸이 화염 지대로 변함.")
+            return notes
+
+        target.shield += 14
+        target.speed += 1
+        target.basic_ability = replace(target.basic_ability, cast_range=target.basic_ability.cast_range + 1)
+        target.special_ability = self._boost_ability_damage(
+            replace(target.special_ability, cast_range=target.special_ability.cast_range + 1),
+            2,
+        )
+        target.cooldowns[target.special_ability.id] = 0
+        rune_tiles: list[GridPos] = []
+        for tile in {target.position, *self._neighbors(target.position), *self.objective_tiles}:
+            if tile in self.blocked_tiles:
+                continue
+            self.terrain_tiles[tile] = "rune"
+            rune_tiles.append(tile)
+        notes.append("비전 과부하 발동.")
+        if rune_tiles:
+            notes.append(f"룬 장막 전개 {len(rune_tiles)}칸.")
+        self._push_log(f"{target.name}, 체력이 절반 이하가 되어 결전 각성 발동.")
+        self._push_log(f"{target.name}, 비전 과부하로 사거리와 룬 장악이 강화.")
+        if rune_tiles:
+            self._push_log(f"{target.name}, 룬 장막이 {len(rune_tiles)}칸에 전개됨.")
+        return notes
+
     def _apply_post_impact_modifiers(self, target_id: str, impact: TacticalImpact) -> list[str]:
         target = self.get_unit(target_id)
         if target is None:
@@ -1034,24 +1093,7 @@ class TacticsController:
             and target.hp <= target.max_hp // 2
         ):
             target.boss_phase_triggered = True
-            target.shield += 18
-            target.speed += 2
-            target.move_range += 1
-            target.basic_ability = self._boost_ability_damage(target.basic_ability, 4)
-            target.special_ability = self._boost_ability_damage(target.special_ability, 4)
-            target.cooldowns[target.special_ability.id] = max(0, target.cooldowns.get(target.special_ability.id, 0) - 1)
-            hazard_tiles = []
-            for tile in self._neighbors(target.position):
-                if tile in self.blocked_tiles:
-                    continue
-                self.terrain_tiles[tile] = "hazard"
-                hazard_tiles.append(tile)
-            notes.append("결전 각성 발동.")
-            if hazard_tiles:
-                notes.append(f"결전 파동 확산 {len(hazard_tiles)}칸.")
-            self._push_log(f"{target.name}, 체력이 절반 이하가 되어 결전 각성 발동.")
-            if hazard_tiles:
-                self._push_log(f"{target.name}, 결전 파동으로 주변 {len(hazard_tiles)}칸이 화염 지대로 변함.")
+            notes.extend(self._trigger_boss_phase(target))
         return notes
 
     def _apply_turn_start_passives(self, actor: TacticalUnit) -> None:
@@ -1070,6 +1112,19 @@ class TacticsController:
         if actor.is_boss:
             actor.temporary_damage_bonus += 2
             self._push_log(f"{actor.name}, 보스 압박으로 이번 턴 피해 +2.")
+            profile = self._boss_profile(actor)
+            if profile is not None and actor.boss_phase_triggered:
+                if profile.id == "warlord":
+                    if actor.position in self.objective_tiles:
+                        actor.shield += 4
+                        actor.temporary_damage_bonus += 2
+                        self._push_log(f"{actor.name}, 화염 돌파 유지로 목표 점거 중 보호막 4 · 피해 +2.")
+                elif profile.id == "spellstorm":
+                    if self._terrain_at(actor.position) != "rune":
+                        self.terrain_tiles[actor.position] = "rune"
+                    actor.shield += 4
+                    actor.temporary_damage_bonus += 2
+                    self._push_log(f"{actor.name}, 비전 과부하 유지로 현재 칸이 룬 지대가 되고 보호막 4 · 피해 +2.")
 
     def _terrain_at(self, position: GridPos) -> TerrainId | None:
         return self.terrain_tiles.get(position)
@@ -1300,11 +1355,13 @@ class TacticsController:
                     kill_bonus = 3
             objective_pressure = self._objective_pressure_score(actor, tile, target_id)
             terrain_bonus = self._terrain_preference(actor, tile, predicted_damage > 0)
+            boss_pattern_bonus = self._boss_pattern_move_bonus(actor, tile, predicted_damage > 0)
             threat_penalty = self._enemy_threat_on_tile(tile, actor.team)
             return (
                 kill_bonus,
                 2 if action_kind == "special" else 1 if action_kind == "basic" else 0,
                 objective_pressure,
+                boss_pattern_bonus,
                 terrain_bonus,
                 predicted_damage,
                 -threat_penalty,
@@ -1324,21 +1381,47 @@ class TacticsController:
                 pressure += 1
         return pressure
 
+    def _boss_pattern_move_bonus(self, actor: TacticalUnit, tile: GridPos, can_attack: bool) -> int:
+        if not actor.is_boss:
+            return 0
+        if actor.boss_profile_id == "warlord":
+            if tile in self.objective_tiles:
+                return 4
+            if any(self.distance(tile, enemy.position) <= 1 for enemy in self.living_units() if enemy.team != actor.team):
+                return 2
+            return 0
+        if actor.boss_profile_id == "spellstorm":
+            if self._terrain_at(tile) == "rune":
+                return 4
+            if can_attack:
+                return 2
+        return 0
+
     def _terrain_preference(self, actor: TacticalUnit, tile: GridPos, can_attack: bool) -> int:
         terrain_id = self._terrain_at(tile)
         if terrain_id is None:
-            return 0
-        if terrain_id == "hazard":
-            return -8
-        if terrain_id == "brush":
+            terrain_bonus = 0
+        elif terrain_id == "hazard":
+            terrain_bonus = -8
+        elif terrain_id == "brush":
             if actor.hp / actor.max_hp <= 0.6 or actor.role in {"Marksman", "Mage"}:
-                return 4
-            return 1
-        if terrain_id == "rune":
+                terrain_bonus = 4
+            else:
+                terrain_bonus = 1
+        elif terrain_id == "rune":
             if can_attack:
-                return 5 if actor.is_elite else 4
-            return 1
-        return 0
+                terrain_bonus = 5 if actor.is_elite else 4
+            else:
+                terrain_bonus = 1
+        else:
+            terrain_bonus = 0
+
+        if actor.is_boss and actor.boss_profile_id == "spellstorm":
+            if terrain_id == "rune":
+                terrain_bonus += 4
+            elif can_attack:
+                terrain_bonus += 1
+        return terrain_bonus
 
     def _objective_pressure_preview(
         self,
@@ -1380,4 +1463,7 @@ class TacticsController:
             for unit in self.units
         ):
             ally_stack_penalty = 2
-        return occupy_bonus + adjacency_bonus + target_bonus - ally_stack_penalty
+        pattern_bonus = 0
+        if actor.is_boss and actor.boss_profile_id == "warlord":
+            pattern_bonus = 3 if tile in self.objective_tiles else 1 if nearest_distance <= 1 else 0
+        return occupy_bonus + adjacency_bonus + target_bonus + pattern_bonus - ally_stack_penalty

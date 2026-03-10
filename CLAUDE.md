@@ -10,7 +10,7 @@ This file provides guidance for working in this repository.
 - Current primary build: native `Pygame` client
 - Current active native tracks:
   - `native_game`: 9인 풀에서 3인 선택 -> 3v3 battle
-  - `native_tactics`: 3인 선택 -> 시작 배치 -> 3전 원정 -> 보상 -> 전투 요약 -> 3안 경로+런 노드 선택 + 전투 이벤트 + 노드 후속 이벤트 -> 패시브 2차/챔피언별 특수기/적 의도 4차/연속 턴 예고/지형/엘리트 특성/보스 결전/보스 전용 목표/결전 각성 연출/맵 목표/목표 경쟁 AI/실패 페널티/휴식·변수·정예 노드 분기 -> 런 종료 결산/즉시 새 원정
+  - `native_tactics`: 3인 선택 -> 시작 배치 -> 3전 원정 -> 보상 -> 전투 요약 -> 3안 경로+런 노드 선택 + 전투 이벤트 + 노드 후속 이벤트 -> 패시브 2차/챔피언별 특수기/적 의도 4차/연속 턴 예고/지형/엘리트 특성/보스 결전/보스 전용 목표/보스 패턴 2종/결전 전용 지형 변주/맵 목표/목표 경쟁 AI/실패 페널티/휴식·변수·정예 노드 분기 -> 런 종료 결산/즉시 새 원정
 - Current secondary build: legacy web prototype under `src/*`
 
 ## Commands
@@ -95,6 +95,7 @@ src/
 - 경로 카드에 노드 후속 이벤트처럼 추가 정보를 붙이면 카드와 좌측 상세 프리뷰를 함께 캡처해 텍스트 밀도와 버튼 겹침을 같이 확인할 것
 - 최종전 규칙을 따로 추가하면 경로 화면, 배치 화면, 전투 HUD가 모두 같은 결전 목표를 보여 주는지 확인할 것
 - 런 종료 UX를 건드리면 `최종 승리`, `패배`, `결산 -> 새 원정`, `결산 -> 선택 화면` 네 상태 전환을 같이 검증할 것
+- 보스 패턴이나 결전 지형을 바꾸면 `tactics:test`, `tactics:smoke`, `tactics:capture`를 돌리고, 보스 패턴/지형/목표가 프리뷰와 전투 패널 양쪽에 같이 노출되는지 확인할 것
 
 ### Frequent Commits
 

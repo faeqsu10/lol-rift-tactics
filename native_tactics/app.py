@@ -16,9 +16,12 @@ from native_game.data import SELECTABLE_RED_IDS
 from native_game.runtime import project_root
 
 from .data import ART_FILE_BY_UNIT_ID
+from .data import BLOCKED_TILES
+from .data import BOSS_PROFILES_BY_ID
 from .data import DEFAULT_BLUE_DEPLOY_TILES
 from .data import DEFAULT_RED_DEPLOY_TILES
 from .data import ELITE_TRAITS_BY_ID
+from .data import FINALE_VARIANTS_BY_ID
 from .data import GRID_HEIGHT
 from .data import GRID_WIDTH
 from .data import GridPos
@@ -26,6 +29,7 @@ from .data import ROLE_ELITE_TRAIT_ID
 from .data import STAGE_TERRAIN_TILES
 from .data import TACTICAL_BLUEPRINTS_BY_ID
 from .data import TERRAIN_BY_ID
+from .data import boss_profile_id_for_champion
 from .engine import TacticalActionResult
 from .engine import TacticsController
 
@@ -278,31 +282,6 @@ ROUTE_EVENT_TEMPLATES = {
             "penalty_modifiers": {"blue_hp": -8, "enemy_damage": 1},
         },
     ),
-}
-FRONTLINE_BOSS_ROLES = {"Vanguard", "Skirmisher", "Assassin"}
-FINALE_OBJECTIVE_TEMPLATES = {
-    "frontline": {
-        "name": "결전 봉쇄",
-        "description": "목표: 봉쇄 칸 진입 2회로 보스 각성 약화",
-        "kind": "occupy_tile",
-        "target": 2,
-        "reward_label": "결전 약화",
-        "round_limit": 3,
-        "objective_tiles": ((3, 2), (4, 2)),
-        "success_label": "보스 각성 약화",
-        "failure_label": "보스 각성 증폭",
-    },
-    "backline": {
-        "name": "핵심 차단",
-        "description": "목표: 핵심 봉쇄 칸 진입 1회로 보스 각성 약화",
-        "kind": "occupy_tile",
-        "target": 1,
-        "reward_label": "핵심 불안정",
-        "round_limit": 2,
-        "objective_tiles": ((3, 2),),
-        "success_label": "보스 각성 약화",
-        "failure_label": "보스 각성 증폭",
-    },
 }
 RUN_NODE_TEMPLATES = {
     "rest-camp": {
@@ -674,14 +653,27 @@ class GameApp:
     def _enemy_pool_for_stage(self, stage: int) -> tuple[str, ...]:
         return STAGE_RED_POOLS.get(stage, tuple(SELECTABLE_RED_IDS))
 
-    def _terrain_tiles_for_stage(self, stage: int | None = None, route_id: str | None = None) -> dict[tuple[int, int], str]:
+    def _terrain_tiles_for_stage(
+        self,
+        stage: int | None = None,
+        route_id: str | None = None,
+        enemy_ids: list[str] | None = None,
+    ) -> dict[tuple[int, int], str]:
         resolved_stage = stage or self.run_stage
-        tiles = dict(STAGE_TERRAIN_TILES.get(resolved_stage, {}))
+        finale_variant = self._finale_variant_for_stage(stage=resolved_stage, lineup=enemy_ids)
+        tiles = dict(finale_variant.terrain_tiles if finale_variant is not None else STAGE_TERRAIN_TILES.get(resolved_stage, {}))
         resolved_route_id = route_id if route_id is not None else self.current_route_id
         if resolved_route_id in ROUTE_EXTRA_TERRAIN:
             for tile, terrain_id in ROUTE_EXTRA_TERRAIN[resolved_route_id].get(resolved_stage, {}).items():
                 tiles[tile] = terrain_id
         return tiles
+
+    def _blocked_tiles_for_stage(self, stage: int | None = None, enemy_ids: list[str] | None = None) -> tuple[GridPos, ...]:
+        resolved_stage = stage or self.run_stage
+        finale_variant = self._finale_variant_for_stage(stage=resolved_stage, lineup=enemy_ids)
+        if finale_variant is not None:
+            return finale_variant.blocked_tiles
+        return BLOCKED_TILES
 
     def _boss_enemy_id_for_stage(self, stage: int | None = None, lineup: list[str] | None = None) -> str | None:
         current_stage = stage or self.run_stage
@@ -689,6 +681,21 @@ class GameApp:
         if current_stage < RUN_STAGE_COUNT or not enemy_ids:
             return None
         return max(enemy_ids, key=lambda champion_id: (TACTICAL_BLUEPRINTS_BY_ID[champion_id].max_hp, TACTICAL_BLUEPRINTS_BY_ID[champion_id].speed))
+
+    def _boss_profile_for_stage(self, stage: int | None = None, lineup: list[str] | None = None):
+        boss_id = self._boss_enemy_id_for_stage(stage=stage, lineup=lineup)
+        if boss_id is None:
+            return None
+        return BOSS_PROFILES_BY_ID[boss_profile_id_for_champion(boss_id)]
+
+    def _finale_variant_for_stage(self, stage: int | None = None, lineup: list[str] | None = None):
+        resolved_stage = stage or self.run_stage
+        if resolved_stage < RUN_STAGE_COUNT:
+            return None
+        boss_profile = self._boss_profile_for_stage(stage=resolved_stage, lineup=lineup)
+        if boss_profile is None:
+            return None
+        return FINALE_VARIANTS_BY_ID[boss_profile.finale_variant_id]
 
     def _elite_enemy_ids_for_stage(
         self,
@@ -1160,11 +1167,6 @@ class GameApp:
             return None
         return next((unit for unit in self.controller.units if unit.team == "red" and unit.is_boss), None)
 
-    def _finale_objective_template(self, boss_id: str) -> dict[str, object]:
-        role = TACTICAL_BLUEPRINTS_BY_ID[boss_id].role
-        profile = "frontline" if role in FRONTLINE_BOSS_ROLES else "backline"
-        return FINALE_OBJECTIVE_TEMPLATES[profile]
-
     def _trigger_finale_banner(self, title: str, subtitle: str, color: tuple[int, int, int]) -> None:
         self.finale_banner_title = title
         self.finale_banner_subtitle = subtitle
@@ -1183,22 +1185,22 @@ class GameApp:
         resolved_enemy_ids = enemy_ids if enemy_ids is not None else self.selected_red_ids
         if resolved_stage == RUN_STAGE_COUNT:
             boss_id = self._boss_enemy_id_for_stage(stage=resolved_stage, lineup=resolved_enemy_ids)
-            if boss_id is not None:
-                template = self._finale_objective_template(boss_id)
+            finale_variant = self._finale_variant_for_stage(stage=resolved_stage, lineup=resolved_enemy_ids)
+            if boss_id is not None and finale_variant is not None:
                 return BattleObjective(
                     route_id="boss-finale",
-                    name=str(template["name"]),
-                    description=str(template["description"]),
-                    kind=str(template["kind"]),
-                    target=int(template["target"]),
+                    name=finale_variant.objective_name,
+                    description=finale_variant.objective_description,
+                    kind="occupy_tile",
+                    target=finale_variant.objective_target,
                     reward_id="bonus-shield",
-                    reward_label=str(template["reward_label"]),
-                    objective_tiles=tuple(template["objective_tiles"]),
-                    round_limit=int(template["round_limit"]),
+                    reward_label=finale_variant.reward_label,
+                    objective_tiles=finale_variant.objective_tiles,
+                    round_limit=finale_variant.round_limit,
                     is_finale=True,
                     boss_id=boss_id,
-                    success_label=str(template["success_label"]),
-                    failure_label=str(template["failure_label"]),
+                    success_label=finale_variant.success_label,
+                    failure_label=finale_variant.failure_label,
                 )
         if resolved_route_id is None:
             return None
@@ -1363,14 +1365,22 @@ class GameApp:
         if self.current_objective.completed:
             boss.shield = max(0, boss.shield - 10)
             boss.speed = max(1, boss.speed - 1)
+            if boss.boss_profile_id == "warlord":
+                boss.move_range = max(1, boss.move_range - 1)
+            elif boss.boss_profile_id == "spellstorm":
+                boss.special_ability = replace(boss.special_ability, cast_range=max(1, boss.special_ability.cast_range - 1))
             self.controller._push_log(f"{self.current_objective.name} 성공 · {boss.name}의 결전 각성이 약화됨.")
             self.status_text = f"{self.current_objective.name} 성공. {boss.name}의 결전 각성이 약화됩니다."
-            self._trigger_finale_banner("결전 봉쇄 성공", f"{boss.name} 각성 약화", (120, 224, 184))
+            self._trigger_finale_banner(f"{self.current_objective.name} 성공", f"{boss.name} 각성 약화", (120, 224, 184))
             if anchor is not None:
                 self.floaters.append(FloatingText(anchor.x, anchor.y - 132, "각성 약화", (120, 224, 184), lifetime=1.0))
         else:
             boss.shield += 8
             boss.speed += 1
+            if boss.boss_profile_id == "warlord":
+                boss.move_range += 1
+            elif boss.boss_profile_id == "spellstorm":
+                boss.special_ability = replace(boss.special_ability, cast_range=boss.special_ability.cast_range + 1)
             self.controller._push_log(f"{self.current_objective.name} 실패 · {boss.name}의 결전 각성이 증폭됨.")
             self.status_text = f"{self.current_objective.name} 실패. {boss.name}의 결전 각성이 증폭됩니다."
             self._trigger_finale_banner("결전 각성 증폭", f"{boss.name} 각성 강화", (236, 126, 90))
@@ -1407,9 +1417,10 @@ class GameApp:
             self.selected_red_ids,
             blue_positions,
             red_positions,
-            terrain_tiles=self._terrain_tiles_for_stage(),
+            terrain_tiles=self._terrain_tiles_for_stage(enemy_ids=self.selected_red_ids),
             elite_unit_ids=self._elite_enemy_ids_for_stage(),
             objective_tiles=self._objective_focus_tiles(),
+            blocked_tiles=self._blocked_tiles_for_stage(enemy_ids=self.selected_red_ids),
         )
 
     def _attach_controller(self, controller: TacticsController) -> None:
@@ -1418,9 +1429,18 @@ class GameApp:
         self._sync_controller_objective_focus()
         boss_unit = next((unit for unit in controller.units if unit.team == "red" and unit.is_boss), None)
         if boss_unit is not None:
+            boss_profile = self._boss_profile_for_stage(lineup=[unit.id for unit in controller.units if unit.team == "red"])
+            finale_variant = self._finale_variant_for_stage(lineup=[unit.id for unit in controller.units if unit.team == "red"])
             controller._push_log(f"{boss_unit.name} 보스 개체 등장 · 체력 절반 이하 시 결전 각성.")
+            if boss_profile is not None:
+                controller._push_log(f"보스 패턴 · {boss_profile.name} · {boss_profile.phase_description}.")
+            if finale_variant is not None:
+                controller._push_log(f"결전 지형 · {finale_variant.name} · {finale_variant.description}.")
             if self.run_stage == RUN_STAGE_COUNT and self.current_objective is not None and self.current_objective.is_finale:
-                self._trigger_finale_banner("결전 개시", f"{boss_unit.name} · {self.current_objective.description.replace('목표: ', '')}", (236, 126, 90))
+                subtitle = f"{boss_unit.name} · {self.current_objective.description.replace('목표: ', '')}"
+                if boss_profile is not None:
+                    subtitle = f"{boss_profile.name} · {subtitle}"
+                self._trigger_finale_banner("결전 개시", subtitle, (236, 126, 90))
         for elite_unit in [unit for unit in controller.units if unit.team == "red" and unit.is_elite and not unit.is_boss]:
             trait = ELITE_TRAITS_BY_ID.get(elite_unit.elite_trait_id or "")
             if trait is not None:
@@ -1457,6 +1477,7 @@ class GameApp:
         enemy_tier = max(0, self.run_stage - 1)
         enemy_lineup = [unit.id for unit in controller.units if unit.team == "red"]
         boss_id = self._boss_enemy_id_for_stage(lineup=enemy_lineup)
+        boss_profile = self._boss_profile_for_stage(lineup=enemy_lineup)
         elite_ids = self._elite_enemy_ids_for_stage(lineup=enemy_lineup)
         stage_modifiers = self._stage_modifier_total()
         route_damage_bonus = stage_modifiers.get("blue_damage", 0)
@@ -1487,6 +1508,7 @@ class GameApp:
                 unit.special_ability = self._boost_damage_effects(unit.special_ability, enemy_tier * 2 + enemy_route_damage_bonus)
                 if boss_id is not None and unit.id == boss_id:
                     unit.is_boss = True
+                    unit.boss_profile_id = boss_profile.id if boss_profile is not None else None
                     unit.is_elite = True
                     unit.max_hp += 36
                     unit.hp = unit.max_hp
@@ -2338,7 +2360,9 @@ class GameApp:
         terrain_lines = []
         terrain_counts: dict[str, int] = {}
         preview_route_id = self.selected_route_id or self.current_route_id
-        for terrain_id in self._terrain_tiles_for_stage(route_id=preview_route_id).values():
+        preview_profile = self._boss_profile_for_stage(lineup=self.selected_red_ids)
+        preview_variant = self._finale_variant_for_stage(lineup=self.selected_red_ids)
+        for terrain_id in self._terrain_tiles_for_stage(route_id=preview_route_id, enemy_ids=self.selected_red_ids).values():
             terrain_counts[terrain_id] = terrain_counts.get(terrain_id, 0) + 1
         for terrain_id, count in terrain_counts.items():
             terrain_lines.append(f"{TERRAIN_BY_ID[terrain_id].name} {count}칸")
@@ -2354,7 +2378,17 @@ class GameApp:
             self._draw_text(f"예상 정예: {elite_count}명", self.font_small, (255, 213, 150), (stage_rect.x + 18, stage_rect.y + enemy_y + 52))
         preview_boss_id = self._boss_enemy_id_for_stage(lineup=self.selected_red_ids)
         if preview_boss_id is not None:
-            self._draw_text(f"예상 보스: {BLUEPRINTS_BY_ID[preview_boss_id].name}", self.font_small, (236, 126, 90), (stage_rect.x + 180, stage_rect.y + enemy_y + 52))
+            self._draw_wrapped_text(
+                (
+                    f"예상 보스: {BLUEPRINTS_BY_ID[preview_boss_id].name} · {preview_variant.name} · {preview_profile.name}"
+                    if preview_profile is not None and preview_variant is not None
+                    else f"예상 보스: {BLUEPRINTS_BY_ID[preview_boss_id].name}"
+                ),
+                self.font_small,
+                (236, 126, 90),
+                pygame.Rect(stage_rect.x + 180, stage_rect.y + enemy_y + 52, stage_rect.width - 216, 22),
+                max_lines=1,
+            )
 
         for index, route_id in enumerate(self.route_option_ids):
             rect = pygame.Rect(SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.y + 96 + index * 182, SELECT_RIGHT_PANEL.width - 44, 170)
@@ -2521,7 +2555,8 @@ class GameApp:
         grid_surface = pygame.Surface(GRID_RECT.size, pygame.SRCALPHA)
         draw_vertical_gradient(grid_surface, grid_surface.get_rect(), (7, 16, 26), (10, 22, 36))
         self.screen.blit(grid_surface, GRID_RECT.topleft)
-        terrain_tiles = self._terrain_tiles_for_stage()
+        terrain_tiles = self._terrain_tiles_for_stage(enemy_ids=self.selected_red_ids)
+        blocked_tiles = set(self._blocked_tiles_for_stage(enemy_ids=self.selected_red_ids))
 
         for y in range(GRID_HEIGHT):
             for x in range(GRID_WIDTH):
@@ -2541,6 +2576,9 @@ class GameApp:
                     overlay = pygame.Surface(rect.size, pygame.SRCALPHA)
                     overlay.fill((224, 108, 92, 42))
                     self.screen.blit(overlay, rect.topleft)
+                if tile in blocked_tiles:
+                    pygame.draw.rect(self.screen, (47, 57, 68), rect.inflate(-18, -18), border_radius=18)
+                    pygame.draw.rect(self.screen, (173, 139, 104), rect.inflate(-18, -18), 1, border_radius=18)
 
         for tile, champion_id in self.red_deploy_assignments.items():
             self._draw_static_unit(champion_id, tile, selected=False)
@@ -2585,12 +2623,22 @@ class GameApp:
         self._draw_text("적 시작 위치", self.font_heading, (244, 239, 225), (RIGHT_PANEL.x + 18, RIGHT_PANEL.y + 18))
         self._draw_text("적은 자동으로 배치되며 순서가 바뀔 수 있습니다", self.font_small, (198, 176, 168), (RIGHT_PANEL.x + 18, RIGHT_PANEL.y + 52))
         boss_id = self._boss_enemy_id_for_stage()
+        boss_profile = self._boss_profile_for_stage()
+        finale_variant = self._finale_variant_for_stage()
+        if boss_profile is not None and finale_variant is not None:
+            self._draw_wrapped_text(
+                f"결전 타입 · {finale_variant.name} / {boss_profile.name}",
+                self.font_tiny,
+                (170, 222, 210),
+                pygame.Rect(RIGHT_PANEL.x + 18, RIGHT_PANEL.y + 72, RIGHT_PANEL.width - 36, 18),
+                max_lines=1,
+            )
         elite_ids = set(self._elite_enemy_ids_for_stage())
         for index, champion_id in enumerate(self.selected_red_ids):
             rect = pygame.Rect(RIGHT_PANEL.x + 18, RIGHT_PANEL.y + 98 + index * 172, RIGHT_PANEL.width - 36, 150)
             tile = self._tile_for_deployed_champion(champion_id, self.red_deploy_assignments)
             if champion_id == boss_id:
-                footer = f"보스 · 결전 각성 · 시작 칸 {tile}"
+                footer = f"보스 · {boss_profile.name if boss_profile is not None else '결전 각성'} · 시작 칸 {tile}"
             elif champion_id in elite_ids:
                 trait = ELITE_TRAITS_BY_ID.get(self._elite_trait_id_for_enemy(champion_id) or "")
                 trait_label = trait.name if trait is not None else "엘리트"
@@ -2900,14 +2948,19 @@ class GameApp:
         blue_header_y = RIGHT_PANEL.y + 62
         if self.run_stage == RUN_STAGE_COUNT:
             boss_unit = self._current_boss_unit()
+            boss_profile = self._boss_profile_for_stage(lineup=[unit.id for unit in self.controller.units if unit.team == "red"])
+            finale_variant = self._finale_variant_for_stage(lineup=[unit.id for unit in self.controller.units if unit.team == "red"])
             phase_label = "결전 각성 완료" if boss_unit is not None and boss_unit.boss_phase_triggered else "결전 각성 전"
             boss_name = boss_unit.name if boss_unit is not None else "보스 대기"
+            profile_label = boss_profile.name if boss_profile is not None else "결전 패턴 미확인"
             self._draw_text(f"결전 상태 · {boss_name}", self.font_small, (236, 126, 90), (RIGHT_PANEL.x + 18, RIGHT_PANEL.y + 58))
-            self._draw_text(phase_label, self.font_tiny, (255, 213, 150), (RIGHT_PANEL.x + 18, RIGHT_PANEL.y + 82))
+            self._draw_text(f"{phase_label} · {profile_label}", self.font_tiny, (255, 213, 150), (RIGHT_PANEL.x + 18, RIGHT_PANEL.y + 82))
+            if finale_variant is not None:
+                self._draw_text(f"지형 · {finale_variant.name}", self.font_tiny, (170, 222, 210), (RIGHT_PANEL.x + 18, RIGHT_PANEL.y + 96))
             if self.current_objective is not None and self.current_objective.is_finale:
                 objective_status = "성공" if self.current_objective.completed else "실패" if self.current_objective.failed else f"{self.current_objective.progress}/{self.current_objective.target}"
-                self._draw_text(f"결전 목표 · {self.current_objective.name} · {objective_status}", self.font_tiny, (170, 222, 210), (RIGHT_PANEL.x + 18, RIGHT_PANEL.y + 100))
-            blue_header_y = RIGHT_PANEL.y + 126
+                self._draw_text(f"결전 목표 · {self.current_objective.name} · {objective_status}", self.font_tiny, (170, 222, 210), (RIGHT_PANEL.x + 18, RIGHT_PANEL.y + 112))
+            blue_header_y = RIGHT_PANEL.y + 138
         self._draw_text("블루 팀", self.font_ui, (108, 192, 235), (RIGHT_PANEL.x + 18, blue_header_y))
         for index, unit in enumerate([unit for unit in self.controller.units if unit.team == "blue"]):
             self._draw_roster_row(unit, RIGHT_PANEL.x + 18, blue_header_y + 34 + index * 64)

@@ -62,6 +62,7 @@
   - elite enemies in later expedition stages with trait rules
   - stage 3 boss battle with a marked boss unit and one-time phase shift
   - stage 3 boss battle now swaps route goals for boss-specific finale objectives with weaken-or-empower phase outcomes
+  - stage 3 boss battle now branches into multiple boss patterns with dedicated finale terrain and obstacle layouts
   - route selection between battles with three risk/reward options and temporary next-battle modifiers
   - route cards now include a second-pass battle event for the next fight
   - route cards now also include a run node branch with rest/event/elite variants
@@ -105,7 +106,7 @@
 - Tactics UX research: `docs/TACTICS_UX_RESEARCH.md`
 - Tactics release target: `docs/TACTICS_RELEASE_TARGET.md`
 - Tactics milestones: `docs/TACTICS_MILESTONES.md`
-- Verified locally on March 10, 2026:
+- Verified locally on March 11, 2026:
   - `python -m native_game.tests` passes
   - headless smoke run with SDL dummy drivers passes
   - headless screenshot capture passes
@@ -115,11 +116,11 @@
 
 ## Recommended Next Steps
 
-1. Add more than one boss pattern and finale-stage variation on top of the current boss pass.
-2. Add run-history persistence or best-run comparison on top of the new run-end summary screen.
-3. Add node-specific cut-ins or start-of-battle presentation so rest/event/elite branches feel more authored.
-4. Replace shape-based placeholder characters with real sprite art or sprite sheets.
-5. Expand map and objective variety on top of the boss loop.
+1. Add run-history persistence or best-run comparison on top of the new run-end summary screen.
+2. Add node-specific cut-ins or start-of-battle presentation so rest/event/elite branches feel more authored.
+3. Replace shape-based placeholder characters with real sprite art or sprite sheets.
+4. Expand map and objective variety on top of the boss loop.
+5. Add more authored boss variants or finale-only special rules on top of the new boss pattern system.
 
 ## Resume Prompt
 

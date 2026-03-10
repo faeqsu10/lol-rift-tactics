@@ -15,6 +15,7 @@ from native_game.data import ChampionBlueprint
 GridPos = tuple[int, int]
 TacticalTargetMode = Literal["enemy", "self"]
 TerrainId = Literal["brush", "rune", "hazard"]
+BossProfileId = Literal["warlord", "spellstorm"]
 
 GRID_WIDTH = 8
 GRID_HEIGHT = 6
@@ -74,6 +75,33 @@ class EliteTrait:
     color: str
 
 
+@dataclass(frozen=True)
+class BossProfile:
+    id: BossProfileId
+    name: str
+    description: str
+    phase_name: str
+    phase_description: str
+    finale_variant_id: str
+
+
+@dataclass(frozen=True)
+class FinaleVariant:
+    id: str
+    name: str
+    description: str
+    blocked_tiles: tuple[GridPos, ...]
+    terrain_tiles: dict[GridPos, TerrainId]
+    objective_name: str
+    objective_description: str
+    objective_target: int
+    objective_tiles: tuple[GridPos, ...]
+    round_limit: int
+    reward_label: str
+    success_label: str
+    failure_label: str
+
+
 TERRAIN_BY_ID: dict[TerrainId, TacticalTerrain] = {
     "brush": TacticalTerrain("brush", "수풀", "턴 시작 시 보호막 4를 얻습니다.", "#5f9f78"),
     "rune": TacticalTerrain("rune", "룬 지대", "턴 시작 시 이번 턴 피해가 3 증가합니다.", "#6fa9d8"),
@@ -91,6 +119,13 @@ ROLE_ELITE_TRAIT_ID: dict[str, str] = {
     "Mage": "spellburst",
     "Marksman": "relentless",
     "Assassin": "relentless",
+}
+
+ROLE_BOSS_PROFILE_ID: dict[str, BossProfileId] = {
+    "Vanguard": "warlord",
+    "Assassin": "warlord",
+    "Mage": "spellstorm",
+    "Marksman": "spellstorm",
 }
 
 STAGE_TERRAIN_TILES: dict[int, dict[GridPos, TerrainId]] = {
@@ -122,6 +157,82 @@ STAGE_TERRAIN_TILES: dict[int, dict[GridPos, TerrainId]] = {
         (3, 3): "hazard",
         (4, 3): "hazard",
     },
+}
+
+BOSS_PROFILES_BY_ID: dict[BossProfileId, BossProfile] = {
+    "warlord": BossProfile(
+        id="warlord",
+        name="전장 군주",
+        description="중앙을 불태우며 목표 지점을 짓누르는 결전형 보스 패턴",
+        phase_name="화염 돌파",
+        phase_description="체력 절반 이하에서 주변을 화염 지대로 바꾸고 전면 압박을 강화합니다.",
+        finale_variant_id="collapsed-bastion",
+    ),
+    "spellstorm": BossProfile(
+        id="spellstorm",
+        name="룬 폭주",
+        description="룬 지대와 장거리 압박으로 전장을 장악하는 결전형 보스 패턴",
+        phase_name="비전 과부하",
+        phase_description="체력 절반 이하에서 룬 장막을 펴고 사거리와 특수기 템포를 끌어올립니다.",
+        finale_variant_id="runic-nexus",
+    ),
+}
+
+FINALE_VARIANTS_BY_ID: dict[str, FinaleVariant] = {
+    "collapsed-bastion": FinaleVariant(
+        id="collapsed-bastion",
+        name="붕괴한 교두보",
+        description="중앙 봉쇄선과 화염 회랑이 깔린 결전 전장",
+        blocked_tiles=((3, 0), (4, 5), (2, 2), (5, 3)),
+        terrain_tiles={
+            (1, 1): "brush",
+            (1, 4): "brush",
+            (6, 1): "brush",
+            (6, 4): "brush",
+            (3, 1): "hazard",
+            (4, 1): "hazard",
+            (3, 4): "hazard",
+            (4, 4): "hazard",
+            (2, 4): "rune",
+            (5, 1): "rune",
+        },
+        objective_name="결전 봉쇄",
+        objective_description="목표: 중앙 봉쇄 칸 진입 2회로 보스 돌파를 약화",
+        objective_target=2,
+        objective_tiles=((3, 2), (4, 2)),
+        round_limit=3,
+        reward_label="결전 약화",
+        success_label="보스 돌파 약화",
+        failure_label="보스 돌파 증폭",
+    ),
+    "runic-nexus": FinaleVariant(
+        id="runic-nexus",
+        name="룬 폭주 회랑",
+        description="룬 핵심과 측면 회랑이 열린 비전 결전 전장",
+        blocked_tiles=((2, 1), (2, 4), (5, 1), (5, 4)),
+        terrain_tiles={
+            (1, 2): "brush",
+            (1, 3): "brush",
+            (6, 2): "brush",
+            (6, 3): "brush",
+            (3, 1): "rune",
+            (4, 1): "rune",
+            (3, 2): "rune",
+            (4, 3): "rune",
+            (3, 4): "rune",
+            (4, 4): "rune",
+            (2, 2): "hazard",
+            (5, 3): "hazard",
+        },
+        objective_name="룬 핵 봉쇄",
+        objective_description="목표: 룬 핵심 칸 진입 2회로 보스 과부하를 약화",
+        objective_target=2,
+        objective_tiles=((3, 2), (4, 3)),
+        round_limit=3,
+        reward_label="과부하 차단",
+        success_label="보스 과부하 약화",
+        failure_label="보스 과부하 증폭",
+    ),
 }
 
 
@@ -291,6 +402,16 @@ def _apply_tactical_override(champion_id: str, ability: TacticalAbility) -> Tact
         area_radius=override.get("area_radius", ability.area_radius),
         effects=ability.effects,
     )
+
+
+def boss_profile_id_for_champion(champion_id: str) -> BossProfileId:
+    blueprint = BLUEPRINTS_BY_ID[champion_id]
+    return ROLE_BOSS_PROFILE_ID.get(blueprint.role, "warlord")
+
+
+def finale_variant_for_champion(champion_id: str) -> FinaleVariant:
+    profile_id = boss_profile_id_for_champion(champion_id)
+    return FINALE_VARIANTS_BY_ID[BOSS_PROFILES_BY_ID[profile_id].finale_variant_id]
 
 
 def build_tactical_blueprint(champion_id: str) -> TacticalBlueprint:
