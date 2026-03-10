@@ -1197,6 +1197,26 @@ class GameApp:
         self.finale_banner_color = color
         self.finale_banner_timer = 1.75
 
+    def _current_boss_pressure_preview(
+        self,
+    ) -> tuple[list[GridPos], tuple[int, int, int], str | None, str | None, bool]:
+        if self.controller is None or self.run_stage != RUN_STAGE_COUNT:
+            return [], (236, 126, 90), None, None, False
+        boss = self._current_boss_unit()
+        if boss is None:
+            return [], (236, 126, 90), None, None, False
+        boss_profile = self._boss_profile_for_stage(lineup=[unit.id for unit in self.controller.units if unit.team == "red"])
+        if boss_profile is None:
+            return [], (236, 126, 90), None, None, boss.boss_phase_triggered
+        color = (236, 126, 90) if boss_profile.id == "warlord" else (126, 154, 236)
+        return (
+            self.controller.boss_pressure_tiles(boss.id),
+            color,
+            boss_profile.surge_name,
+            boss_profile.surge_description,
+            boss.boss_phase_triggered,
+        )
+
     def _trigger_battle_intro(self) -> None:
         detail_lines: list[str] = []
         color = (108, 224, 203)
@@ -1228,7 +1248,18 @@ class GameApp:
                 title = finale_variant.name if finale_variant is not None else "결전 개시"
                 profile_text = boss_profile.name if boss_profile is not None else "보스 패턴 미확인"
                 subtitle = f"{profile_text} · {objective_text}"
-            detail_lines.append(f"목표 · {objective_text}")
+                finale_lines = [f"목표 · {objective_text}"]
+                if boss_profile is not None:
+                    finale_lines.insert(0, f"각성 규칙 · {boss_profile.surge_name}")
+                if self.current_route_node is not None:
+                    finale_lines.append(f"노드 효과 · {self.current_route_node.effect_label}")
+                elif self.current_route_event is not None:
+                    finale_lines.append(f"이벤트 · {self._route_event_effect_label(self.current_route_event, self.current_route_node)}")
+                if self.active_stage_penalty is not None and len(finale_lines) < 3:
+                    finale_lines.append(f"주의 · {self.active_stage_penalty.description}")
+                detail_lines = finale_lines
+            else:
+                detail_lines.append(f"목표 · {objective_text}")
         self.battle_intro_card = BattleIntroCard(title=title, subtitle=subtitle, detail_lines=detail_lines[:3], color=color)
 
     def _preview_battle_objective(
@@ -2791,6 +2822,7 @@ class GameApp:
         active = self.controller.get_active_unit()
         intent = self.controller.preview_ai_intent() if active and active.team == "red" else None
         terrain_tiles = self.controller.terrain_tiles
+        boss_pressure_tiles, boss_pressure_color, _, _, boss_pressure_active = self._current_boss_pressure_preview()
 
         for y in range(GRID_HEIGHT):
             for x in range(GRID_WIDTH):
@@ -2818,6 +2850,21 @@ class GameApp:
                 objective_color = (236, 126, 90) if self.current_objective.is_finale else (241, 214, 126)
                 pygame.draw.rect(self.screen, objective_color, rect.inflate(-18, -18), 2, border_radius=18)
                 pygame.draw.rect(self.screen, objective_color, rect.inflate(-34, -34), 1, border_radius=12)
+
+        for pressure_tile in boss_pressure_tiles:
+            rect = self.tile_rects.get(pressure_tile)
+            if rect is None:
+                continue
+            overlay = pygame.Surface(rect.size, pygame.SRCALPHA)
+            overlay.fill((*boss_pressure_color, 28 if boss_pressure_active else 14))
+            self.screen.blit(overlay, rect.topleft)
+            pygame.draw.rect(
+                self.screen,
+                boss_pressure_color,
+                rect.inflate(-22 if boss_pressure_active else -28, -22 if boss_pressure_active else -28),
+                2 if boss_pressure_active else 1,
+                border_radius=14,
+            )
 
         for target_id in basic_targets | special_targets:
             unit = self.controller.get_unit(target_id)
@@ -3031,6 +3078,7 @@ class GameApp:
             boss_unit = self._current_boss_unit()
             boss_profile = self._boss_profile_for_stage(lineup=[unit.id for unit in self.controller.units if unit.team == "red"])
             finale_variant = self._finale_variant_for_stage(lineup=[unit.id for unit in self.controller.units if unit.team == "red"])
+            _, _, pressure_label, pressure_description, pressure_active = self._current_boss_pressure_preview()
             phase_label = "결전 각성 완료" if boss_unit is not None and boss_unit.boss_phase_triggered else "결전 각성 전"
             boss_name = boss_unit.name if boss_unit is not None else "보스 대기"
             profile_label = boss_profile.name if boss_profile is not None else "결전 패턴 미확인"
@@ -3041,7 +3089,11 @@ class GameApp:
             if self.current_objective is not None and self.current_objective.is_finale:
                 objective_status = "성공" if self.current_objective.completed else "실패" if self.current_objective.failed else f"{self.current_objective.progress}/{self.current_objective.target}"
                 self._draw_text(f"결전 목표 · {self.current_objective.name} · {objective_status}", self.font_tiny, (170, 222, 210), (RIGHT_PANEL.x + 18, RIGHT_PANEL.y + 112))
-            blue_header_y = RIGHT_PANEL.y + 138
+            if pressure_label is not None:
+                pressure_state = "활성" if pressure_active else "예고"
+                self._draw_text(f"특수 규칙 · {pressure_label} · {pressure_state}", self.font_tiny, (223, 206, 164), (RIGHT_PANEL.x + 18, RIGHT_PANEL.y + 128))
+                self._draw_wrapped_text(pressure_description or "", self.font_tiny, (192, 207, 220), pygame.Rect(RIGHT_PANEL.x + 18, RIGHT_PANEL.y + 144, RIGHT_PANEL.width - 36, 28), max_lines=2)
+            blue_header_y = RIGHT_PANEL.y + 176
         self._draw_text("블루 팀", self.font_ui, (108, 192, 235), (RIGHT_PANEL.x + 18, blue_header_y))
         for index, unit in enumerate([unit for unit in self.controller.units if unit.team == "blue"]):
             self._draw_roster_row(unit, RIGHT_PANEL.x + 18, blue_header_y + 34 + index * 64)

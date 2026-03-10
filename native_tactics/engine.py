@@ -239,6 +239,27 @@ class TacticsController:
             return None
         return BOSS_PROFILES_BY_ID.get(unit.boss_profile_id)
 
+    def boss_pressure_tiles(self, boss_id: str | None = None, *, awakened: bool | None = None) -> list[GridPos]:
+        boss = self.get_unit(boss_id) if boss_id is not None else next(
+            (unit for unit in self.living_units() if unit.is_boss),
+            None,
+        )
+        if boss is None or not boss.is_boss:
+            return []
+        profile = self._boss_profile(boss)
+        if profile is None:
+            return []
+        resolved_awakened = boss.boss_phase_triggered if awakened is None else awakened
+        pressure_tiles: set[GridPos] = set(self.objective_tiles)
+        if profile.id == "warlord":
+            if resolved_awakened:
+                pressure_tiles.update(self._neighbors(boss.position))
+        elif profile.id == "spellstorm":
+            pressure_tiles.update(tile for tile, terrain_id in self.terrain_tiles.items() if terrain_id == "rune")
+            if resolved_awakened:
+                pressure_tiles.update(self._neighbors(boss.position))
+        return self._unique_tiles(pressure_tiles)
+
     def get_reachable_tiles(self, unit_id: str | None = None) -> set[GridPos]:
         unit = self.get_unit(unit_id) if unit_id else self.get_active_unit()
         if unit is None or unit.hp <= 0 or unit.has_moved:
@@ -731,21 +752,33 @@ class TacticsController:
             return None
 
         target_ids = self._resolve_targets(actor, ability, target_id)
+        ability_target_ids = list(target_ids)
+        resolved_target_ids: list[str] = []
         impacts: list[TacticalImpact] = []
+        ability_impacts: list[TacticalImpact] = []
         notes: list[str] = []
         for target_unit_id in target_ids:
             target = self.get_unit(target_unit_id)
             modified_effects, passive_notes = self._modified_effects(actor, target, ability_kind, ability.effects)
             impact = self._apply_effects(target_unit_id, modified_effects)
+            resolved_target_ids.append(target_unit_id)
+            ability_impacts.append(impact)
             impacts.append(impact)
             notes.extend(passive_notes)
-            notes.extend(self._apply_post_impact_modifiers(target_unit_id, impact))
+            post_notes, post_impacts = self._apply_post_impact_modifiers(target_unit_id, impact)
+            notes.extend(post_notes)
+            for post_impact in post_impacts:
+                resolved_target_ids.append(post_impact.target_id)
+                impacts.append(post_impact)
         actor.has_acted = True
         if ability_kind == "special":
             actor.cooldowns[ability.id] = ability.cooldown
-        notes.extend(self._apply_post_action_passives(actor, ability_kind, impacts, target_ids, target_id))
+        notes.extend(self._apply_post_action_passives(actor, ability_kind, ability_impacts, ability_target_ids, target_id))
 
-        summary = " ".join(self._format_impact_text(self.get_unit(target_unit_id), impact) for target_unit_id, impact in zip(target_ids, impacts))
+        summary = " ".join(
+            self._format_impact_text(self.get_unit(target_unit_id), impact)
+            for target_unit_id, impact in zip(resolved_target_ids, impacts)
+        )
         log_line = f"{actor.name}, {ability.name} 사용. {summary}".strip()
         if notes:
             log_line = f"{log_line} {' '.join(notes)}".strip()
@@ -756,7 +789,7 @@ class TacticsController:
             kind=ability_kind,
             ability_name=ability.name,
             impacts=impacts,
-            target_ids=target_ids,
+            target_ids=resolved_target_ids,
             notes=notes,
         )
         self._auto_finish_turn_if_needed()
@@ -1032,7 +1065,31 @@ class TacticsController:
         )
         return replace(ability, effects=boosted_effects)
 
-    def _trigger_boss_phase(self, target: TacticalUnit) -> list[str]:
+    def _trigger_boss_phase_impacts(self, target: TacticalUnit) -> tuple[list[TacticalImpact], list[str]]:
+        profile = self._boss_profile(target)
+        if profile is None:
+            return [], []
+
+        if profile.id == "warlord":
+            damage = 5
+            notes = ["전선 붕괴 발동."]
+            log_label = "전선 붕괴"
+        else:
+            damage = 4
+            notes = ["룬 폭풍 발동."]
+            log_label = "룬 폭풍"
+
+        impacts: list[TacticalImpact] = []
+        for unit in self.living_units():
+            if unit.team == target.team or unit.position not in self.boss_pressure_tiles(target.id, awakened=True):
+                continue
+            impacts.append(self._apply_effects(unit.id, (AbilityEffect(kind="damage", amount=damage, turns=0),)))
+        if impacts:
+            notes.append(f"{log_label} {len(impacts)}명.")
+            self._push_log(f"{target.name}, {log_label}로 적 {len(impacts)}명에게 즉시 피해.")
+        return impacts, notes
+
+    def _trigger_boss_phase(self, target: TacticalUnit) -> tuple[list[str], list[TacticalImpact]]:
         profile = self._boss_profile(target)
         notes = ["결전 각성 발동."]
         if profile is None or profile.id == "warlord":
@@ -1055,7 +1112,9 @@ class TacticsController:
             self._push_log(f"{target.name}, 화염 돌파로 전면 압박 강화.")
             if hazard_tiles:
                 self._push_log(f"{target.name}, 결전 파동으로 주변 {len(hazard_tiles)}칸이 화염 지대로 변함.")
-            return notes
+            surge_impacts, surge_notes = self._trigger_boss_phase_impacts(target)
+            notes.extend(surge_notes)
+            return notes, surge_impacts
 
         target.shield += 14
         target.speed += 1
@@ -1078,14 +1137,17 @@ class TacticsController:
         self._push_log(f"{target.name}, 비전 과부하로 사거리와 룬 장악이 강화.")
         if rune_tiles:
             self._push_log(f"{target.name}, 룬 장막이 {len(rune_tiles)}칸에 전개됨.")
-        return notes
+        surge_impacts, surge_notes = self._trigger_boss_phase_impacts(target)
+        notes.extend(surge_notes)
+        return notes, surge_impacts
 
-    def _apply_post_impact_modifiers(self, target_id: str, impact: TacticalImpact) -> list[str]:
+    def _apply_post_impact_modifiers(self, target_id: str, impact: TacticalImpact) -> tuple[list[str], list[TacticalImpact]]:
         target = self.get_unit(target_id)
         if target is None:
-            return []
+            return [], []
 
         notes: list[str] = []
+        extra_impacts: list[TacticalImpact] = []
         if (
             target.is_boss
             and not target.boss_phase_triggered
@@ -1093,8 +1155,10 @@ class TacticsController:
             and target.hp <= target.max_hp // 2
         ):
             target.boss_phase_triggered = True
-            notes.extend(self._trigger_boss_phase(target))
-        return notes
+            phase_notes, phase_impacts = self._trigger_boss_phase(target)
+            notes.extend(phase_notes)
+            extra_impacts.extend(phase_impacts)
+        return notes, extra_impacts
 
     def _apply_turn_start_passives(self, actor: TacticalUnit) -> None:
         if actor.id == "blue-leona":

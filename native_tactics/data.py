@@ -82,6 +82,8 @@ class BossProfile:
     description: str
     phase_name: str
     phase_description: str
+    surge_name: str
+    surge_description: str
     finale_variant_id: str
 
 
@@ -166,6 +168,8 @@ BOSS_PROFILES_BY_ID: dict[BossProfileId, BossProfile] = {
         description="중앙을 불태우며 목표 지점을 짓누르는 결전형 보스 패턴",
         phase_name="화염 돌파",
         phase_description="체력 절반 이하에서 주변을 화염 지대로 바꾸고 전면 압박을 강화합니다.",
+        surge_name="전선 붕괴",
+        surge_description="각성 순간 목표 칸과 인접 전열을 압쇄해 즉시 5 피해를 줍니다.",
         finale_variant_id="collapsed-bastion",
     ),
     "spellstorm": BossProfile(
@@ -174,6 +178,8 @@ BOSS_PROFILES_BY_ID: dict[BossProfileId, BossProfile] = {
         description="룬 지대와 장거리 압박으로 전장을 장악하는 결전형 보스 패턴",
         phase_name="비전 과부하",
         phase_description="체력 절반 이하에서 룬 장막을 펴고 사거리와 특수기 템포를 끌어올립니다.",
+        surge_name="룬 폭풍",
+        surge_description="각성 순간 룬/목표 칸에 방전을 일으켜 즉시 4 피해를 줍니다.",
         finale_variant_id="runic-nexus",
     ),
 }

@@ -76,6 +76,7 @@
   - run-end summary screen with cumulative stats, build highlights, battle timeline, and direct replay/select actions
   - persisted run history with best-run comparison on the summary screen
   - node-specific and finale-specific battle-start cut-in presentation with a short intro lock
+  - boss-specific awakening surge rules that now deal immediate pressure damage and expose predicted danger tiles on the finale map
   - terrain-aware red-team AI movement and targeting
   - objective-aware red-team AI that contests marked tiles and pressure zones
   - post-victory reward pick with next-enemy preview
@@ -121,9 +122,9 @@
 
 1. Replace shape-based placeholder characters with real sprite art or sprite sheets.
 2. Expand map and objective variety on top of the boss loop.
-3. Add more authored boss variants or finale-only special rules on top of the new boss pattern system.
-4. Add richer meta progression or unlock structure on top of the saved run-history layer.
-5. Add more authored node/event presentation on top of the new cut-in system.
+3. Add richer meta progression or unlock structure on top of the saved run-history layer.
+4. Add more authored node/event presentation on top of the new cut-in system.
+5. Replace placeholder presentation with sprite art, animation, and map polish.
 
 ## Resume Prompt
 

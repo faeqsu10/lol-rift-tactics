@@ -255,6 +255,43 @@ class TacticsControllerTests(unittest.TestCase):
         self.assertTrue(any("비전 과부하 발동." in note for note in result.notes))
         self.assertTrue(any("룬 장막 전개" in note for note in result.notes))
 
+    def test_warlord_boss_phase_crushes_frontline_pressure_tiles(self) -> None:
+        controller = TacticsController(("blue-garen",), ("red-darius",), objective_tiles=((0, 1),))
+        controller.blocked_tiles.clear()
+        boss = controller.get_unit("red-darius")
+        boss.position = (1, 1)
+        boss.hp = 35
+        boss.is_boss = True
+        boss.boss_profile_id = "warlord"
+        controller.get_unit("blue-garen").position = (0, 1)
+
+        result = controller.use_basic("red-darius")
+
+        self.assertIsNotNone(result)
+        self.assertTrue(any(impact.target_id == "blue-garen" and impact.damage == 5 for impact in result.impacts))
+        self.assertTrue(any("전선 붕괴 발동." in note for note in result.notes))
+        self.assertIn((0, 1), controller.boss_pressure_tiles("red-darius"))
+
+    def test_spellstorm_boss_phase_discharges_rune_pressure_tiles(self) -> None:
+        controller = TacticsController(("blue-garen",), ("red-brand",), objective_tiles=((0, 1),))
+        controller.blocked_tiles.clear()
+        boss = controller.get_unit("red-brand")
+        boss.position = (1, 1)
+        boss.hp = 28
+        boss.is_boss = True
+        boss.boss_profile_id = "spellstorm"
+        controller.get_unit("blue-garen").position = (0, 1)
+        controller.state.active_unit_id = "blue-garen"
+        controller.state.turn_queue = ["blue-garen"]
+
+        result = controller.use_basic("red-brand")
+
+        self.assertIsNotNone(result)
+        self.assertTrue(any(impact.target_id == "blue-garen" and impact.damage == 4 for impact in result.impacts))
+        self.assertTrue(any("룬 폭풍 발동." in note for note in result.notes))
+        self.assertEqual(controller.terrain_tiles[(0, 1)], "rune")
+        self.assertIn((0, 1), controller.boss_pressure_tiles("red-brand"))
+
     def test_preview_ai_intent_reports_target(self) -> None:
         controller = TacticsController(("blue-garen",), ("red-brand",))
         controller.blocked_tiles.clear()
@@ -800,6 +837,7 @@ class GameAppFlowTests(unittest.TestCase):
         self.assertIsNotNone(app.battle_intro_card)
         self.assertEqual(app.battle_intro_card.title, "룬 폭주 회랑")
         self.assertIn("룬 폭주", app.battle_intro_card.subtitle)
+        self.assertTrue(any("각성 규칙" in line for line in app.battle_intro_card.detail_lines))
         self.assertTrue(any("목표" in line for line in app.battle_intro_card.detail_lines))
 
     def test_finale_objective_success_weakens_boss_phase(self) -> None:
