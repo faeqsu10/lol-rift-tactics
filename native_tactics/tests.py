@@ -215,6 +215,9 @@ class TacticsControllerTests(unittest.TestCase):
         self.assertEqual(boss.speed, TACTICAL_BLUEPRINTS_BY_ID["red-darius"].speed + 2)
         self.assertEqual(boss.move_range, TACTICAL_BLUEPRINTS_BY_ID["red-darius"].move_range + 1)
         self.assertTrue(any("결전 각성 발동." in note for note in result.notes))
+        self.assertTrue(any("결전 파동 확산" in note for note in result.notes))
+        self.assertEqual(controller.terrain_tiles[(2, 1)], "hazard")
+        self.assertEqual(controller.terrain_tiles[(0, 1)], "hazard")
 
     def test_preview_ai_intent_reports_target(self) -> None:
         controller = TacticsController(("blue-garen",), ("red-brand",))
@@ -432,6 +435,79 @@ class GameAppFlowTests(unittest.TestCase):
         self.assertGreater(boss_units[0].max_hp, TACTICAL_BLUEPRINTS_BY_ID[boss_units[0].id].max_hp + 20)
         self.assertEqual(len(lieutenant_elites), 1)
         self.assertIsNotNone(lieutenant_elites[0].elite_trait_id)
+
+    def test_stage_three_builds_boss_specific_finale_objective(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
+        app.selected_red_ids = ["red-darius", "red-zed", "red-brand"]
+        app.run_stage = 3
+
+        objective = app._build_battle_objective()
+
+        self.assertIsNotNone(objective)
+        self.assertTrue(objective.is_finale)
+        self.assertEqual(objective.boss_id, "red-darius")
+        self.assertEqual(objective.name, "결전 봉쇄")
+        self.assertEqual(objective.target, 2)
+        self.assertEqual(objective.objective_tiles, ((3, 2), (4, 2)))
+
+    def test_finale_objective_success_weakens_boss_phase(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
+        app.selected_red_ids = ["red-darius", "red-zed", "red-brand"]
+        app.run_stage = 3
+        app._seed_deployment()
+        app.current_objective = app._build_battle_objective()
+
+        controller = app._build_controller_from_current_setup()
+        app._attach_controller(controller)
+        boss = app.controller.get_unit("red-darius")
+        blue = app.controller.get_unit("blue-garen")
+        app.controller.blocked_tiles.clear()
+        blue.position = (0, 1)
+        boss.position = (1, 1)
+        app.controller.state.active_unit_id = "blue-garen"
+        app.controller.state.turn_queue = ["blue-garen"]
+        app.current_objective.completed = True
+        pre_speed = boss.speed
+        boss.hp = 35
+
+        result = app.controller.use_basic("red-darius")
+        app._apply_action_result(result)
+
+        self.assertTrue(boss.boss_phase_triggered)
+        self.assertEqual(boss.shield, 8)
+        self.assertEqual(boss.speed, pre_speed + 1)
+        self.assertEqual(app.finale_banner_title, "결전 봉쇄 성공")
+
+    def test_finale_objective_failure_empowers_boss_phase(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
+        app.selected_red_ids = ["red-darius", "red-zed", "red-brand"]
+        app.run_stage = 3
+        app._seed_deployment()
+        app.current_objective = app._build_battle_objective()
+
+        controller = app._build_controller_from_current_setup()
+        app._attach_controller(controller)
+        boss = app.controller.get_unit("red-darius")
+        blue = app.controller.get_unit("blue-garen")
+        app.controller.blocked_tiles.clear()
+        blue.position = (0, 1)
+        boss.position = (1, 1)
+        app.controller.state.active_unit_id = "blue-garen"
+        app.controller.state.turn_queue = ["blue-garen"]
+        app.current_objective.failed = True
+        pre_speed = boss.speed
+        boss.hp = 35
+
+        result = app.controller.use_basic("red-darius")
+        app._apply_action_result(result)
+
+        self.assertTrue(boss.boss_phase_triggered)
+        self.assertEqual(boss.shield, 26)
+        self.assertEqual(boss.speed, pre_speed + 3)
+        self.assertEqual(app.finale_banner_title, "결전 각성 증폭")
 
     def test_reward_then_route_choice_advances_to_deploy(self) -> None:
         app = GameApp(headless=True)
@@ -769,6 +845,7 @@ class GameAppFlowTests(unittest.TestCase):
                 penalty_modifiers={"enemy_shield": 10},
             )
         }
+        app.route_node_by_route_id = {}
         app.selected_route_id = "supply-line"
         app._advance_after_route()
 

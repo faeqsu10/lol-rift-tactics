@@ -10,7 +10,7 @@ This file provides guidance for working in this repository.
 - Current primary build: native `Pygame` client
 - Current active native tracks:
   - `native_game`: 9인 풀에서 3인 선택 -> 3v3 battle
-  - `native_tactics`: 3인 선택 -> 시작 배치 -> 3전 원정 -> 보상 -> 전투 요약 -> 3안 경로+런 노드 선택 + 전투 이벤트 -> 패시브 2차/챔피언별 특수기/적 의도 4차/연속 턴 예고/지형/엘리트 특성/보스 결전/맵 목표/목표 경쟁 AI/실패 페널티/휴식·변수·정예 노드 분기
+  - `native_tactics`: 3인 선택 -> 시작 배치 -> 3전 원정 -> 보상 -> 전투 요약 -> 3안 경로+런 노드 선택 + 전투 이벤트 -> 패시브 2차/챔피언별 특수기/적 의도 4차/연속 턴 예고/지형/엘리트 특성/보스 결전/보스 전용 목표/결전 각성 연출/맵 목표/목표 경쟁 AI/실패 페널티/휴식·변수·정예 노드 분기
 - Current secondary build: legacy web prototype under `src/*`
 
 ## Commands
@@ -92,6 +92,7 @@ src/
 - 보스/엘리트 스테이지 규칙을 바꾸면 배치 화면과 전투 화면 둘 다 캡처해서 표식과 텍스트 밀도를 같이 확인할 것
 - 적 의도 패널 줄 수를 늘릴 때는 전장 포커스 표식과 함께 캡처해, 텍스트만 늘어난 게 아니라 실제 대응 포인트가 보이는지 확인할 것
 - 경로/노드/이벤트처럼 프리뷰와 실전이 함께 있는 시스템은 선택 화면 문구와 실제 전투 적용 수치가 같은 계산을 쓰는지 테스트로 고정할 것
+- 최종전 규칙을 따로 추가하면 경로 화면, 배치 화면, 전투 HUD가 모두 같은 결전 목표를 보여 주는지 확인할 것
 
 ### Frequent Commits
 

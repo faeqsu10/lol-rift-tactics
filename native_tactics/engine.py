@@ -1040,8 +1040,18 @@ class TacticsController:
             target.basic_ability = self._boost_ability_damage(target.basic_ability, 4)
             target.special_ability = self._boost_ability_damage(target.special_ability, 4)
             target.cooldowns[target.special_ability.id] = max(0, target.cooldowns.get(target.special_ability.id, 0) - 1)
+            hazard_tiles = []
+            for tile in self._neighbors(target.position):
+                if tile in self.blocked_tiles:
+                    continue
+                self.terrain_tiles[tile] = "hazard"
+                hazard_tiles.append(tile)
             notes.append("결전 각성 발동.")
+            if hazard_tiles:
+                notes.append(f"결전 파동 확산 {len(hazard_tiles)}칸.")
             self._push_log(f"{target.name}, 체력이 절반 이하가 되어 결전 각성 발동.")
+            if hazard_tiles:
+                self._push_log(f"{target.name}, 결전 파동으로 주변 {len(hazard_tiles)}칸이 화염 지대로 변함.")
         return notes
 
     def _apply_turn_start_passives(self, actor: TacticalUnit) -> None:

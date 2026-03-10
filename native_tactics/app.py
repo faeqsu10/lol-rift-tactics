@@ -279,6 +279,31 @@ ROUTE_EVENT_TEMPLATES = {
         },
     ),
 }
+FRONTLINE_BOSS_ROLES = {"Vanguard", "Skirmisher", "Assassin"}
+FINALE_OBJECTIVE_TEMPLATES = {
+    "frontline": {
+        "name": "결전 봉쇄",
+        "description": "목표: 봉쇄 칸 진입 2회로 보스 각성 약화",
+        "kind": "occupy_tile",
+        "target": 2,
+        "reward_label": "결전 약화",
+        "round_limit": 3,
+        "objective_tiles": ((3, 2), (4, 2)),
+        "success_label": "보스 각성 약화",
+        "failure_label": "보스 각성 증폭",
+    },
+    "backline": {
+        "name": "핵심 차단",
+        "description": "목표: 핵심 봉쇄 칸 진입 1회로 보스 각성 약화",
+        "kind": "occupy_tile",
+        "target": 1,
+        "reward_label": "핵심 불안정",
+        "round_limit": 2,
+        "objective_tiles": ((3, 2),),
+        "success_label": "보스 각성 약화",
+        "failure_label": "보스 각성 증폭",
+    },
+}
 RUN_NODE_TEMPLATES = {
     "rest-camp": {
         "name": "휴식 거점",
@@ -398,6 +423,10 @@ class BattleObjective:
     progress: int = 0
     completed: bool = False
     failed: bool = False
+    is_finale: bool = False
+    boss_id: str | None = None
+    success_label: str | None = None
+    failure_label: str | None = None
 
 
 def clamp(value: float, low: float, high: float) -> float:
@@ -510,6 +539,10 @@ class GameApp:
         self.floaters: list[FloatingText] = []
         self.hit_flash: dict[str, float] = {}
         self.unit_visual_positions: dict[str, pygame.Vector2] = {}
+        self.finale_banner_title: str | None = None
+        self.finale_banner_subtitle: str | None = None
+        self.finale_banner_color: tuple[int, int, int] = (236, 126, 90)
+        self.finale_banner_timer = 0.0
 
         self.tile_rects: dict[tuple[int, int], pygame.Rect] = {}
         self.button_rects: dict[str, pygame.Rect] = {}
@@ -641,6 +674,9 @@ class GameApp:
         self.current_objective = None
         self.last_objective_summary = None
         self.objective_bonus_applied = False
+        self.finale_banner_title = None
+        self.finale_banner_subtitle = None
+        self.finale_banner_timer = 0.0
         self.selected_red_ids = self._random_enemy_lineup(self.run_stage)
 
     def _reset_battle_stats(self) -> None:
@@ -912,18 +948,65 @@ class GameApp:
                 totals[key] = totals.get(key, 0) + value
         return totals
 
-    def _build_battle_objective(self) -> BattleObjective | None:
-        if self.current_route_id is None:
+    def _current_boss_id(self) -> str | None:
+        return self._boss_enemy_id_for_stage(lineup=self.selected_red_ids)
+
+    def _current_boss_unit(self):
+        if self.controller is None:
             return None
-        definition = ROUTE_OBJECTIVES.get(self.current_route_id)
+        return next((unit for unit in self.controller.units if unit.team == "red" and unit.is_boss), None)
+
+    def _finale_objective_template(self, boss_id: str) -> dict[str, object]:
+        role = TACTICAL_BLUEPRINTS_BY_ID[boss_id].role
+        profile = "frontline" if role in FRONTLINE_BOSS_ROLES else "backline"
+        return FINALE_OBJECTIVE_TEMPLATES[profile]
+
+    def _trigger_finale_banner(self, title: str, subtitle: str, color: tuple[int, int, int]) -> None:
+        self.finale_banner_title = title
+        self.finale_banner_subtitle = subtitle
+        self.finale_banner_color = color
+        self.finale_banner_timer = 1.75
+
+    def _preview_battle_objective(
+        self,
+        *,
+        stage: int | None = None,
+        route_id: str | None = None,
+        enemy_ids: list[str] | None = None,
+    ) -> BattleObjective | None:
+        resolved_stage = stage or self.run_stage
+        resolved_route_id = route_id if route_id is not None else self.current_route_id
+        resolved_enemy_ids = enemy_ids if enemy_ids is not None else self.selected_red_ids
+        if resolved_stage == RUN_STAGE_COUNT:
+            boss_id = self._boss_enemy_id_for_stage(stage=resolved_stage, lineup=resolved_enemy_ids)
+            if boss_id is not None:
+                template = self._finale_objective_template(boss_id)
+                return BattleObjective(
+                    route_id="boss-finale",
+                    name=str(template["name"]),
+                    description=str(template["description"]),
+                    kind=str(template["kind"]),
+                    target=int(template["target"]),
+                    reward_id="bonus-shield",
+                    reward_label=str(template["reward_label"]),
+                    objective_tiles=tuple(template["objective_tiles"]),
+                    round_limit=int(template["round_limit"]),
+                    is_finale=True,
+                    boss_id=boss_id,
+                    success_label=str(template["success_label"]),
+                    failure_label=str(template["failure_label"]),
+                )
+        if resolved_route_id is None:
+            return None
+        definition = ROUTE_OBJECTIVES.get(resolved_route_id)
         if definition is None:
             return None
         reward_id = definition["reward_id"]
-        objective_tiles = tuple(ROUTE_OBJECTIVE_TILES.get(self.current_route_id, {}).get(self.run_stage, ()))
+        objective_tiles = tuple(ROUTE_OBJECTIVE_TILES.get(resolved_route_id, {}).get(resolved_stage, ()))
         return BattleObjective(
-            route_id=self.current_route_id,
+            route_id=resolved_route_id,
             name=definition["name"],
-            description=self.route_options[self.current_route_id].description,
+            description=self.route_options[resolved_route_id].description,
             kind=definition["kind"],
             target=definition.get("target", 1),
             reward_id=reward_id,
@@ -932,6 +1015,9 @@ class GameApp:
             terrain_id=definition.get("terrain_id"),
             round_limit=definition.get("round_limit"),
         )
+
+    def _build_battle_objective(self) -> BattleObjective | None:
+        return self._preview_battle_objective()
 
     def _objective_focus_tiles(self) -> tuple[GridPos, ...]:
         objective = self.current_objective
@@ -954,9 +1040,9 @@ class GameApp:
             return None
         objective = self.current_objective
         if objective.completed:
-            return f"{objective.name} 달성 · {objective.reward_label}"
+            return f"{objective.name} 달성 · {objective.success_label or objective.reward_label}"
         if objective.failed:
-            return f"{objective.name} 실패"
+            return f"{objective.name} 실패 · {objective.failure_label or '목표 미달성'}"
         return f"{objective.name} 미달성 {objective.progress}/{objective.target}"
 
     def _complete_objective(self) -> None:
@@ -964,7 +1050,10 @@ class GameApp:
             return
         self.current_objective.completed = True
         self.last_objective_summary = self._summarize_current_objective()
-        self.status_text = f"{self.current_objective.name} 달성. {self.current_objective.reward_label} 확보 예정."
+        summary_label = self.current_objective.success_label or self.current_objective.reward_label
+        self.status_text = f"{self.current_objective.name} 달성. {summary_label} 확보 예정."
+        if self.current_objective.is_finale:
+            self._trigger_finale_banner("결전 목표 달성", f"{summary_label} 예약", (120, 224, 184))
         self.audio.play("shield")
 
     def _objective_failure_penalty_preview(self) -> str | None:
@@ -981,6 +1070,9 @@ class GameApp:
             penalty_preview = self._objective_failure_penalty_preview()
             if penalty_preview:
                 self.status_text = f"{self.current_objective.name} 실패. 승리해도 다음 전투에 {penalty_preview}"
+            elif self.current_objective.is_finale:
+                self.status_text = f"{self.current_objective.name} 실패. 보스 각성이 강화됩니다."
+                self._trigger_finale_banner("결전 목표 실패", self.current_objective.failure_label or "보스 각성 증폭", (236, 126, 90))
             self.audio.play("reset")
 
     def _queue_objective_failure_penalty(self) -> str | None:
@@ -1043,12 +1135,43 @@ class GameApp:
             self.last_objective_summary = None
             return None
         self.last_objective_summary = self._summarize_current_objective()
+        if self.current_objective.is_finale:
+            return self.last_objective_summary
         if not self.current_objective.completed or self.objective_bonus_applied:
             return self.last_objective_summary
         self.run_bonuses[self.current_objective.reward_id] += 1
         self.objective_bonus_applied = True
         self.last_objective_summary = self._summarize_current_objective()
         return self.last_objective_summary
+
+    def _resolve_finale_phase_state(self) -> None:
+        if self.controller is None or self.current_objective is None or not self.current_objective.is_finale:
+            return
+        boss = self._current_boss_unit()
+        if boss is None or not boss.boss_phase_triggered:
+            return
+        if not self.current_objective.completed and not self.current_objective.failed:
+            self.current_objective.failed = True
+            self.last_objective_summary = self._summarize_current_objective()
+        else:
+            self.last_objective_summary = self._summarize_current_objective()
+        anchor = self.unit_visual_positions.get(boss.id)
+        if self.current_objective.completed:
+            boss.shield = max(0, boss.shield - 10)
+            boss.speed = max(1, boss.speed - 1)
+            self.controller._push_log(f"{self.current_objective.name} 성공 · {boss.name}의 결전 각성이 약화됨.")
+            self.status_text = f"{self.current_objective.name} 성공. {boss.name}의 결전 각성이 약화됩니다."
+            self._trigger_finale_banner("결전 봉쇄 성공", f"{boss.name} 각성 약화", (120, 224, 184))
+            if anchor is not None:
+                self.floaters.append(FloatingText(anchor.x, anchor.y - 132, "각성 약화", (120, 224, 184), lifetime=1.0))
+        else:
+            boss.shield += 8
+            boss.speed += 1
+            self.controller._push_log(f"{self.current_objective.name} 실패 · {boss.name}의 결전 각성이 증폭됨.")
+            self.status_text = f"{self.current_objective.name} 실패. {boss.name}의 결전 각성이 증폭됩니다."
+            self._trigger_finale_banner("결전 각성 증폭", f"{boss.name} 각성 강화", (236, 126, 90))
+            if anchor is not None:
+                self.floaters.append(FloatingText(anchor.x, anchor.y - 132, "각성 강화", (236, 126, 90), lifetime=1.0))
 
     def _apply_route_node_victory_bonus(self) -> str | None:
         if self.current_route_node is None or self.current_route_node.victory_reward_id is None:
@@ -1092,6 +1215,8 @@ class GameApp:
         boss_unit = next((unit for unit in controller.units if unit.team == "red" and unit.is_boss), None)
         if boss_unit is not None:
             controller._push_log(f"{boss_unit.name} 보스 개체 등장 · 체력 절반 이하 시 결전 각성.")
+            if self.run_stage == RUN_STAGE_COUNT and self.current_objective is not None and self.current_objective.is_finale:
+                self._trigger_finale_banner("결전 개시", f"{boss_unit.name} · {self.current_objective.description.replace('목표: ', '')}", (236, 126, 90))
         for elite_unit in [unit for unit in controller.units if unit.team == "red" and unit.is_elite and not unit.is_boss]:
             trait = ELITE_TRAITS_BY_ID.get(elite_unit.elite_trait_id or "")
             if trait is not None:
@@ -1199,6 +1324,9 @@ class GameApp:
         self.last_node_summary = None
         self.objective_bonus_applied = False
         self.objective_failure_penalty_applied = False
+        self.finale_banner_title = None
+        self.finale_banner_subtitle = None
+        self.finale_banner_timer = 0.0
         controller = self._build_controller_from_current_setup()
         self._attach_controller(controller)
         self.screen_mode = "battle"
@@ -1234,6 +1362,9 @@ class GameApp:
         self.last_objective_summary = None
         self.objective_bonus_applied = False
         self.objective_failure_penalty_applied = False
+        self.finale_banner_title = None
+        self.finale_banner_subtitle = None
+        self.finale_banner_timer = 0.0
         self.controller.reset()
         self._attach_controller(self.controller)
         self.status_text = "전술 전투를 다시 시작했습니다."
@@ -1561,6 +1692,9 @@ class GameApp:
             self._apply_action_result(result)
 
     def _update(self, dt: float) -> None:
+        if self.finale_banner_timer > 0:
+            self.finale_banner_timer = max(0.0, self.finale_banner_timer - dt)
+
         if self.screen_mode != "battle" or self.controller is None:
             return
 
@@ -1661,6 +1795,8 @@ class GameApp:
                 self.status_text = f"{self.status_text} {' '.join(result.notes)}"
 
         self._update_battle_objective_from_result(result)
+        if any("결전 각성 발동." in note for note in result.notes):
+            self._resolve_finale_phase_state()
 
         if self.controller and self.controller.state.winner == "blue":
             self.audio.play("victory")
@@ -1679,6 +1815,8 @@ class GameApp:
                 self._prepare_reward_phase()
             else:
                 self.status_text = "최종 결전을 승리했습니다."
+                if objective_summary:
+                    self.status_text = f"{self.status_text} {objective_summary}"
                 if node_summary:
                     self.status_text = f"{self.status_text} {node_summary}"
         elif self.controller and self.controller.state.winner == "red":
@@ -1704,6 +1842,7 @@ class GameApp:
             self._draw_deploy_screen()
         else:
             self._draw_battle_screen()
+        self._draw_finale_banner()
 
     def _draw_header(self, title: str, subtitle: str, center_text: str, action_label: str) -> None:
         panel = pygame.Surface(HEADER_RECT.size, pygame.SRCALPHA)
@@ -1939,6 +2078,7 @@ class GameApp:
         self._draw_text(f"다음 스테이지: {self._current_stage_label()}", self.font_heading, (244, 239, 225), (stage_rect.x + 18, stage_rect.y + 48))
         selected_route = self.selected_route_id or self.current_route_id
         selected_node = self.route_node_by_route_id.get(selected_route) if self.selected_route_id else self.current_route_node
+        preview_objective = self._preview_battle_objective(route_id=selected_route, enemy_ids=self.selected_red_ids)
         route_hint = "현재 경로 없음" if selected_route is None else f"선택 경로: {self.route_options[selected_route].name}"
         self._draw_text(route_hint, self.font_small, (171, 193, 208), (stage_rect.x + 18, stage_rect.y + 84))
         if selected_route is not None:
@@ -1947,7 +2087,12 @@ class GameApp:
             if selected_node is not None:
                 self._draw_text(f"노드: {selected_node.name} · {selected_node.category}", self.font_small, (170, 222, 210), (stage_rect.x + 18, stage_rect.y + 156))
                 self._draw_wrapped_text(selected_node.effect_label, self.font_tiny, (209, 220, 227), pygame.Rect(stage_rect.x + 18, stage_rect.y + 178, stage_rect.width - 36, 18), max_lines=1)
-            self._draw_text(f"맵 목표: {self.route_options[selected_route].description.replace('목표: ', '')}", self.font_small, (174, 208, 235), (stage_rect.x + 18, stage_rect.y + 202))
+            objective_preview_text = (
+                preview_objective.description.replace("목표: ", "")
+                if preview_objective is not None
+                else self.route_options[selected_route].description.replace("목표: ", "")
+            )
+            self._draw_text(f"맵 목표: {objective_preview_text}", self.font_small, (174, 208, 235), (stage_rect.x + 18, stage_rect.y + 202))
             selected_event = self.route_event_by_route_id.get(selected_route) if self.selected_route_id else self.current_route_event
             if selected_event is not None:
                 self._draw_text(f"경로 이벤트: {selected_event.name}", self.font_small, (170, 222, 210), (stage_rect.x + 18, stage_rect.y + 226))
@@ -2110,6 +2255,7 @@ class GameApp:
         self._draw_text("현재 선택", self.font_small, (223, 206, 164), (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 18))
         champion_name = BLUEPRINTS_BY_ID[self.selected_deploy_champion_id].name if self.selected_deploy_champion_id else "없음"
         self._draw_text(champion_name, self.font_heading, (244, 239, 225), (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 38))
+        deploy_preview_objective = self._preview_battle_objective()
         if self.current_route_node is not None:
             self._draw_text(f"노드 · {self.current_route_node.effect_label}", self.font_tiny, (170, 222, 210), (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 46))
         elif self.current_route_event is not None:
@@ -2120,9 +2266,13 @@ class GameApp:
             f"적용 페널티 · {self.active_stage_penalty.description}"
             if self.active_stage_penalty is not None
             else (
+                f"결전 목표 · {deploy_preview_objective.description.replace('목표: ', '')}"
+                if deploy_preview_objective is not None and deploy_preview_objective.is_finale
+                else (
                 f"이벤트 · {self._route_event_effect_label(self.current_route_event, self.current_route_node)}"
                 if self.current_route_event is not None and self.current_route_node is not None
                 else "수풀=보호막 · 룬=피해 +3 · 화염=이동 피해"
+                )
             )
         )
         penalty_color = (235, 156, 140) if self.active_stage_penalty is not None else (174, 208, 235)
@@ -2178,8 +2328,9 @@ class GameApp:
                 rect = self.tile_rects.get(objective_tile)
                 if rect is None:
                     continue
-                pygame.draw.rect(self.screen, (241, 214, 126), rect.inflate(-18, -18), 2, border_radius=18)
-                pygame.draw.rect(self.screen, (241, 214, 126), rect.inflate(-34, -34), 1, border_radius=12)
+                objective_color = (236, 126, 90) if self.current_objective.is_finale else (241, 214, 126)
+                pygame.draw.rect(self.screen, objective_color, rect.inflate(-18, -18), 2, border_radius=18)
+                pygame.draw.rect(self.screen, objective_color, rect.inflate(-34, -34), 1, border_radius=12)
 
         for target_id in basic_targets | special_targets:
             unit = self.controller.get_unit(target_id)
@@ -2385,13 +2536,22 @@ class GameApp:
             return
         self._draw_text("전장 현황", self.font_heading, (244, 239, 225), (RIGHT_PANEL.x + 18, RIGHT_PANEL.y + 18))
         self._draw_text(f"라운드 {self.controller.state.round}", self.font_small, (189, 200, 208), (RIGHT_PANEL.right - 24, RIGHT_PANEL.y + 22), align_right=True)
-
         blue_header_y = RIGHT_PANEL.y + 62
+        if self.run_stage == RUN_STAGE_COUNT:
+            boss_unit = self._current_boss_unit()
+            phase_label = "결전 각성 완료" if boss_unit is not None and boss_unit.boss_phase_triggered else "결전 각성 전"
+            boss_name = boss_unit.name if boss_unit is not None else "보스 대기"
+            self._draw_text(f"결전 상태 · {boss_name}", self.font_small, (236, 126, 90), (RIGHT_PANEL.x + 18, RIGHT_PANEL.y + 58))
+            self._draw_text(phase_label, self.font_tiny, (255, 213, 150), (RIGHT_PANEL.x + 18, RIGHT_PANEL.y + 82))
+            if self.current_objective is not None and self.current_objective.is_finale:
+                objective_status = "성공" if self.current_objective.completed else "실패" if self.current_objective.failed else f"{self.current_objective.progress}/{self.current_objective.target}"
+                self._draw_text(f"결전 목표 · {self.current_objective.name} · {objective_status}", self.font_tiny, (170, 222, 210), (RIGHT_PANEL.x + 18, RIGHT_PANEL.y + 100))
+            blue_header_y = RIGHT_PANEL.y + 126
         self._draw_text("블루 팀", self.font_ui, (108, 192, 235), (RIGHT_PANEL.x + 18, blue_header_y))
         for index, unit in enumerate([unit for unit in self.controller.units if unit.team == "blue"]):
             self._draw_roster_row(unit, RIGHT_PANEL.x + 18, blue_header_y + 34 + index * 64)
 
-        red_header_y = RIGHT_PANEL.y + 286
+        red_header_y = blue_header_y + 224
         self._draw_text("레드 팀", self.font_ui, (237, 129, 111), (RIGHT_PANEL.x + 18, red_header_y))
         for index, unit in enumerate([unit for unit in self.controller.units if unit.team == "red"]):
             self._draw_roster_row(unit, RIGHT_PANEL.x + 18, red_header_y + 34 + index * 64)
@@ -2552,6 +2712,8 @@ class GameApp:
 
     def _encounter_badge_for_unit(self, unit) -> tuple[str | None, tuple[int, int, int]]:
         if unit.is_boss:
+            if unit.boss_phase_triggered:
+                return "A", (255, 180, 92)
             return "B", (236, 126, 90)
         if unit.is_elite:
             trait = ELITE_TRAITS_BY_ID.get(unit.elite_trait_id or "")
@@ -2611,6 +2773,25 @@ class GameApp:
             rendered.set_alpha(alpha)
             self.screen.blit(rendered, rendered.get_rect(center=(int(floater.x), int(floater.y))))
 
+    def _draw_finale_banner(self) -> None:
+        if self.finale_banner_timer <= 0 or self.finale_banner_title is None or self.finale_banner_subtitle is None:
+            return
+        alpha = int(210 * clamp(self.finale_banner_timer / 1.75, 0.0, 1.0))
+        banner_rect = pygame.Rect(WINDOW_WIDTH // 2 - 280, HEADER_RECT.bottom + 18, 560, 82)
+        banner = pygame.Surface(banner_rect.size, pygame.SRCALPHA)
+        draw_vertical_gradient(
+            banner,
+            banner.get_rect(),
+            mix((12, 21, 31), self.finale_banner_color, 0.24),
+            mix((9, 18, 29), self.finale_banner_color, 0.1),
+        )
+        pygame.draw.rect(banner, (*self.finale_banner_color, 44), banner.get_rect(), border_radius=24)
+        pygame.draw.rect(banner, (255, 244, 217), banner.get_rect(), 1, border_radius=24)
+        banner.set_alpha(alpha)
+        self.screen.blit(banner, banner_rect.topleft)
+        self._draw_text(self.finale_banner_title, self.font_heading, (255, 244, 217), (banner_rect.centerx, banner_rect.y + 16), center=True)
+        self._draw_text(self.finale_banner_subtitle, self.font_small, (223, 231, 238), (banner_rect.centerx, banner_rect.y + 48), center=True)
+
     def _draw_winner_overlay(self) -> None:
         if self.controller is None or not self.controller.state.winner:
             return
@@ -2627,9 +2808,12 @@ class GameApp:
             rematch_label = "같은 전투 재도전"
         self._draw_text(title, self.font_title, (255, 244, 217), (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 62), center=True)
         self._draw_text(subtitle, self.font_ui, (208, 219, 226), (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 4), center=True)
+        if self.run_stage == RUN_STAGE_COUNT and self.last_objective_summary:
+            self._draw_text(self.last_objective_summary, self.font_small, (255, 213, 150), (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 22), center=True)
 
-        rematch_rect = pygame.Rect(WINDOW_WIDTH // 2 - 238, WINDOW_HEIGHT // 2 + 44, 220, 56)
-        select_rect = pygame.Rect(WINDOW_WIDTH // 2 + 18, WINDOW_HEIGHT // 2 + 44, 220, 56)
+        button_y = WINDOW_HEIGHT // 2 + 58 if self.run_stage == RUN_STAGE_COUNT and self.last_objective_summary else WINDOW_HEIGHT // 2 + 44
+        rematch_rect = pygame.Rect(WINDOW_WIDTH // 2 - 238, button_y, 220, 56)
+        select_rect = pygame.Rect(WINDOW_WIDTH // 2 + 18, button_y, 220, 56)
         self.button_rects["winner-rematch"] = rematch_rect
         self.button_rects["winner-select"] = select_rect
 
@@ -2642,7 +2826,7 @@ class GameApp:
         self._draw_text("캐릭터 다시 선택", self.font_ui, (13, 21, 31), select_rect.center, center=True)
 
         shortcut_line = "Enter 또는 ESC로 선택 화면 복귀 · R로 즉시 새 런" if self.controller.state.winner == "blue" and self.run_stage == RUN_STAGE_COUNT else "Enter 또는 ESC로 선택 화면 복귀 · R로 즉시 재대결"
-        self._draw_text(shortcut_line, self.font_small, (208, 219, 226), (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 116), center=True)
+        self._draw_text(shortcut_line, self.font_small, (208, 219, 226), (WINDOW_WIDTH // 2, button_y + 72), center=True)
 
     def _tile_center(self, tile: tuple[int, int]) -> tuple[int, int]:
         return (
