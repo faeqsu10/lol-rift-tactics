@@ -20,6 +20,7 @@ from .data import DEFAULT_BLUE_DEPLOY_TILES
 from .data import DEFAULT_RED_DEPLOY_TILES
 from .data import GRID_HEIGHT
 from .data import GRID_WIDTH
+from .data import GridPos
 from .data import STAGE_TERRAIN_TILES
 from .data import TACTICAL_BLUEPRINTS_BY_ID
 from .data import TERRAIN_BY_ID
@@ -60,12 +61,12 @@ STAGE_RED_POOLS = {
     3: ("red-darius", "red-yasuo", "red-zed", "red-brand", "red-katarina", "red-lissandra"),
 }
 ROUTE_OPTIONS = (
-    ("supply-line", "보급로", "안정적으로 다음 전투를 버티는 방어 경로"),
-    ("assault-line", "돌격로", "빠른 킬각을 노리는 공격 경로"),
-    ("hidden-trail", "은폐로", "수풀 지형을 늘려 포지셔닝을 꼬는 경로"),
-    ("rune-path", "룬 회랑", "폭딜 턴을 노리는 증폭 경로"),
-    ("rapid-flank", "측면 질주로", "선턴 압박을 크게 키우는 고속 경로"),
-    ("scorched-march", "초토화 행군", "위험 지형을 감수하고 화력을 높이는 경로"),
+    ("supply-line", "보급로", "목표: 중앙 보급 칸 진입 1회"),
+    ("assault-line", "돌격로", "목표: 2라운드 이내 적 1명 처치"),
+    ("hidden-trail", "은폐로", "목표: 수풀 칸 진입 2회"),
+    ("rune-path", "룬 회랑", "목표: 룬 지대 진입 2회"),
+    ("rapid-flank", "측면 질주로", "목표: 적 후방 표식 칸 진입 1회"),
+    ("scorched-march", "초토화 행군", "목표: 화염 지대 진입 1회"),
 )
 ROUTE_STYLE_BY_ID = {
     "supply-line": "안정 운영형",
@@ -98,6 +99,24 @@ ROUTE_BONUSES = {
     "rune-path": {},
     "rapid-flank": {"blue_speed": 5, "enemy_speed": 2},
     "scorched-march": {"blue_damage": 4, "enemy_damage": 1},
+}
+ROUTE_OBJECTIVES = {
+    "supply-line": {"kind": "occupy_tile", "name": "보급 확보", "reward_id": "bonus-shield"},
+    "assault-line": {"kind": "kill_before_round", "name": "선제 제압", "reward_id": "bonus-damage", "round_limit": 2},
+    "hidden-trail": {"kind": "move_on_terrain", "name": "은폐 정찰", "reward_id": "bonus-move", "terrain_id": "brush", "target": 2},
+    "rune-path": {"kind": "move_on_terrain", "name": "룬 장악", "reward_id": "bonus-damage", "terrain_id": "rune", "target": 2},
+    "rapid-flank": {"kind": "occupy_tile", "name": "측면 돌파", "reward_id": "bonus-speed"},
+    "scorched-march": {"kind": "move_on_terrain", "name": "화염 관통", "reward_id": "bonus-hp", "terrain_id": "hazard"},
+}
+ROUTE_OBJECTIVE_TILES = {
+    "supply-line": {
+        2: ((3, 2),),
+        3: ((3, 1),),
+    },
+    "rapid-flank": {
+        2: ((6, 2),),
+        3: ((6, 3),),
+    },
 }
 ROUTE_EXTRA_TERRAIN = {
     "hidden-trail": {
@@ -148,6 +167,24 @@ class BattleRecap:
     blue_kills: int
     red_kills: int
     highlight: str
+    objective_summary: str | None = None
+
+
+@dataclass
+class BattleObjective:
+    route_id: str
+    name: str
+    description: str
+    kind: str
+    target: int
+    reward_id: str
+    reward_label: str
+    objective_tiles: tuple[GridPos, ...] = ()
+    terrain_id: str | None = None
+    round_limit: int | None = None
+    progress: int = 0
+    completed: bool = False
+    failed: bool = False
 
 
 def clamp(value: float, low: float, high: float) -> float:
@@ -231,6 +268,9 @@ class GameApp:
         self.current_route_id: str | None = None
         self.pending_red_ids: list[str] = []
         self.last_battle_recap: BattleRecap | None = None
+        self.current_objective: BattleObjective | None = None
+        self.last_objective_summary: str | None = None
+        self.objective_bonus_applied = False
         self.battle_stats = {
             "blue_damage": 0,
             "red_damage": 0,
@@ -334,6 +374,9 @@ class GameApp:
         self.current_route_id = None
         self.pending_red_ids = []
         self.last_battle_recap = None
+        self.current_objective = None
+        self.last_objective_summary = None
+        self.objective_bonus_applied = False
         self.selected_red_ids = self._random_enemy_lineup(self.run_stage)
 
     def _reset_battle_stats(self) -> None:
@@ -360,12 +403,15 @@ class GameApp:
         self.selected_reward_id = None
         self.pending_red_ids = self._random_enemy_lineup(self.run_stage + 1)
         self.current_route_id = None
+        self.current_objective = None
         self.screen_mode = "reward"
-        self.selection_message = "보상 하나를 고른 뒤 다음 전투로 넘어가세요."
+        objective_line = self.last_objective_summary
+        self.selection_message = "보상 하나를 고른 뒤 다음 전투로 넘어가세요." if objective_line is None else f"{objective_line} · 보상 하나를 고르세요."
 
     def _prepare_route_phase(self) -> None:
         self.route_option_ids = random.sample(list(self.route_options), 3)
         self.selected_route_id = None
+        self.current_objective = None
         self.screen_mode = "route"
         self.selection_message = "전투 요약을 확인하고 다음 경로 하나를 선택하세요."
 
@@ -437,7 +483,98 @@ class GameApp:
             blue_kills=self.battle_stats["blue_kills"],
             red_kills=self.battle_stats["red_kills"],
             highlight=highlight,
+            objective_summary=self.last_objective_summary or self._summarize_current_objective(),
         )
+
+    def _build_battle_objective(self) -> BattleObjective | None:
+        if self.current_route_id is None:
+            return None
+        definition = ROUTE_OBJECTIVES.get(self.current_route_id)
+        if definition is None:
+            return None
+        reward_id = definition["reward_id"]
+        objective_tiles = tuple(ROUTE_OBJECTIVE_TILES.get(self.current_route_id, {}).get(self.run_stage, ()))
+        return BattleObjective(
+            route_id=self.current_route_id,
+            name=definition["name"],
+            description=self.route_options[self.current_route_id].description,
+            kind=definition["kind"],
+            target=definition.get("target", 1),
+            reward_id=reward_id,
+            reward_label=f"{self.run_rewards[reward_id].name} +1",
+            objective_tiles=objective_tiles,
+            terrain_id=definition.get("terrain_id"),
+            round_limit=definition.get("round_limit"),
+        )
+
+    def _summarize_current_objective(self) -> str | None:
+        if self.current_objective is None:
+            return None
+        objective = self.current_objective
+        if objective.completed:
+            return f"{objective.name} 달성 · {objective.reward_label}"
+        if objective.failed:
+            return f"{objective.name} 실패"
+        return f"{objective.name} 미달성 {objective.progress}/{objective.target}"
+
+    def _complete_objective(self) -> None:
+        if self.current_objective is None or self.current_objective.completed:
+            return
+        self.current_objective.completed = True
+        self.last_objective_summary = self._summarize_current_objective()
+        self.status_text = f"{self.current_objective.name} 달성. {self.current_objective.reward_label} 확보 예정."
+        self.audio.play("shield")
+
+    def _refresh_objective_failure(self) -> None:
+        if self.current_objective is None or self.current_objective.completed or self.current_objective.failed:
+            return
+        if self.current_objective.round_limit is not None and self.controller is not None and self.controller.state.round > self.current_objective.round_limit:
+            self.current_objective.failed = True
+            self.last_objective_summary = self._summarize_current_objective()
+
+    def _update_battle_objective_from_result(self, result: TacticalActionResult) -> None:
+        if self.controller is None or self.current_objective is None:
+            return
+
+        objective = self.current_objective
+        actor = self.controller.get_unit(result.actor_id)
+        if actor is None:
+            return
+
+        if objective.kind == "kill_before_round" and actor.team == "blue" and result.kind in {"basic", "special"}:
+            if objective.round_limit is None or self.controller.state.round <= objective.round_limit:
+                defeated_count = sum(1 for impact in result.impacts if impact.defeated)
+                if defeated_count:
+                    objective.progress = min(objective.target, objective.progress + defeated_count)
+                    if objective.progress >= objective.target:
+                        self._complete_objective()
+
+        if actor.team != "blue":
+            self._refresh_objective_failure()
+            return
+
+        if result.kind == "move":
+            destination = result.end
+            if objective.kind == "occupy_tile" and destination in objective.objective_tiles:
+                objective.progress = min(objective.target, objective.progress + 1)
+            elif objective.kind == "move_on_terrain" and destination is not None and self.controller.terrain_tiles.get(destination) == objective.terrain_id:
+                objective.progress = min(objective.target, objective.progress + 1)
+
+        if objective.progress >= objective.target and not objective.completed:
+            self._complete_objective()
+        self._refresh_objective_failure()
+
+    def _apply_completed_objective_bonus(self) -> str | None:
+        if self.current_objective is None:
+            self.last_objective_summary = None
+            return None
+        self.last_objective_summary = self._summarize_current_objective()
+        if not self.current_objective.completed or self.objective_bonus_applied:
+            return self.last_objective_summary
+        self.run_bonuses[self.current_objective.reward_id] += 1
+        self.objective_bonus_applied = True
+        self.last_objective_summary = self._summarize_current_objective()
+        return self.last_objective_summary
 
     def _seed_deployment(self) -> None:
         self.deploy_assignments = {
@@ -547,6 +684,9 @@ class GameApp:
             return
         controller = self._build_controller_from_current_setup()
         self._attach_controller(controller)
+        self.current_objective = self._build_battle_objective()
+        self.last_objective_summary = None
+        self.objective_bonus_applied = False
         self.screen_mode = "battle"
         self.status_text = "이동할 칸을 고르거나 스킬을 선택하세요."
         self.audio.play("ui-confirm")
@@ -578,6 +718,9 @@ class GameApp:
             return
         self.controller.reset()
         self._attach_controller(self.controller)
+        self.current_objective = self._build_battle_objective()
+        self.last_objective_summary = None
+        self.objective_bonus_applied = False
         self.status_text = "전술 전투를 다시 시작했습니다."
         self.audio.play("reset")
 
@@ -1002,16 +1145,22 @@ class GameApp:
             if result.notes:
                 self.status_text = f"{self.status_text} {' '.join(result.notes)}"
 
+        self._update_battle_objective_from_result(result)
+
         if self.controller and self.controller.state.winner == "blue":
             self.audio.play("victory")
+            objective_summary = self._apply_completed_objective_bonus()
             self.last_battle_recap = self._build_battle_recap("승리")
             if self.run_stage < RUN_STAGE_COUNT:
                 self.status_text = f"{self._current_stage_label()} 승리. 전투 보상을 선택하세요."
+                if objective_summary:
+                    self.status_text = f"{self.status_text} {objective_summary}"
                 self._prepare_reward_phase()
             else:
                 self.status_text = "최종 결전을 승리했습니다."
         elif self.controller and self.controller.state.winner == "red":
             self.audio.play("defeat")
+            self.last_objective_summary = self._summarize_current_objective()
             self.last_battle_recap = self._build_battle_recap("패배")
             self.status_text = f"{self._current_stage_label()}에서 패배했습니다."
 
@@ -1229,7 +1378,12 @@ class GameApp:
         if recap is not None:
             self._draw_text(f"{recap.stage_label} · {recap.result_label}", self.font_heading, (244, 239, 225), (overview_rect.x + 18, overview_rect.y + 16))
             self._draw_text(f"전투 라운드 {recap.rounds}", self.font_ui, (223, 206, 164), (overview_rect.x + 18, overview_rect.y + 54))
-            self._draw_wrapped_text(recap.highlight, self.font_small, (208, 219, 226), pygame.Rect(overview_rect.x + 18, overview_rect.y + 82, overview_rect.width - 36, 24), max_lines=1)
+            highlight_rect = pygame.Rect(overview_rect.x + 18, overview_rect.y + 82, overview_rect.width - 36, 24)
+            if recap.objective_summary:
+                highlight_rect.height = 18
+            self._draw_wrapped_text(recap.highlight, self.font_small, (208, 219, 226), highlight_rect, max_lines=1)
+            if recap.objective_summary:
+                self._draw_wrapped_text(recap.objective_summary, self.font_tiny, (255, 213, 150), pygame.Rect(overview_rect.x + 18, overview_rect.y + 102, overview_rect.width - 36, 18), max_lines=1)
         else:
             self._draw_text("직전 전투 기록 없음", self.font_heading, (244, 239, 225), (overview_rect.x + 18, overview_rect.y + 28))
             self._draw_text("전투 종료 후 핵심 수치와 마지막 로그를 여기서 보여 줍니다.", self.font_small, (208, 219, 226), (overview_rect.x + 18, overview_rect.y + 72))
@@ -1261,6 +1415,7 @@ class GameApp:
         if selected_route is not None:
             self._draw_text(f"보상: {ROUTE_REWARD_BY_ID[selected_route]}", self.font_small, (228, 214, 167), (stage_rect.x + 18, stage_rect.y + 108))
             self._draw_text(f"위험: {ROUTE_RISK_BY_ID[selected_route]}", self.font_small, (233, 156, 140), (stage_rect.x + 18, stage_rect.y + 132))
+            self._draw_text(f"맵 목표: {self.route_options[selected_route].description.replace('목표: ', '')}", self.font_small, (174, 208, 235), (stage_rect.x + 18, stage_rect.y + 156))
         terrain_lines = []
         terrain_counts: dict[str, int] = {}
         preview_route_id = self.selected_route_id or self.current_route_id
@@ -1268,8 +1423,8 @@ class GameApp:
             terrain_counts[terrain_id] = terrain_counts.get(terrain_id, 0) + 1
         for terrain_id, count in terrain_counts.items():
             terrain_lines.append(f"{TERRAIN_BY_ID[terrain_id].name} {count}칸")
-        terrain_y = 164 if selected_route is not None else 126
-        enemy_y = 290 if selected_route is not None else 252
+        terrain_y = 192 if selected_route is not None else 126
+        enemy_y = 318 if selected_route is not None else 252
         self._draw_text("지형 구성", self.font_ui, (223, 206, 164), (stage_rect.x + 18, terrain_y))
         for index, line in enumerate(terrain_lines or ["특수 지형 없음"]):
             self._draw_text(line, self.font_small, hex_to_rgb(TERRAIN_BY_ID[list(terrain_counts)[index]].color) if terrain_counts and index < len(terrain_counts) else (209, 220, 227), (stage_rect.x + 18, stage_rect.y + terrain_y + 34 + index * 26))
@@ -1437,6 +1592,14 @@ class GameApp:
                     overlay = pygame.Surface(rect.size, pygame.SRCALPHA)
                     overlay.fill((89, 170, 219, 58))
                     self.screen.blit(overlay, rect.topleft)
+
+        if self.current_objective is not None:
+            for objective_tile in self.current_objective.objective_tiles:
+                rect = self.tile_rects.get(objective_tile)
+                if rect is None:
+                    continue
+                pygame.draw.rect(self.screen, (241, 214, 126), rect.inflate(-18, -18), 2, border_radius=18)
+                pygame.draw.rect(self.screen, (241, 214, 126), rect.inflate(-34, -34), 1, border_radius=12)
 
         for target_id in basic_targets | special_targets:
             unit = self.controller.get_unit(target_id)
@@ -1667,16 +1830,27 @@ class GameApp:
             self._draw_text(label, self.font_ui, text, rect.center, center=True)
 
         info_x = BOTTOM_PANEL.right - 340
+        objective = self.current_objective
         self._draw_text("현재 턴", self.font_small, (223, 206, 164), (info_x, BOTTOM_PANEL.y + 18))
         self._draw_text(active.name, self.font_heading, (244, 239, 225), (info_x, BOTTOM_PANEL.y + 38))
         if active.team == "blue":
             move_state = "완료" if active.has_moved else "가능"
             action_state = "완료" if active.has_acted else "가능"
             self._draw_text(f"이동 {move_state} · 행동 {action_state}", self.font_small, (184, 205, 221), (info_x, BOTTOM_PANEL.y + 48))
-            self._draw_text("수풀=보호막 · 룬=피해 +3 · 화염=이동 피해", self.font_small, (174, 208, 235), (info_x, BOTTOM_PANEL.y + 70))
+            if objective is not None:
+                objective_status = "달성" if objective.completed else "실패" if objective.failed else f"{objective.progress}/{objective.target}"
+                objective_color = (138, 234, 171) if objective.completed else (235, 156, 140) if objective.failed else (255, 213, 150)
+                self._draw_text(f"전술 목표 · {objective.description.replace('목표: ', '')} · {objective_status} · {objective.reward_label}", self.font_tiny, objective_color, (info_x, BOTTOM_PANEL.y + 68))
+            else:
+                self._draw_text("수풀=보호막 · 룬=피해 +3 · 화염=이동 피해", self.font_small, (174, 208, 235), (info_x, BOTTOM_PANEL.y + 70))
         else:
             self._draw_text("적 AI가 경로와 타겟을 계산 중", self.font_small, (214, 191, 184), (info_x, BOTTOM_PANEL.y + 48))
-            self._draw_text("위협 칸과 예상 피해를 보고 대응하세요", self.font_small, (255, 213, 150), (info_x, BOTTOM_PANEL.y + 70))
+            if objective is not None:
+                objective_status = "달성" if objective.completed else "실패" if objective.failed else f"{objective.progress}/{objective.target}"
+                objective_color = (138, 234, 171) if objective.completed else (235, 156, 140) if objective.failed else (255, 213, 150)
+                self._draw_text(f"전술 목표 · {objective.description.replace('목표: ', '')} · {objective_status} · {objective.reward_label}", self.font_tiny, objective_color, (info_x, BOTTOM_PANEL.y + 68))
+            else:
+                self._draw_text("위협 칸과 예상 피해를 보고 대응하세요", self.font_small, (255, 213, 150), (info_x, BOTTOM_PANEL.y + 70))
 
     def _draw_champion_card(
         self,

@@ -60,6 +60,8 @@
   - stage-based terrain tiles: brush, rune, hazard
   - elite enemies in later expedition stages
   - route selection between battles with three risk/reward options and temporary next-battle modifiers
+  - route-specific map objectives during battles with progress HUD and marked objective tiles
+  - completed objectives grant an automatic run bonus before the normal reward pick
   - battle recap summary before choosing the next route
   - terrain-aware red-team AI movement and targeting
   - post-victory reward pick with next-enemy preview
@@ -100,8 +102,8 @@
 
 1. Add stronger champion-specific passive differentiation and more unique tactical triggers to `native_tactics`.
 2. Expand enemy intent UI from next-enemy warning to fuller multi-target or sequence preview.
-3. Add route-specific events, encounter variants, and map objectives on top of the current reward loop.
-4. Improve AI further around elite focus fire, terrain denial, and route-aware pathing.
+3. Add route-specific events 2nd pass with stronger objective variety, failure penalties, and encounter variants.
+4. Improve AI further around elite focus fire, terrain denial, route-aware pathing, and objective contesting.
 5. Replace shape-based placeholder characters with real sprite art or sprite sheets.
 
 ## Resume Prompt

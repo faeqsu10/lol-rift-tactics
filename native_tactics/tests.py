@@ -283,6 +283,51 @@ class GameAppFlowTests(unittest.TestCase):
 
         self.assertGreater(preview_hazard_count, base_hazard_count)
 
+    def test_supply_line_objective_completes_on_marked_tile(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_blue_ids = ["blue-garen"]
+        app.selected_red_ids = ["red-darius"]
+        app.run_stage = 2
+        app.current_route_id = "supply-line"
+        app.deploy_assignments = {(2, 2): "blue-garen"}
+        app.red_deploy_assignments = {(7, 2): "red-darius"}
+
+        controller = app._build_controller_from_current_setup()
+        controller.blocked_tiles.clear()
+        app._attach_controller(controller)
+        app.current_objective = app._build_battle_objective()
+        app.controller.state.active_unit_id = "blue-garen"
+        app.controller.state.turn_queue = ["blue-garen"]
+
+        result = app.controller.move_active((3, 2))
+        app._apply_action_result(result)
+
+        self.assertTrue(app.current_objective.completed)
+        self.assertEqual(app.current_objective.progress, 1)
+
+    def test_assault_objective_grants_bonus_reward_on_victory(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_blue_ids = ["blue-garen"]
+        app.selected_red_ids = ["red-darius"]
+        app.run_stage = 2
+        app.current_route_id = "assault-line"
+        app.deploy_assignments = {(0, 1): "blue-garen"}
+        app.red_deploy_assignments = {(1, 1): "red-darius"}
+
+        controller = app._build_controller_from_current_setup()
+        app._attach_controller(controller)
+        app.current_objective = app._build_battle_objective()
+        app.controller.state.active_unit_id = "blue-garen"
+        app.controller.state.turn_queue = ["blue-garen"]
+        app.controller.get_unit("red-darius").hp = 1
+
+        result = app.controller.use_basic("red-darius")
+        app._apply_action_result(result)
+
+        self.assertEqual(app.screen_mode, "reward")
+        self.assertEqual(app.run_bonuses["bonus-damage"], 1)
+        self.assertIn("선제 제압", app.last_objective_summary)
+
 
 if __name__ == "__main__":
     unittest.main()
