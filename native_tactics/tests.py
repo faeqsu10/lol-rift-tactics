@@ -496,6 +496,73 @@ class GameAppFlowTests(unittest.TestCase):
 
         controller = app._build_controller_from_current_setup()
         app._attach_controller(controller)
+        app.screen_mode = "battle"
+        app.controller.state.active_unit_id = "blue-garen"
+        app.controller.state.turn_queue = ["blue-garen"]
+        app.controller.get_unit("red-darius").hp = 1
+
+        result = app.controller.use_basic("red-darius")
+        app._apply_action_result(result)
+        app._update(0.8)
+
+        self.assertEqual(app.screen_mode, "reward")
+        self.assertIsNone(app.run_summary)
+        self.assertEqual(len(app.run_history), 1)
+        self.assertEqual(app.run_history[0].result_label, "승리")
+
+    def test_action_result_sets_attack_hit_and_death_animation_states(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_blue_ids = ["blue-garen"]
+        app.selected_red_ids = ["red-darius", "red-annie"]
+        app.run_stage = 1
+        app.deploy_assignments = {(0, 1): "blue-garen"}
+        app.red_deploy_assignments = {(1, 1): "red-darius", (7, 4): "red-annie"}
+        app.current_objective = BattleObjective(
+            route_id="assault-line",
+            name="선제 제압",
+            description="목표: 2라운드 이내 적 1명 처치",
+            kind="kill_before_round",
+            target=1,
+            reward_id="bonus-damage",
+            reward_label="날 선 무기 +1",
+        )
+
+        controller = app._build_controller_from_current_setup()
+        app._attach_controller(controller)
+        app.screen_mode = "battle"
+        app.controller.state.active_unit_id = "blue-garen"
+        app.controller.state.turn_queue = ["blue-garen", "red-annie"]
+        app.controller.get_unit("red-darius").hp = 1
+
+        result = app.controller.use_basic("red-darius")
+        app._apply_action_result(result)
+
+        actor_state = app.unit_animation_states["blue-garen"]
+        target_state = app.unit_animation_states["red-darius"]
+        dead_unit = app.controller.get_unit("red-darius")
+
+        self.assertGreater(actor_state.attack_timer, 0)
+        self.assertGreater(target_state.hit_timer, 0)
+        self.assertGreater(target_state.death_timer, 0)
+        self.assertIsNotNone(dead_unit)
+        self.assertTrue(app._should_draw_battle_unit(dead_unit))
+
+        app._tick_unit_animation_states(0.8)
+
+        self.assertFalse(app._should_draw_battle_unit(dead_unit))
+
+    def test_final_blow_sets_victory_animation_state_for_winner(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_blue_ids = ["blue-garen"]
+        app.selected_red_ids = ["red-darius"]
+        app.run_stage = RUN_STAGE_COUNT
+        app.deploy_assignments = {(0, 1): "blue-garen"}
+        app.red_deploy_assignments = {(1, 1): "red-darius"}
+        app.current_objective = app._build_battle_objective()
+
+        controller = app._build_controller_from_current_setup()
+        app._attach_controller(controller)
+        app.screen_mode = "battle"
         app.controller.state.active_unit_id = "blue-garen"
         app.controller.state.turn_queue = ["blue-garen"]
         app.controller.get_unit("red-darius").hp = 1
@@ -503,10 +570,7 @@ class GameAppFlowTests(unittest.TestCase):
         result = app.controller.use_basic("red-darius")
         app._apply_action_result(result)
 
-        self.assertEqual(app.screen_mode, "reward")
-        self.assertIsNone(app.run_summary)
-        self.assertEqual(len(app.run_history), 1)
-        self.assertEqual(app.run_history[0].result_label, "승리")
+        self.assertGreater(app.unit_animation_states["blue-garen"].victory_timer, 0)
 
     def test_final_victory_enters_run_summary_screen(self) -> None:
         app = GameApp(headless=True)
@@ -519,12 +583,14 @@ class GameAppFlowTests(unittest.TestCase):
 
         controller = app._build_controller_from_current_setup()
         app._attach_controller(controller)
+        app.screen_mode = "battle"
         app.controller.state.active_unit_id = "blue-garen"
         app.controller.state.turn_queue = ["blue-garen"]
         app.controller.get_unit("red-darius").hp = 1
 
         result = app.controller.use_basic("red-darius")
         app._apply_action_result(result)
+        app._update(0.8)
 
         self.assertEqual(app.screen_mode, "summary")
         self.assertIsNotNone(app.run_summary)
@@ -551,12 +617,14 @@ class GameAppFlowTests(unittest.TestCase):
 
         controller = app._build_controller_from_current_setup()
         app._attach_controller(controller)
+        app.screen_mode = "battle"
         app.controller.state.active_unit_id = "red-darius"
         app.controller.state.turn_queue = ["red-darius"]
         app.controller.get_unit("blue-garen").hp = 1
 
         result = app.controller.use_basic("blue-garen")
         app._apply_action_result(result)
+        app._update(0.8)
 
         self.assertEqual(app.screen_mode, "summary")
         self.assertIsNotNone(app.run_summary)
@@ -575,12 +643,14 @@ class GameAppFlowTests(unittest.TestCase):
 
         controller = app._build_controller_from_current_setup()
         app._attach_controller(controller)
+        app.screen_mode = "battle"
         app.controller.state.active_unit_id = "blue-garen"
         app.controller.state.turn_queue = ["blue-garen"]
         app.controller.get_unit("red-darius").hp = 1
 
         result = app.controller.use_basic("red-darius")
         app._apply_action_result(result)
+        app._update(0.8)
         app._handle_keydown(pygame.K_RETURN)
 
         self.assertEqual(app.screen_mode, "deploy")
@@ -1412,6 +1482,7 @@ class GameAppFlowTests(unittest.TestCase):
 
         controller = app._build_controller_from_current_setup()
         app._attach_controller(controller)
+        app.screen_mode = "battle"
         app.current_objective = app._build_battle_objective()
         app.controller.state.active_unit_id = "blue-garen"
         app.controller.state.turn_queue = ["blue-garen"]
@@ -1419,6 +1490,7 @@ class GameAppFlowTests(unittest.TestCase):
 
         result = app.controller.use_basic("red-darius")
         app._apply_action_result(result)
+        app._update(0.8)
 
         self.assertEqual(app.screen_mode, "reward")
         self.assertEqual(app.run_bonuses["bonus-damage"], 1)
@@ -1446,6 +1518,7 @@ class GameAppFlowTests(unittest.TestCase):
 
         controller = app._build_controller_from_current_setup()
         app._attach_controller(controller)
+        app.screen_mode = "battle"
         app.current_objective = app._build_battle_objective()
         app.controller.state.active_unit_id = "blue-garen"
         app.controller.state.turn_queue = ["blue-garen"]
@@ -1455,6 +1528,7 @@ class GameAppFlowTests(unittest.TestCase):
 
         result = app.controller.use_basic("red-darius")
         app._apply_action_result(result)
+        app._update(0.8)
 
         self.assertEqual(app.screen_mode, "reward")
         self.assertIsNotNone(app.pending_stage_penalty)

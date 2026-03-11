@@ -409,6 +409,19 @@ class BattleIntroCard:
     timer: float = 1.65
 
 
+@dataclass
+class UnitAnimationState:
+    attack_timer: float = 0.0
+    attack_duration: float = 0.0
+    attack_vector: tuple[float, float] = (0.0, 0.0)
+    hit_timer: float = 0.0
+    hit_duration: float = 0.0
+    death_timer: float = 0.0
+    death_duration: float = 0.0
+    victory_timer: float = 0.0
+    victory_duration: float = 0.0
+
+
 @dataclass(frozen=True)
 class RunReward:
     id: str
@@ -655,6 +668,7 @@ class GameApp:
         self.battle_rings: list[BattleRingEffect] = []
         self.battle_trails: list[BattleTrailEffect] = []
         self.hit_flash: dict[str, float] = {}
+        self.unit_animation_states: dict[str, UnitAnimationState] = {}
         self.unit_visual_positions: dict[str, pygame.Vector2] = {}
         self.finale_banner_title: str | None = None
         self.finale_banner_subtitle: str | None = None
@@ -664,6 +678,8 @@ class GameApp:
         self.last_action_banner_text: str | None = None
         self.last_action_banner_color: tuple[int, int, int] = (214, 182, 112)
         self.last_action_banner_timer = 0.0
+        self.pending_battle_resolution: str | None = None
+        self.battle_end_timer = 0.0
 
         self.tile_rects: dict[tuple[int, int], pygame.Rect] = {}
         self.button_rects: dict[str, pygame.Rect] = {}
@@ -1671,6 +1687,7 @@ class GameApp:
         self.battle_rings.clear()
         self.battle_trails.clear()
         self.hit_flash = {unit.id: 0.0 for unit in controller.units}
+        self.unit_animation_states = {unit.id: UnitAnimationState() for unit in controller.units}
         self.unit_visual_positions = {
             unit.id: pygame.Vector2(self._tile_center(unit.position)) for unit in controller.units
         }
@@ -1680,6 +1697,8 @@ class GameApp:
         self.mode = "move"
         self.last_action_banner_text = None
         self.last_action_banner_timer = 0.0
+        self.pending_battle_resolution = None
+        self.battle_end_timer = 0.0
 
     def _boost_damage_effects(self, ability, bonus_damage: int, *, range_bonus: int = 0):
         boosted_effects = tuple(
@@ -1929,6 +1948,8 @@ class GameApp:
                 return
 
         if self.screen_mode == "battle" and self.controller and self.controller.state.winner:
+            if self.pending_battle_resolution is not None:
+                return
             if key in {pygame.K_RETURN, pygame.K_SPACE}:
                 if self.controller.state.winner == "blue" and self.run_stage == RUN_STAGE_COUNT:
                     self._start_run_with_current_lineup()
@@ -2106,6 +2127,8 @@ class GameApp:
             return
 
         if controller.state.winner:
+            if self.pending_battle_resolution is not None:
+                return
             select_rect = self.button_rects.get("winner-select")
             rematch_rect = self.button_rects.get("winner-rematch")
             if select_rect and select_rect.collidepoint(position):
@@ -2231,6 +2254,21 @@ class GameApp:
         for unit_id in list(self.hit_flash):
             self.hit_flash[unit_id] = max(0.0, self.hit_flash[unit_id] - dt)
 
+        self._tick_unit_animation_states(dt)
+
+        if self.pending_battle_resolution is not None:
+            self.battle_end_timer = max(0.0, self.battle_end_timer - dt)
+            if self.battle_end_timer <= 0:
+                resolution = self.pending_battle_resolution
+                self.pending_battle_resolution = None
+                if resolution == "reward":
+                    self._prepare_reward_phase()
+                elif resolution == "summary-success":
+                    self._enter_run_summary("원정 성공")
+                elif resolution == "summary-failure":
+                    self._enter_run_summary("원정 실패")
+            return
+
         for ring in list(self.battle_rings):
             ring.lifetime -= dt
             ring.radius += ring.growth * dt
@@ -2288,6 +2326,79 @@ class GameApp:
             return "orb", 6
         return "slash", 8
 
+    def _animation_state_for_unit(self, unit_id: str) -> UnitAnimationState:
+        state = self.unit_animation_states.get(unit_id)
+        if state is None:
+            state = UnitAnimationState()
+            self.unit_animation_states[unit_id] = state
+        return state
+
+    def _tick_unit_animation_states(self, dt: float) -> None:
+        for state in self.unit_animation_states.values():
+            if state.attack_timer > 0:
+                state.attack_timer = max(0.0, state.attack_timer - dt)
+            if state.hit_timer > 0:
+                state.hit_timer = max(0.0, state.hit_timer - dt)
+            if state.death_timer > 0:
+                state.death_timer = max(0.0, state.death_timer - dt)
+            if state.victory_timer > 0:
+                state.victory_timer = max(0.0, state.victory_timer - dt)
+
+    def _trigger_attack_animation(self, actor, result: TacticalActionResult) -> None:
+        state = self._animation_state_for_unit(actor.id)
+        direction = pygame.Vector2(0, -1)
+        if self.controller is not None and result.impacts:
+            primary = self.controller.get_unit(result.impacts[0].target_id)
+            if primary is not None:
+                source = self.unit_visual_positions.get(actor.id, pygame.Vector2(self._tile_center(actor.position)))
+                target = self.unit_visual_positions.get(primary.id, pygame.Vector2(self._tile_center(primary.position)))
+                raw = pygame.Vector2(target.x - source.x, target.y - source.y)
+                if raw.length_squared() > 0.01:
+                    direction = raw.normalize()
+
+        if actor.role in {"Vanguard", "Assassin"}:
+            amplitude = 18 if result.kind == "basic" else 22
+            vector = (direction.x * amplitude, direction.y * amplitude * 0.45 - 6)
+        elif actor.role == "Marksman":
+            vector = (-direction.x * 8, -abs(direction.y) * 4 - 7)
+        else:
+            vector = (-direction.x * 5, -abs(direction.y) * 3 - 10)
+
+        state.attack_vector = vector
+        state.attack_duration = 0.28 if result.kind == "basic" else 0.36
+        state.attack_timer = state.attack_duration
+
+    def _trigger_hit_animation(self, unit_id: str, *, defeated: bool = False) -> None:
+        state = self._animation_state_for_unit(unit_id)
+        state.hit_duration = 0.28
+        state.hit_timer = state.hit_duration
+        if defeated:
+            state.death_duration = 0.72
+            state.death_timer = state.death_duration
+
+    def _trigger_victory_animations(self, winner: str) -> None:
+        if self.controller is None:
+            return
+        aura_color = (236, 214, 124) if winner == "blue" else (236, 126, 90)
+        for unit in self.controller.units:
+            state = self._animation_state_for_unit(unit.id)
+            if unit.team == winner and unit.hp > 0:
+                state.victory_duration = 1.8
+                state.victory_timer = state.victory_duration
+                anchor = self.unit_visual_positions.get(unit.id)
+                if anchor is not None:
+                    self._spawn_battle_ring((anchor.x, anchor.y - 18), aura_color, radius=24, growth=160, width=3, duration=0.56)
+
+    def _should_draw_battle_unit(self, unit) -> bool:
+        if unit.hp > 0:
+            return True
+        state = self.unit_animation_states.get(unit.id)
+        return state is not None and state.death_timer > 0
+
+    def _queue_battle_resolution(self, resolution: str, *, delay: float = 0.72) -> None:
+        self.pending_battle_resolution = resolution
+        self.battle_end_timer = delay
+
     def _apply_action_result(self, result: TacticalActionResult) -> None:
         actor = self.controller.get_unit(result.actor_id) if self.controller else None
         actor_anchor = self.unit_visual_positions.get(actor.id) if actor is not None else None
@@ -2300,6 +2411,7 @@ class GameApp:
         else:
             self.audio.play("cast", champion_id=result.actor_id)
             if actor is not None and actor_anchor is not None:
+                self._trigger_attack_animation(actor, result)
                 cast_color = hex_to_rgb(actor.accent)
                 self._spawn_battle_ring((actor_anchor.x, actor_anchor.y - 6), cast_color, radius=26, growth=160, width=3, duration=0.34)
                 if result.ability_name:
@@ -2329,6 +2441,7 @@ class GameApp:
             if impact.damage:
                 any_damage = True
                 self.hit_flash[unit.id] = 0.28
+                self._trigger_hit_animation(unit.id, defeated=impact.defeated)
                 self.floaters.append(FloatingText(anchor.x, anchor.y - 46, f"-{impact.damage}", (255, 172, 144)))
                 self._spawn_battle_ring((anchor.x, anchor.y - 2), (255, 128, 92), radius=22, growth=170, width=3, duration=0.34)
             if impact.shield_gained:
@@ -2340,6 +2453,7 @@ class GameApp:
                 self.floaters.append(FloatingText(anchor.x, anchor.y - 94, "기절", (255, 229, 145)))
                 self._spawn_battle_ring((anchor.x, anchor.y - 10), (255, 213, 110), radius=28, growth=100, width=2, duration=0.42)
             if impact.defeated:
+                self._trigger_hit_animation(unit.id, defeated=True)
                 self.floaters.append(FloatingText(anchor.x, anchor.y - 118, "처치", (255, 216, 168)))
                 self._spawn_battle_ring((anchor.x, anchor.y - 12), (255, 216, 168), radius=30, growth=220, width=3, duration=0.46)
             if actor is not None and actor_anchor is not None and actor.id != unit.id and result.kind in {"basic", "special"}:
@@ -2371,6 +2485,7 @@ class GameApp:
             self._resolve_finale_phase_state()
 
         if self.controller and self.controller.state.winner == "blue":
+            self._trigger_victory_animations("blue")
             self.audio.play("victory")
             objective_summary = self._apply_completed_objective_bonus()
             node_summary = self._apply_route_node_victory_bonus()
@@ -2384,21 +2499,22 @@ class GameApp:
                     self.status_text = f"{self.status_text} {node_summary}"
                 if penalty_summary:
                     self.status_text = f"{self.status_text} {penalty_summary}"
-                self._prepare_reward_phase()
+                self._queue_battle_resolution("reward")
             else:
                 self.status_text = "최종 결전을 승리했습니다."
                 if objective_summary:
                     self.status_text = f"{self.status_text} {objective_summary}"
                 if node_summary:
                     self.status_text = f"{self.status_text} {node_summary}"
-                self._enter_run_summary("원정 성공")
+                self._queue_battle_resolution("summary-success")
         elif self.controller and self.controller.state.winner == "red":
+            self._trigger_victory_animations("red")
             self.audio.play("defeat")
             self.last_objective_summary = self._summarize_current_objective()
             self.last_node_summary = None
             self._record_battle_recap("패배")
             self.status_text = f"{self._current_stage_label()}에서 패배했습니다."
-            self._enter_run_summary("원정 실패")
+            self._queue_battle_resolution("summary-failure")
 
     def _draw(self) -> None:
         self.screen.blit(self.background_cache, (0, 0))
@@ -3178,7 +3294,8 @@ class GameApp:
         self._draw_battle_bottom_panel()
         self._draw_battle_action_banner()
         self._draw_floaters()
-        self._draw_winner_overlay()
+        if self.pending_battle_resolution is None:
+            self._draw_winner_overlay()
 
     def _draw_battle_grid(self) -> None:
         if self.controller is None:
@@ -3306,7 +3423,7 @@ class GameApp:
                     pygame.draw.rect(self.screen, (255, 92, 92), focus_rect.inflate(-10, -10), 3, border_radius=18)
 
         for unit in self.controller.units:
-            if unit.hp <= 0:
+            if not self._should_draw_battle_unit(unit):
                 continue
             self._draw_battle_unit(unit, active.id == unit.id if active else False)
 
@@ -3381,15 +3498,59 @@ class GameApp:
         center = self.unit_visual_positions[unit.id]
         tile_rect = self.tile_rects[unit.position]
         accent = hex_to_rgb(unit.accent)
+        animation = self._animation_state_for_unit(unit.id)
         pulse = 0.2 + 0.2 * self.hit_flash.get(unit.id, 0.0)
         bob = math.sin(self.time_accumulator * 2.6 + unit.position[0] * 0.7 + unit.position[1] * 0.45 + (0 if unit.team == "blue" else 1.2)) * 3.6
         highlight_pulse = (math.sin(self.time_accumulator * 6.2) + 1) * 0.5
         badge_text, badge_color = self._encounter_badge_for_unit(unit)
         render_center = pygame.Vector2(center.x, center.y + bob - (3 if is_active else 0))
+        render_alpha = 255
+        render_scale = 1.0
+        render_tilt = 0.0
+        victory_active = False
 
-        shadow_rect = pygame.Rect(0, 0, 64 + (10 if is_active else 0), 18)
+        if animation.attack_timer > 0 and animation.attack_duration > 0:
+            progress = 1.0 - clamp(animation.attack_timer / animation.attack_duration, 0.0, 1.0)
+            burst = math.sin(progress * math.pi)
+            render_center.x += animation.attack_vector[0] * burst
+            render_center.y += animation.attack_vector[1] * burst
+            render_scale += 0.04 * burst
+            render_tilt += clamp(animation.attack_vector[0] * -0.22 * burst, -8.0, 8.0)
+
+        if animation.hit_timer > 0 and animation.hit_duration > 0:
+            progress = clamp(animation.hit_timer / animation.hit_duration, 0.0, 1.0)
+            shake = math.sin((1.0 - progress) * math.pi * 7.0) * progress * 7.0
+            render_center.x += shake
+            render_tilt += shake * 0.45
+
+        if unit.hp <= 0 and animation.death_timer > 0 and animation.death_duration > 0:
+            progress = 1.0 - clamp(animation.death_timer / animation.death_duration, 0.0, 1.0)
+            render_center.x += (-10 if unit.team == "blue" else 10) * progress
+            render_center.y += 26 * progress
+            render_scale -= 0.18 * progress
+            render_tilt += (-16 if unit.team == "blue" else 16) * progress
+            render_alpha = int(255 * (1.0 - progress * 0.9))
+        elif (
+            self.controller is not None
+            and self.controller.state.winner == unit.team
+            and unit.hp > 0
+            and animation.victory_timer > 0
+            and animation.victory_duration > 0
+        ):
+            progress = 1.0 - clamp(animation.victory_timer / animation.victory_duration, 0.0, 1.0)
+            cheer = math.sin(progress * math.pi * 4.0)
+            render_center.x += cheer * 2.5
+            render_center.y -= abs(cheer) * 8
+            render_scale += abs(cheer) * 0.05
+            render_tilt += cheer * 3.5
+            victory_active = True
+
+        render_scale = max(0.74, render_scale)
+        shadow_scale = render_scale if unit.hp > 0 else max(0.54, render_scale - 0.12)
+
+        shadow_rect = pygame.Rect(0, 0, int((64 + (10 if is_active else 0)) * shadow_scale), int(18 * shadow_scale))
         shadow_rect.center = (int(render_center.x), int(center.y + 30))
-        shadow_alpha = 92 if is_active else 78
+        shadow_alpha = int((92 if is_active else 78) * (render_alpha / 255))
         pygame.draw.ellipse(self.screen, (0, 0, 0, shadow_alpha), shadow_rect)
 
         if is_active:
@@ -3402,9 +3563,15 @@ class GameApp:
         standee_rect.midbottom = (int(render_center.x), int(center.y + 30))
 
         flare = pygame.Surface((156, 156), pygame.SRCALPHA)
-        pygame.draw.circle(flare, (*accent, int(20 + 52 * pulse)), (78, 78), 56)
+        flare_alpha = int((20 + 52 * pulse) * (render_alpha / 255))
+        pygame.draw.circle(flare, (*accent, flare_alpha), (78, 78), 56)
         self.screen.blit(flare, (standee_rect.centerx - 78, standee_rect.centery - 92))
-        self._draw_tactical_standee(
+        if victory_active:
+            victory_glow = pygame.Surface((184, 184), pygame.SRCALPHA)
+            pygame.draw.circle(victory_glow, (236, 214, 124, 36), (92, 92), 66)
+            pygame.draw.circle(victory_glow, (255, 244, 217, 52), (92, 92), 42, 2)
+            self.screen.blit(victory_glow, (standee_rect.centerx - 92, standee_rect.centery - 102))
+        rendered_rect = self._draw_tactical_standee(
             unit.id,
             unit.role,
             accent,
@@ -3413,29 +3580,35 @@ class GameApp:
             badge_text=badge_text,
             badge_color=badge_color,
             hit_flash=self.hit_flash.get(unit.id, 0.0),
+            alpha=render_alpha,
+            scale=render_scale,
+            tilt=render_tilt,
         )
 
-        hp_ratio = unit.hp / unit.max_hp
-        hp_rect = pygame.Rect(standee_rect.x + 10, standee_rect.y - 14, standee_rect.width - 20, 8)
-        pygame.draw.rect(self.screen, (28, 40, 53), hp_rect, border_radius=4)
-        pygame.draw.rect(self.screen, (101, 226, 148), (hp_rect.x, hp_rect.y, int(hp_rect.width * hp_ratio), hp_rect.height), border_radius=4)
-        pygame.draw.rect(self.screen, (255, 255, 255), hp_rect, 1, border_radius=4)
+        if unit.hp > 0:
+            hp_ratio = unit.hp / unit.max_hp
+            hp_rect = pygame.Rect(rendered_rect.x + 10, rendered_rect.y - 14, rendered_rect.width - 20, 8)
+            pygame.draw.rect(self.screen, (28, 40, 53), hp_rect, border_radius=4)
+            pygame.draw.rect(self.screen, (101, 226, 148), (hp_rect.x, hp_rect.y, int(hp_rect.width * hp_ratio), hp_rect.height), border_radius=4)
+            pygame.draw.rect(self.screen, (255, 255, 255), hp_rect, 1, border_radius=4)
         if unit.shield > 0:
             shield_surface = pygame.Surface((140, 164), pygame.SRCALPHA)
             pygame.draw.ellipse(shield_surface, (132, 226, 173, 108), pygame.Rect(12, 18, 116, 120), 3)
-            self.screen.blit(shield_surface, (standee_rect.centerx - 70, standee_rect.centery - 82))
+            self.screen.blit(shield_surface, (rendered_rect.centerx - 70, rendered_rect.centery - 82))
         if self.hit_flash.get(unit.id, 0.0) > 0:
             hit_surface = pygame.Surface((150, 170), pygame.SRCALPHA)
             pygame.draw.circle(hit_surface, (255, 126, 98, int(120 * self.hit_flash[unit.id] / 0.28)), (75, 75), 56)
-            self.screen.blit(hit_surface, (standee_rect.centerx - 75, standee_rect.centery - 92))
-        if unit.shield > 0:
-            self._draw_text(f"보 {unit.shield}", self.font_tiny, (164, 225, 243), (standee_rect.x - 2, standee_rect.bottom + 4))
-        if unit.stun_turns > 0:
-            self._draw_text("기절", self.font_tiny, (255, 228, 150), (standee_rect.right - 30, standee_rect.bottom + 4))
-        nameplate_rect = pygame.Rect(standee_rect.x - 6, standee_rect.bottom + 8, standee_rect.width + 12, 20)
+            self.screen.blit(hit_surface, (rendered_rect.centerx - 75, rendered_rect.centery - 92))
+        if unit.hp > 0 and unit.shield > 0:
+            self._draw_text(f"보 {unit.shield}", self.font_tiny, (164, 225, 243), (rendered_rect.x - 2, rendered_rect.bottom + 4))
+        if unit.hp > 0 and unit.stun_turns > 0:
+            self._draw_text("기절", self.font_tiny, (255, 228, 150), (rendered_rect.right - 30, rendered_rect.bottom + 4))
+        nameplate_rect = pygame.Rect(rendered_rect.x - 6, rendered_rect.bottom + 8, rendered_rect.width + 12, 20)
         pygame.draw.rect(self.screen, (10, 20, 31), nameplate_rect, border_radius=10)
         pygame.draw.rect(self.screen, (*accent, 110), nameplate_rect, 1, border_radius=10)
-        self._draw_text(unit.name, self.font_small, (244, 239, 225), nameplate_rect.center, center=True)
+        name_color = (244, 239, 225) if unit.hp > 0 else (198, 176, 176)
+        label = unit.name if unit.hp > 0 else f"{unit.name} DOWN"
+        self._draw_text(label, self.font_small, name_color, nameplate_rect.center, center=True)
 
     def _draw_battle_left_panel(self) -> None:
         active = self.controller.get_active_unit() if self.controller else None
@@ -3849,7 +4022,10 @@ class GameApp:
         badge_text: str | None = None,
         badge_color: tuple[int, int, int] = (236, 218, 176),
         hit_flash: float = 0.0,
-    ) -> None:
+        alpha: int = 255,
+        scale: float = 1.0,
+        tilt: float = 0.0,
+    ) -> pygame.Rect:
         canvas = pygame.Surface(rect.size, pygame.SRCALPHA)
         outline = (13, 21, 31)
         accent_shadow = shaded(accent, 0.52)
@@ -3939,7 +4115,13 @@ class GameApp:
             badge = self.font_tiny.render(badge_text, True, outline)
             canvas.blit(badge, badge.get_rect(center=badge_rect.center))
 
-        self.screen.blit(canvas, rect.topleft)
+        if tilt or abs(scale - 1.0) > 0.001:
+            canvas = pygame.transform.rotozoom(canvas, tilt, scale)
+        if alpha < 255:
+            canvas.set_alpha(alpha)
+        blit_rect = canvas.get_rect(center=rect.center)
+        self.screen.blit(canvas, blit_rect.topleft)
+        return blit_rect
 
     def _draw_tactical_accessory(
         self,

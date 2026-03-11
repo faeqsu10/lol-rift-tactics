@@ -82,6 +82,7 @@
   - select, route, and summary screens polished to reduce UI clutter and eliminate major text overlap
   - battle presentation first pass with animated battlefield atmosphere, stronger unit emphasis, pulse rings, and attack trails
   - portrait-based tactical standees on deploy and battle screens to reduce the placeholder-token look
+  - battle-only attack, hit, death, and victory animation states with a short end-of-battle hold so finishing blows are visible
   - terrain-aware red-team AI movement and targeting
   - objective-aware red-team AI that contests marked tiles and pressure zones
   - post-victory reward pick with next-enemy preview
