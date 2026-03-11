@@ -2,6 +2,14 @@
 
 ## 2026-03-11
 
+### 노드별 인트로 모티프와 전술 스탠디 1차
+
+- `native_tactics` 전투 시작 컷인 카드에 `rest`, `event`, `elite`, `finale` 모티프 종류를 추가하고, 배지 문구와 전용 시작 사운드를 함께 연결
+- 휴식 거점, 변수 균열, 정예 수배, 결전 진입이 제목 텍스트만 바뀌는 수준을 넘어, 카드 우측 모티프와 사운드만 봐도 즉시 구분되도록 정리
+- 배치/전투 화면의 유닛 렌더는 작은 정사각 초상화 프레임 대신 `초상화 + 팀 배너 + 역할별 장비 + 몸통 실루엣`을 조합한 전술 스탠디로 교체
+- 가렌/다리우스/레오나/야스오의 장병기, 징크스/케이틀린/애쉬의 원거리 무기, 아리/럭스/모르가나 계열의 오브처럼 챔피언/역할별 액세서리 차이를 넣어 같은 크기 폴백이라도 덜 허접하게 보이도록 보강
+- 이 패스는 실제 스프라이트 시트가 들어오기 전의 폴백 렌더 단계로 유지하고, `tactics:test`, `tactics:smoke`, `tactics:capture`, `py_compile`로 다시 검증
+
 ### 저장소 전용 전문 에이전트 팩 추가
 
 - `.claude/agents/rift-tactics/` 아래에 `tech-art-sprite`, `combat-presentation`, `audio-direction`, `ux-onboarding`, `content-designer`, `qa-release`, `balance-telemetry`, `ai-tactics`, `docs-governance` 9개 역할 정의를 추가

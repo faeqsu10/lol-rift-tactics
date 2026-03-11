@@ -127,6 +127,10 @@ class SoundBank:
             "hit-heavy": synthesize([120.0, 180.0], 0.22, waveform="square", end_freqs=[46.0, 70.0], volume=0.34, noise=0.24, seed=6),
             "shield": synthesize([430.0, 640.0], 0.18, waveform="sine", end_freqs=[660.0, 880.0], volume=0.23, seed=7),
             "stun": synthesize([980.0, 1330.0], 0.11, waveform="triangle", end_freqs=[560.0, 760.0], volume=0.18, seed=8),
+            "intro-rest": synthesize([294.0, 392.0, 494.0], 0.32, waveform="sine", end_freqs=[330.0, 440.0, 554.0], volume=0.18, attack=0.04, release=0.42, seed=12),
+            "intro-event": synthesize([311.0, 466.0, 699.0], 0.3, waveform="triangle", end_freqs=[392.0, 587.0, 880.0], volume=0.18, noise=0.03, attack=0.03, release=0.36, seed=13),
+            "intro-elite": synthesize([196.0, 247.0, 311.0], 0.28, waveform="square", end_freqs=[147.0, 196.0, 247.0], volume=0.2, noise=0.1, attack=0.02, release=0.32, seed=14),
+            "intro-finale": synthesize([233.0, 349.0, 466.0], 0.44, waveform="saw", end_freqs=[311.0, 466.0, 622.0], volume=0.18, noise=0.06, attack=0.02, release=0.46, seed=15),
             "victory": synthesize([392.0, 494.0, 587.0], 0.42, waveform="triangle", end_freqs=[523.0, 659.0, 784.0], volume=0.26, seed=9),
             "defeat": synthesize([262.0, 196.0], 0.34, waveform="sine", end_freqs=[196.0, 147.0], volume=0.22, seed=10),
         }

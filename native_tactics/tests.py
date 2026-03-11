@@ -922,6 +922,9 @@ class GameAppFlowTests(unittest.TestCase):
         self.assertEqual(app.screen_mode, "battle")
         self.assertIsNotNone(app.battle_intro_card)
         self.assertEqual(app.battle_intro_card.title, "휴식 거점 진입")
+        self.assertEqual(app.battle_intro_card.motif_kind, "rest")
+        self.assertEqual(app.battle_intro_card.badge_text, "REST")
+        self.assertEqual(app.battle_intro_card.sound_id, "intro-rest")
         self.assertIn("노드 효과", app.battle_intro_card.detail_lines[0])
         self.assertTrue(any("후속" in line for line in app.battle_intro_card.detail_lines))
         self.assertTrue(any("이벤트" in line for line in app.battle_intro_card.detail_lines))
@@ -938,9 +941,32 @@ class GameAppFlowTests(unittest.TestCase):
         self.assertEqual(app.screen_mode, "battle")
         self.assertIsNotNone(app.battle_intro_card)
         self.assertEqual(app.battle_intro_card.title, "룬 폭주 회랑")
+        self.assertEqual(app.battle_intro_card.motif_kind, "finale")
+        self.assertEqual(app.battle_intro_card.badge_text, "FINALE")
+        self.assertEqual(app.battle_intro_card.sound_id, "intro-finale")
         self.assertIn("룬 폭주", app.battle_intro_card.subtitle)
         self.assertTrue(any("각성 규칙" in line for line in app.battle_intro_card.detail_lines))
         self.assertTrue(any("목표" in line for line in app.battle_intro_card.detail_lines))
+
+    def test_event_node_intro_uses_event_theme(self) -> None:
+        app = GameApp(headless=True)
+        app.current_route_node = RunNode(
+            id="event-surge",
+            name="변수 균열",
+            category="변수 노드",
+            description="전투 이벤트 보정과 실패 대가가 함께 증폭됩니다.",
+            effect_label="이벤트 보정 2배 · 실패 페널티 2배",
+            stage_modifiers={},
+            event_modifier_scale=2,
+            penalty_modifier_scale=2,
+        )
+
+        app._trigger_battle_intro()
+
+        self.assertIsNotNone(app.battle_intro_card)
+        self.assertEqual(app.battle_intro_card.motif_kind, "event")
+        self.assertEqual(app.battle_intro_card.badge_text, "EVENT")
+        self.assertEqual(app.battle_intro_card.sound_id, "intro-event")
 
     def test_finale_objective_success_weakens_boss_phase(self) -> None:
         app = GameApp(headless=True)

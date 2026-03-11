@@ -77,9 +77,11 @@
   - persisted run history with best-run comparison on the summary screen
   - saved-history-driven doctrine unlocks that now grant permanent start bonuses or a route reroll choice
   - node-specific and finale-specific battle-start cut-in presentation with a short intro lock
+  - node-specific intro motifs, badges, and themed start sounds for rest/event/elite/finale battles
   - boss-specific awakening surge rules that now deal immediate pressure damage and expose predicted danger tiles on the finale map
   - select, route, and summary screens polished to reduce UI clutter and eliminate major text overlap
   - battle presentation first pass with animated battlefield atmosphere, stronger unit emphasis, pulse rings, and attack trails
+  - portrait-based tactical standees on deploy and battle screens to reduce the placeholder-token look
   - terrain-aware red-team AI movement and targeting
   - objective-aware red-team AI that contests marked tiles and pressure zones
   - post-victory reward pick with next-enemy preview
@@ -127,7 +129,7 @@
 1. Keep `AGENTS.md`, `README.md`, and `PROJECT_CONTEXT.md` aligned around the native-first direction whenever priorities shift.
 2. Use the local specialist agents under `.claude/agents/rift-tactics/` when work is clearly about art, audio, UX, content, AI, QA, balance, or docs.
 3. Add more authored node/event presentation on top of the new cut-in system.
-4. Introduce real sprite art plus first-pass attack/hit/death/victory animation work.
+4. Introduce real sprite art plus first-pass attack/hit/death/victory animation work on top of the new standee fallback.
 5. Expand map and objective variety on top of the new doctrine and boss loop.
 6. Add more authored boss variants or finale-only special rules after the doctrine layer settles.
 
