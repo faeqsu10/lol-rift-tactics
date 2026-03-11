@@ -3861,6 +3861,73 @@ class GameApp:
                 pygame.draw.circle(surface, (*mix(trail.color, (255, 255, 255), 0.3), 255), (int(current.x), int(current.y)), max(4, trail.width))
             self.screen.blit(surface, (0, 0))
 
+    def _attack_afterimage_offsets(self, vector: tuple[float, float], amount: float) -> list[tuple[int, int, int]]:
+        amount = clamp(amount, 0.0, 1.0)
+        if amount <= 0.0:
+            return []
+        return [
+            (
+                int(-vector[0] * scale),
+                int(-vector[1] * scale + index * 3),
+                max(16, int(base_alpha * amount)),
+            )
+            for index, (scale, base_alpha) in enumerate(((0.32, 88), (0.56, 54)), start=1)
+        ]
+
+    def _victory_shard_offsets(self, amount: float) -> list[tuple[int, int, int]]:
+        amount = clamp(amount, 0.0, 1.0)
+        if amount <= 0.0:
+            return []
+        rise = int(16 * amount)
+        spread = int(18 + 10 * amount)
+        radius = max(3, int(4 + amount * 4))
+        return [
+            (-spread, -rise, radius),
+            (0, -rise - 10, radius + 1),
+            (spread, -rise, radius),
+        ]
+
+    def _draw_hit_spark(self, center: tuple[int, int], color: tuple[int, int, int], amount: float) -> None:
+        amount = clamp(amount, 0.0, 1.0)
+        if amount <= 0.0:
+            return
+        radius = int(18 + amount * 20)
+        alpha = int(190 * amount)
+        spark = pygame.Surface((radius * 4, radius * 4), pygame.SRCALPHA)
+        origin = pygame.Vector2(spark.get_width() / 2, spark.get_height() / 2)
+        spark_color = (*mix(color, (255, 220, 176), 0.35), alpha)
+        outline_color = (255, 244, 217, min(255, alpha + 30))
+        for dx, dy in ((1.0, 0.0), (0.72, 0.72), (0.0, 1.0)):
+            start = origin + pygame.Vector2(dx, dy) * (radius * 0.35)
+            end = origin + pygame.Vector2(dx, dy) * radius
+            mirror_start = origin - pygame.Vector2(dx, dy) * (radius * 0.35)
+            mirror_end = origin - pygame.Vector2(dx, dy) * radius
+            pygame.draw.line(spark, spark_color, start, end, 3)
+            pygame.draw.line(spark, spark_color, mirror_start, mirror_end, 3)
+            pygame.draw.line(spark, outline_color, start, end, 1)
+            pygame.draw.line(spark, outline_color, mirror_start, mirror_end, 1)
+        pygame.draw.circle(spark, outline_color, (int(origin.x), int(origin.y)), max(2, radius // 5))
+        self.screen.blit(spark, spark.get_rect(center=center))
+
+    def _draw_victory_shards(self, center: tuple[int, int], color: tuple[int, int, int], amount: float) -> None:
+        amount = clamp(amount, 0.0, 1.0)
+        if amount <= 0.0:
+            return
+        shard_surface = pygame.Surface((120, 90), pygame.SRCALPHA)
+        for offset_x, offset_y, radius in self._victory_shard_offsets(amount):
+            shard_center = (60 + offset_x, 48 + offset_y)
+            shard_color = (*mix(color, (255, 244, 217), 0.4), int(170 * amount))
+            pygame.draw.circle(shard_surface, shard_color, shard_center, radius)
+            pygame.draw.circle(shard_surface, (255, 244, 217, int(220 * amount)), shard_center, max(1, radius - 2), 1)
+            diamond = [
+                (shard_center[0], shard_center[1] - radius - 4),
+                (shard_center[0] + radius - 1, shard_center[1]),
+                (shard_center[0], shard_center[1] + radius + 4),
+                (shard_center[0] - radius + 1, shard_center[1]),
+            ]
+            pygame.draw.polygon(shard_surface, (*color, int(48 * amount)), diamond)
+        self.screen.blit(shard_surface, shard_surface.get_rect(center=center))
+
     def _draw_battle_action_banner(self) -> None:
         if self.last_action_banner_text is None or self.last_action_banner_timer <= 0:
             return
@@ -3962,6 +4029,23 @@ class GameApp:
         standee_rect = pygame.Rect(0, 0, 96, 132)
         standee_rect.midbottom = (int(render_center.x), int(center.y + 30))
 
+        if pose == "attack" and pose_amount > 0.08:
+            for offset_x, offset_y, ghost_alpha in self._attack_afterimage_offsets(animation.attack_vector, pose_amount):
+                ghost_rect = standee_rect.move(offset_x, offset_y)
+                self._draw_tactical_standee(
+                    unit.id,
+                    unit.role,
+                    accent,
+                    (83, 170, 236) if unit.team == "blue" else (230, 114, 88),
+                    ghost_rect,
+                    alpha=min(render_alpha, ghost_alpha),
+                    scale=max(0.74, render_scale - 0.04),
+                    tilt=render_tilt * 0.45,
+                    pose=pose,
+                    pose_amount=max(0.18, pose_amount * 0.85),
+                    pose_direction=pose_direction,
+                )
+
         flare = pygame.Surface((156, 156), pygame.SRCALPHA)
         flare_alpha = int((20 + 52 * pulse) * (render_alpha / 255))
         pygame.draw.circle(flare, (*accent, flare_alpha), (78, 78), 56)
@@ -3987,6 +4071,11 @@ class GameApp:
             pose_amount=pose_amount,
             pose_direction=pose_direction,
         )
+        if animation.hit_timer > 0 and animation.hit_duration > 0:
+            hit_amount = clamp(animation.hit_timer / animation.hit_duration, 0.0, 1.0)
+            self._draw_hit_spark((rendered_rect.centerx, rendered_rect.centery - 8), (255, 158, 108), hit_amount)
+        if victory_active:
+            self._draw_victory_shards((rendered_rect.centerx, rendered_rect.y + 8), (236, 214, 124), pose_amount)
 
         if unit.hp > 0:
             hp_ratio = unit.hp / unit.max_hp

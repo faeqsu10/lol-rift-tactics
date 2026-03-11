@@ -46,6 +46,7 @@
 - `native_tactics` 배치/전투 화면에 초상화 기반 전술 스탠디 렌더 1차 추가
 - `native_tactics` 초상화 기반 전술 스탠디를 비율 기반 전신 스프라이트형 렌더 2차로 업그레이드
 - `native_tactics` 스탠디에 `hero/ready/attack/hit/victory` 포즈 차등과 무기 방향 오프셋 추가
+- `native_tactics` 공격 잔상, 피격 스파크, 승리 샤드 오라를 포즈 상태와 연결
 - `native_tactics` 공격/피격/사망/승리 포즈와 전투 종료 홀드 기반 애니메이션 1차 추가
 - `native_tactics` 스테이지/결전 테마에 따라 전장 팔레트, 장애물, 지형 문양이 달라지는 맵 아트 1차 추가
 - `native_tactics` 선택 화면에 대표 챔피언 포커스 패널, 가로형 적 조합 프리뷰, 분리형 전술 행동 바 추가

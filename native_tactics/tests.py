@@ -980,6 +980,24 @@ class GameAppFlowTests(unittest.TestCase):
         self.assertLess(pose.weapon_shift_y, 0)
         self.assertGreater(pose.arm_lift, 0)
 
+    def test_attack_afterimage_offsets_follow_reverse_attack_vector(self) -> None:
+        app = GameApp(headless=True)
+
+        offsets = app._attack_afterimage_offsets((18.0, -6.0), 1.0)
+
+        self.assertEqual(len(offsets), 2)
+        self.assertTrue(all(offset_x < 0 for offset_x, _, _ in offsets))
+        self.assertTrue(all(alpha > 0 for _, _, alpha in offsets))
+
+    def test_victory_shard_offsets_include_center_peak(self) -> None:
+        app = GameApp(headless=True)
+
+        shards = app._victory_shard_offsets(1.0)
+
+        self.assertEqual(len(shards), 3)
+        self.assertTrue(any(offset_x == 0 for offset_x, _, _ in shards))
+        self.assertTrue(all(offset_y < 0 for _, offset_y, _ in shards))
+
     def test_stage_two_marks_elite_enemy(self) -> None:
         app = GameApp(headless=True)
         app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
