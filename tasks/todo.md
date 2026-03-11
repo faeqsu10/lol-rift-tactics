@@ -57,10 +57,11 @@
 - [x] `native_tactics` 경로/보상/결산/전투 HUD/컷인에 반응형 텍스트 fitting 1차 적용
 - [x] `native_tactics` 스탠디 `hero/ready/attack/hit/victory` 포즈 차등 1차 적용
 - [x] `native_tactics` 포즈 연동 공격 잔상/피격 스파크/승리 샤드 FX 1차 적용
+- [x] `native_tactics` 실컷아웃 자산 경로와 초상화 기반 합성 컷아웃 폴백 1차 추가
 - [x] `native_tactics` 공격/피격/사망/승리 전용 전투 애니메이션 1차 추가
 - [x] `native_tactics` 스테이지/결전 테마 기반 배경 맵 아트와 장애물 렌더 1차 추가
 - [x] `native_tactics` 챔피언 선택 화면 대표 챔피언 패널과 가로형 적 조합 프리뷰/전술 행동 바로 2차 개편
-- [ ] 실제 스프라이트 기반 캐릭터 아트 도입 여부 결정
+- [ ] `assets/tactics-cutouts/`에 챔피언별 실제 투명 컷아웃 아트팩 투입
 
 ## 검증
 

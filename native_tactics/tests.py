@@ -998,6 +998,24 @@ class GameAppFlowTests(unittest.TestCase):
         self.assertTrue(any(offset_x == 0 for offset_x, _, _ in shards))
         self.assertTrue(all(offset_y < 0 for _, offset_y, _ in shards))
 
+    def test_cutout_surface_falls_back_to_portrait_and_matches_size(self) -> None:
+        app = GameApp(headless=True)
+
+        surface = app._cutout_surface_for_champion("blue-jinx", (72, 96), (83, 170, 236))
+
+        self.assertIsNotNone(surface)
+        assert surface is not None
+        self.assertEqual(surface.get_size(), (72, 96))
+        self.assertGreater(surface.get_at((36, 10)).a, surface.get_at((36, 94)).a)
+
+    def test_cutout_surface_is_cached_per_size(self) -> None:
+        app = GameApp(headless=True)
+
+        first = app._cutout_surface_for_champion("blue-jinx", (72, 96), (83, 170, 236))
+        second = app._cutout_surface_for_champion("blue-jinx", (72, 96), (83, 170, 236))
+
+        self.assertIs(first, second)
+
     def test_stage_two_marks_elite_enemy(self) -> None:
         app = GameApp(headless=True)
         app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]

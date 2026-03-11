@@ -52,6 +52,7 @@ SELECT_RIGHT_PANEL = pygame.Rect(982, 120, 582, 784)
 PROJECT_ROOT = project_root()
 FONT_PATH = PROJECT_ROOT / "assets" / "fonts" / "NotoSansKR-Variable.ttf"
 CHAMPION_ART_DIR = PROJECT_ROOT / "assets" / "champions"
+TACTICS_CUTOUT_ART_DIR = PROJECT_ROOT / "assets" / "tactics-cutouts"
 RUN_STAGE_COUNT = 3
 RUN_STAGE_LABELS = {
     1: "정찰전",
@@ -653,6 +654,8 @@ class GameApp:
         self.audio = SoundBank()
         self.audio.start_ambient()
         self.champion_art = self._load_champion_art()
+        self.champion_cutouts = self._load_champion_cutouts()
+        self.cutout_surface_cache: dict[tuple[str, int, int], pygame.Surface] = {}
         self.background_cache = self._build_background()
 
         self.screen_mode: Literal["select", "deploy", "battle", "reward", "route", "summary"] = "select"
@@ -757,6 +760,14 @@ class GameApp:
             if path.exists():
                 art[unit_id] = pygame.image.load(path).convert_alpha()
         return art
+
+    def _load_champion_cutouts(self) -> dict[str, pygame.Surface]:
+        cutouts: dict[str, pygame.Surface] = {}
+        for unit_id, filename in ART_FILE_BY_UNIT_ID.items():
+            path = TACTICS_CUTOUT_ART_DIR / filename
+            if path.exists():
+                cutouts[unit_id] = pygame.image.load(path).convert_alpha()
+        return cutouts
 
     def _build_background(self) -> pygame.Surface:
         surface = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
@@ -4587,6 +4598,22 @@ class GameApp:
             (center_x + max(6, width // 12), max(32, int(height * 0.29))),
             (center_x - max(20, width // 5), max(24, int(height * 0.22))),
         ]
+        cutout_surface = self._cutout_surface_for_champion(
+            champion_id,
+            (max(42, int(width * 0.72)), max(60, int(height * 0.74))),
+            accent,
+        )
+        if cutout_surface is not None:
+            cutout_rect = cutout_surface.get_rect(
+                midtop=(
+                    center_x + pose_state.body_shift_x // 3,
+                    max(4, int(height * 0.02)) + pose_state.portrait_shift_y - max(0, pose_state.cloak_lift // 2),
+                )
+            )
+            cutout_glow = pygame.Surface((cutout_rect.width + 28, cutout_rect.height + 26), pygame.SRCALPHA)
+            pygame.draw.ellipse(cutout_glow, (*accent, 20), cutout_glow.get_rect())
+            canvas.blit(cutout_glow, (cutout_rect.x - 14, cutout_rect.y - 8))
+            canvas.blit(cutout_surface, cutout_rect.topleft)
         pygame.draw.polygon(canvas, (*team_color, 90), pennant)
         pygame.draw.polygon(canvas, (255, 244, 217), pennant, 1)
         plate = pygame.Surface(layout.plate_rect.size, pygame.SRCALPHA)
@@ -4979,6 +5006,94 @@ class GameApp:
                 shield = rect_ratio(0.75, 0.5, 0.14, 0.22)
                 pygame.draw.rect(surface, warm_metal, shield, border_radius=max(5, shield.width // 2))
                 pygame.draw.rect(surface, outline, shield, 2, border_radius=max(5, shield.width // 2))
+
+    def _cover_art_surface(self, art: pygame.Surface, size: tuple[int, int]) -> pygame.Surface:
+        if size[0] <= 0 or size[1] <= 0:
+            return pygame.Surface((max(1, size[0]), max(1, size[1])), pygame.SRCALPHA)
+        scale = max(size[0] / art.get_width(), size[1] / art.get_height())
+        scaled_size = (
+            max(1, int(round(art.get_width() * scale))),
+            max(1, int(round(art.get_height() * scale))),
+        )
+        scaled = pygame.transform.smoothscale(art, scaled_size)
+        output = pygame.Surface(size, pygame.SRCALPHA)
+        output.blit(
+            scaled,
+            (
+                (size[0] - scaled_size[0]) // 2,
+                (size[1] - scaled_size[1]) // 2,
+            ),
+        )
+        return output
+
+    def _composed_cutout_surface(
+        self,
+        art: pygame.Surface,
+        size: tuple[int, int],
+        accent: tuple[int, int, int],
+        *,
+        transparent_source: bool,
+    ) -> pygame.Surface:
+        base = self._cover_art_surface(art, size)
+        output = pygame.Surface(size, pygame.SRCALPHA)
+        output.blit(base, (0, 0))
+
+        tint = pygame.Surface(size, pygame.SRCALPHA)
+        pygame.draw.ellipse(tint, (*accent, 24 if transparent_source else 34), pygame.Rect(-10, 0, size[0] + 20, int(size[1] * 0.72)))
+        pygame.draw.rect(tint, (8, 14, 22, 54), pygame.Rect(0, int(size[1] * 0.56), size[0], max(1, int(size[1] * 0.44))))
+        output.blit(tint, (0, 0))
+
+        mask = pygame.Surface(size, pygame.SRCALPHA)
+        pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=max(12, size[0] // 5))
+        bottom_arc = [
+            (0, int(size[1] * 0.78)),
+            (int(size[0] * 0.18), int(size[1] * 0.66)),
+            (int(size[0] * 0.5), int(size[1] * 0.74)),
+            (int(size[0] * 0.82), int(size[1] * 0.66)),
+            (size[0], int(size[1] * 0.78)),
+            (size[0], size[1]),
+            (0, size[1]),
+        ]
+        pygame.draw.polygon(mask, (255, 255, 255, 0), bottom_arc)
+        output.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+
+        fade = pygame.Surface(size, pygame.SRCALPHA)
+        fade_start = int(size[1] * 0.56)
+        for y in range(size[1]):
+            if y < fade_start:
+                alpha = 255
+            else:
+                span = max(1, size[1] - fade_start)
+                alpha = int(255 * clamp((size[1] - y) / span, 0.0, 1.0))
+            pygame.draw.line(fade, (255, 255, 255, alpha), (0, y), (size[0], y))
+        output.blit(fade, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+
+        edge = pygame.Surface(size, pygame.SRCALPHA)
+        pygame.draw.rect(edge, (*accent, 68), edge.get_rect(), 2, border_radius=max(12, size[0] // 5))
+        output.blit(edge, (0, 0))
+        return output
+
+    def _cutout_surface_for_champion(
+        self,
+        champion_id: str,
+        size: tuple[int, int],
+        accent: tuple[int, int, int],
+    ) -> pygame.Surface | None:
+        key = (champion_id, size[0], size[1])
+        cached = self.cutout_surface_cache.get(key)
+        if cached is not None:
+            return cached
+        art = self.champion_cutouts.get(champion_id)
+        if art is not None:
+            surface = self._composed_cutout_surface(art, size, accent, transparent_source=True)
+            self.cutout_surface_cache[key] = surface
+            return surface
+        portrait_art = self.champion_art.get(champion_id)
+        if portrait_art is None:
+            return None
+        surface = self._composed_cutout_surface(portrait_art, size, accent, transparent_source=False)
+        self.cutout_surface_cache[key] = surface
+        return surface
 
     def _draw_portrait_art(self, champion_id: str, rect: pygame.Rect, accent: tuple[int, int, int]) -> None:
         panel = pygame.Surface(rect.size, pygame.SRCALPHA)

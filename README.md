@@ -47,11 +47,15 @@
 - `native_tactics` 초상화 기반 전술 스탠디를 비율 기반 전신 스프라이트형 렌더 2차로 업그레이드
 - `native_tactics` 스탠디에 `hero/ready/attack/hit/victory` 포즈 차등과 무기 방향 오프셋 추가
 - `native_tactics` 공격 잔상, 피격 스파크, 승리 샤드 오라를 포즈 상태와 연결
+- `native_tactics` `assets/tactics-cutouts/` 실컷아웃 자산 경로와 초상화 기반 합성 컷아웃 폴백 추가
 - `native_tactics` 공격/피격/사망/승리 포즈와 전투 종료 홀드 기반 애니메이션 1차 추가
 - `native_tactics` 스테이지/결전 테마에 따라 전장 팔레트, 장애물, 지형 문양이 달라지는 맵 아트 1차 추가
 - `native_tactics` 선택 화면에 대표 챔피언 포커스 패널, 가로형 적 조합 프리뷰, 분리형 전술 행동 바 추가
 - `native_tactics` 경로 카드, 보상 버튼, 결산 버튼, 전투 패널, 전투 시작 컷인에 반응형 텍스트 fitting 적용
 - 헤드리스 스크린샷 캡처로 비주얼 결과 확인 가능
+
+추가 자산 규칙:
+- 실제 전술 컷아웃 PNG를 넣을 때는 [assets/tactics-cutouts/README.md](/home/faeqsu10/projects/lol-rift-tactics/assets/tactics-cutouts/README.md) 형식을 따르면 됩니다.
 - 스킬 버튼 클릭 및 적 유닛 직접 타겟팅
 - 속도 기반 턴 순서
 - 쿨다운, 보호막, 기절, 간단한 적 AI
