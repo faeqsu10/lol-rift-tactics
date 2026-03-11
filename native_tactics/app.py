@@ -423,6 +423,23 @@ class UnitAnimationState:
 
 
 @dataclass(frozen=True)
+class BattlefieldTheme:
+    id: str
+    top_color: tuple[int, int, int]
+    bottom_color: tuple[int, int, int]
+    tile_a: tuple[int, int, int]
+    tile_b: tuple[int, int, int]
+    edge_color: tuple[int, int, int]
+    inner_edge_color: tuple[int, int, int]
+    blue_glow: tuple[int, int, int]
+    red_glow: tuple[int, int, int]
+    center_glow: tuple[int, int, int]
+    obstacle_fill: tuple[int, int, int]
+    obstacle_edge: tuple[int, int, int]
+    ornament_color: tuple[int, int, int]
+
+
+@dataclass(frozen=True)
 class RunReward:
     id: str
     name: str
@@ -787,6 +804,99 @@ class GameApp:
         if finale_variant is not None:
             return finale_variant.blocked_tiles
         return BLOCKED_TILES
+
+    def _battlefield_theme(
+        self,
+        terrain_tiles: dict[GridPos, str],
+        blocked_tiles: set[GridPos] | tuple[GridPos, ...],
+        *,
+        enemy_ids: list[str] | None = None,
+    ) -> BattlefieldTheme:
+        finale_variant = self._finale_variant_for_stage(lineup=enemy_ids)
+        if finale_variant is not None:
+            if finale_variant.id == "collapsed-bastion":
+                return BattlefieldTheme(
+                    id="collapsed-bastion",
+                    top_color=(24, 16, 18),
+                    bottom_color=(49, 24, 20),
+                    tile_a=(50, 29, 29),
+                    tile_b=(41, 22, 24),
+                    edge_color=(225, 174, 120),
+                    inner_edge_color=(116, 78, 62),
+                    blue_glow=(73, 118, 164),
+                    red_glow=(194, 88, 58),
+                    center_glow=(205, 128, 86),
+                    obstacle_fill=(77, 49, 41),
+                    obstacle_edge=(224, 176, 114),
+                    ornament_color=(226, 133, 80),
+                )
+            return BattlefieldTheme(
+                id="runic-nexus",
+                top_color=(10, 14, 32),
+                bottom_color=(17, 24, 50),
+                tile_a=(18, 27, 56),
+                tile_b=(14, 22, 45),
+                edge_color=(177, 196, 244),
+                inner_edge_color=(85, 109, 170),
+                blue_glow=(94, 148, 229),
+                red_glow=(134, 86, 136),
+                center_glow=(110, 164, 242),
+                obstacle_fill=(40, 50, 82),
+                obstacle_edge=(165, 194, 247),
+                ornament_color=(129, 166, 246),
+            )
+
+        terrain_counts = {"brush": 0, "rune": 0, "hazard": 0}
+        for terrain_id in terrain_tiles.values():
+            if terrain_id in terrain_counts:
+                terrain_counts[terrain_id] += 1
+        if terrain_counts["hazard"] >= max(3, terrain_counts["brush"] + terrain_counts["rune"]):
+            return BattlefieldTheme(
+                id="ember-siege",
+                top_color=(18, 14, 18),
+                bottom_color=(38, 20, 20),
+                tile_a=(43, 24, 27),
+                tile_b=(34, 18, 22),
+                edge_color=(222, 164, 110),
+                inner_edge_color=(112, 68, 56),
+                blue_glow=(74, 112, 158),
+                red_glow=(188, 84, 56),
+                center_glow=(198, 126, 72),
+                obstacle_fill=(72, 47, 41),
+                obstacle_edge=(222, 162, 106),
+                ornament_color=(226, 121, 72),
+            )
+        if terrain_counts["rune"] >= terrain_counts["brush"]:
+            return BattlefieldTheme(
+                id="runic-basin",
+                top_color=(9, 16, 29),
+                bottom_color=(14, 28, 46),
+                tile_a=(18, 30, 53),
+                tile_b=(14, 24, 42),
+                edge_color=(167, 188, 238),
+                inner_edge_color=(79, 101, 160),
+                blue_glow=(96, 149, 223),
+                red_glow=(118, 76, 88),
+                center_glow=(101, 152, 214),
+                obstacle_fill=(41, 50, 74),
+                obstacle_edge=(152, 187, 241),
+                ornament_color=(120, 166, 238),
+            )
+        return BattlefieldTheme(
+            id="verdant-frontier",
+            top_color=(10, 21, 24),
+            bottom_color=(15, 35, 39),
+            tile_a=(20, 38, 42),
+            tile_b=(16, 31, 35),
+            edge_color=(180, 202, 166),
+            inner_edge_color=(79, 110, 92),
+            blue_glow=(66, 124, 176),
+            red_glow=(116, 73, 64),
+            center_glow=(122, 162, 112),
+            obstacle_fill=(48, 62, 57),
+            obstacle_edge=(167, 198, 140),
+            ornament_color=(124, 182, 126),
+        )
 
     def _boss_enemy_id_for_stage(self, stage: int | None = None, lineup: list[str] | None = None) -> str | None:
         current_stage = stage or self.run_stage
@@ -3150,20 +3260,129 @@ class GameApp:
         self._draw_deploy_right_panel()
         self._draw_deploy_bottom_panel()
 
+    def _draw_grid_backdrop(self, theme: BattlefieldTheme) -> None:
+        surface = pygame.Surface(GRID_RECT.size, pygame.SRCALPHA)
+        draw_vertical_gradient(surface, surface.get_rect(), theme.top_color, theme.bottom_color)
+        pulse = (math.sin(self.time_accumulator * 1.35) + 1) * 0.5
+        blue_alpha = int(30 + pulse * 24)
+        red_alpha = int(28 + (1.0 - pulse) * 26)
+        center_alpha = int(18 + pulse * 22)
+        pygame.draw.ellipse(surface, (*theme.blue_glow, blue_alpha), pygame.Rect(14, GRID_RECT.height - 196, 320, 172))
+        pygame.draw.ellipse(surface, (*theme.red_glow, red_alpha), pygame.Rect(GRID_RECT.width - 334, 26, 318, 174))
+        pygame.draw.ellipse(surface, (*theme.center_glow, center_alpha), pygame.Rect(GRID_RECT.width // 2 - 184, GRID_RECT.height // 2 - 82, 368, 164))
+
+        band = pygame.Surface(GRID_RECT.size, pygame.SRCALPHA)
+        pygame.draw.polygon(
+            band,
+            (*theme.ornament_color, 18),
+            [(0, GRID_RECT.height - 76), (180, GRID_RECT.height), (0, GRID_RECT.height)],
+        )
+        pygame.draw.polygon(
+            band,
+            (*theme.ornament_color, 16),
+            [(GRID_RECT.width, 62), (GRID_RECT.width - 170, 0), (GRID_RECT.width, 0)],
+        )
+        surface.blit(band, (0, 0))
+
+        if theme.id == "verdant-frontier":
+            for offset_x, offset_y, width, height in ((30, 34, 210, 104), (GRID_RECT.width - 252, GRID_RECT.height - 132, 198, 94)):
+                leaf = pygame.Surface((width, height), pygame.SRCALPHA)
+                pygame.draw.ellipse(leaf, (*theme.ornament_color, 24), leaf.get_rect())
+                pygame.draw.arc(leaf, (*tinted(theme.ornament_color, 0.24), 80), leaf.get_rect().inflate(-18, -18), math.pi * 0.12, math.pi * 0.88, 2)
+                surface.blit(leaf, (offset_x, offset_y))
+        elif theme.id in {"runic-basin", "runic-nexus"}:
+            center = (GRID_RECT.width // 2, GRID_RECT.height // 2 + 4)
+            for index in range(4):
+                size = 112 + index * 36
+                diamond = [
+                    (center[0], center[1] - size // 2),
+                    (center[0] + size // 2, center[1]),
+                    (center[0], center[1] + size // 2),
+                    (center[0] - size // 2, center[1]),
+                ]
+                pygame.draw.polygon(surface, (*theme.ornament_color, max(12, 42 - index * 8)), diamond, 2 if index < 2 else 1)
+            pygame.draw.line(surface, (*theme.ornament_color, 48), (center[0] - 72, center[1]), (center[0] + 72, center[1]), 2)
+            pygame.draw.line(surface, (*theme.ornament_color, 48), (center[0], center[1] - 72), (center[0], center[1] + 72), 2)
+        else:
+            for index in range(4):
+                radius = 114 + index * 30 + math.sin(self.time_accumulator * 0.9 + index) * 4
+                ring_rect = pygame.Rect(0, 0, int(radius * 2.0), int(radius * 0.84))
+                ring_rect.center = (GRID_RECT.width // 2, GRID_RECT.height // 2 + 6)
+                pygame.draw.ellipse(surface, (*theme.ornament_color, max(10, 34 - index * 6)), ring_rect, 1)
+            for offset in (-84, 0, 84):
+                pygame.draw.line(
+                    surface,
+                    (*tinted(theme.ornament_color, 0.18), 52),
+                    (GRID_RECT.width // 2 - 120 + offset, GRID_RECT.height // 2 + 72),
+                    (GRID_RECT.width // 2 - 72 + offset, GRID_RECT.height // 2 - 40),
+                    2,
+                )
+
+        self.screen.blit(surface, GRID_RECT.topleft)
+
+    def _draw_grid_tile_base(self, rect: pygame.Rect, x: int, y: int, theme: BattlefieldTheme) -> None:
+        base = theme.tile_a if (x + y) % 2 == 0 else theme.tile_b
+        pygame.draw.rect(self.screen, base, rect, border_radius=16)
+        top_strip = pygame.Rect(rect.x + 8, rect.y + 8, rect.width - 16, 18)
+        pygame.draw.rect(self.screen, tinted(base, 0.08), top_strip, border_radius=9)
+        accent = pygame.Surface(rect.size, pygame.SRCALPHA)
+        pygame.draw.polygon(
+            accent,
+            (*theme.ornament_color, 10),
+            [(12, rect.height - 6), (rect.width - 12, 20), (rect.width - 12, rect.height - 6)],
+        )
+        self.screen.blit(accent, rect.topleft)
+        pygame.draw.rect(self.screen, (*theme.edge_color, 60), rect, 1, border_radius=16)
+        pygame.draw.rect(self.screen, (*theme.inner_edge_color, 44), rect.inflate(-8, -8), 1, border_radius=12)
+
+    def _draw_blocked_tile_art(self, rect: pygame.Rect, theme: BattlefieldTheme, tile: GridPos) -> None:
+        shadow = pygame.Rect(rect.x + 20, rect.bottom - 28, rect.width - 40, 18)
+        pygame.draw.ellipse(self.screen, (0, 0, 0, 96), shadow)
+        pillar = rect.inflate(-24, -20)
+        pygame.draw.rect(self.screen, theme.obstacle_fill, pillar, border_radius=18)
+        pygame.draw.rect(self.screen, theme.obstacle_edge, pillar, 2, border_radius=18)
+        cap = pygame.Rect(pillar.x + 10, pillar.y + 8, pillar.width - 20, 18)
+        pygame.draw.rect(self.screen, tinted(theme.obstacle_fill, 0.12), cap, border_radius=9)
+        pygame.draw.line(
+            self.screen,
+            tinted(theme.obstacle_edge, 0.18),
+            (pillar.x + 16, pillar.y + 24),
+            (pillar.centerx - 2, pillar.bottom - 16),
+            2,
+        )
+        pygame.draw.line(
+            self.screen,
+            shaded(theme.obstacle_fill, 0.2),
+            (pillar.right - 18, pillar.y + 18),
+            (pillar.centerx + 10, pillar.bottom - 20),
+            2,
+        )
+        if theme.id in {"runic-basin", "runic-nexus"}:
+            rune_rect = pillar.inflate(-26, -38)
+            diamond = [rune_rect.midtop, rune_rect.midright, rune_rect.midbottom, rune_rect.midleft]
+            pygame.draw.polygon(self.screen, (*theme.ornament_color, 36), diamond)
+            pygame.draw.polygon(self.screen, theme.obstacle_edge, diamond, 1)
+        elif theme.id == "verdant-frontier":
+            moss = pygame.Surface((pillar.width, pillar.height), pygame.SRCALPHA)
+            pygame.draw.ellipse(moss, (*theme.ornament_color, 26), pygame.Rect(6, pillar.height - 34, pillar.width - 12, 24))
+            self.screen.blit(moss, pillar.topleft)
+            pygame.draw.arc(self.screen, theme.ornament_color, pillar.inflate(-18, -12), math.pi * 0.95, math.pi * 1.55, 2)
+        else:
+            ember = [(pillar.centerx, pillar.y + 24), (pillar.right - 20, pillar.centery), (pillar.centerx + 6, pillar.bottom - 18)]
+            pygame.draw.polygon(self.screen, theme.ornament_color, ember)
+            pygame.draw.polygon(self.screen, tinted(theme.ornament_color, 0.22), ember, 1)
+
     def _draw_deploy_grid(self) -> None:
-        grid_surface = pygame.Surface(GRID_RECT.size, pygame.SRCALPHA)
-        draw_vertical_gradient(grid_surface, grid_surface.get_rect(), (7, 16, 26), (10, 22, 36))
-        self.screen.blit(grid_surface, GRID_RECT.topleft)
         terrain_tiles = self._terrain_tiles_for_stage(enemy_ids=self.selected_red_ids)
         blocked_tiles = set(self._blocked_tiles_for_stage(enemy_ids=self.selected_red_ids))
+        theme = self._battlefield_theme(terrain_tiles, blocked_tiles, enemy_ids=self.selected_red_ids)
+        self._draw_grid_backdrop(theme)
 
         for y in range(GRID_HEIGHT):
             for x in range(GRID_WIDTH):
                 rect = pygame.Rect(GRID_RECT.x + x * GRID_CELL, GRID_RECT.y + y * GRID_CELL, GRID_CELL, GRID_CELL)
                 self.tile_rects[(x, y)] = rect
-                base = (18, 31, 49) if (x + y) % 2 == 0 else (15, 26, 41)
-                pygame.draw.rect(self.screen, base, rect)
-                pygame.draw.rect(self.screen, (255, 255, 255, 18), rect, 1)
+                self._draw_grid_tile_base(rect, x, y, theme)
                 self._draw_terrain_tile((x, y), rect, terrain_tiles)
 
                 tile = (x, y)
@@ -3176,8 +3395,7 @@ class GameApp:
                     overlay.fill((224, 108, 92, 42))
                     self.screen.blit(overlay, rect.topleft)
                 if tile in blocked_tiles:
-                    pygame.draw.rect(self.screen, (47, 57, 68), rect.inflate(-18, -18), border_radius=18)
-                    pygame.draw.rect(self.screen, (173, 139, 104), rect.inflate(-18, -18), 1, border_radius=18)
+                    self._draw_blocked_tile_art(rect, theme, tile)
 
         for tile, champion_id in self.red_deploy_assignments.items():
             self._draw_static_unit(champion_id, tile, selected=False)
@@ -3301,33 +3519,29 @@ class GameApp:
         if self.controller is None:
             return
 
-        grid_surface = pygame.Surface(GRID_RECT.size, pygame.SRCALPHA)
-        draw_vertical_gradient(grid_surface, grid_surface.get_rect(), (7, 16, 26), (10, 22, 36))
-        self.screen.blit(grid_surface, GRID_RECT.topleft)
-        self._draw_battle_atmosphere()
-
         reachable = self.controller.get_reachable_tiles()
         basic_targets = set(self.controller.get_valid_targets("basic")) if self.mode == "basic" else set()
         special_targets = set(self.controller.get_valid_targets("special")) if self.mode == "special" else set()
         active = self.controller.get_active_unit()
         intent = self.controller.preview_ai_intent() if active and active.team == "red" else None
         terrain_tiles = self.controller.terrain_tiles
+        theme = self._battlefield_theme(
+            terrain_tiles,
+            set(self.controller.blocked_tiles),
+            enemy_ids=[unit.id for unit in self.controller.units if unit.team == "red"],
+        )
+        self._draw_grid_backdrop(theme)
         boss_pressure_tiles, boss_pressure_color, _, _, boss_pressure_active = self._current_boss_pressure_preview()
 
         for y in range(GRID_HEIGHT):
             for x in range(GRID_WIDTH):
                 rect = pygame.Rect(GRID_RECT.x + x * GRID_CELL, GRID_RECT.y + y * GRID_CELL, GRID_CELL, GRID_CELL)
                 self.tile_rects[(x, y)] = rect
-                base = (18, 31, 49) if (x + y) % 2 == 0 else (15, 26, 41)
-                inner = rect.inflate(-6, -6)
-                pygame.draw.rect(self.screen, base, rect, border_radius=16)
-                pygame.draw.rect(self.screen, (255, 255, 255, 18), rect, 1, border_radius=16)
-                pygame.draw.rect(self.screen, (255, 255, 255, 10), inner, 1, border_radius=12)
+                self._draw_grid_tile_base(rect, x, y, theme)
                 self._draw_terrain_tile((x, y), rect, terrain_tiles)
 
                 if (x, y) in self.controller.blocked_tiles:
-                    pygame.draw.rect(self.screen, (47, 57, 68), rect.inflate(-18, -18), border_radius=18)
-                    pygame.draw.rect(self.screen, (173, 139, 104), rect.inflate(-18, -18), 1, border_radius=18)
+                    self._draw_blocked_tile_art(rect, theme, (x, y))
 
                 if (x, y) in reachable:
                     overlay = pygame.Surface(rect.size, pygame.SRCALPHA)
@@ -3954,18 +4168,52 @@ class GameApp:
         if terrain_id is None:
             return
         terrain = TERRAIN_BY_ID[terrain_id]
+        color = hex_to_rgb(terrain.color)
         pulse = (math.sin(self.time_accumulator * 2.2 + tile[0] * 0.5 + tile[1] * 0.3) + 1) * 0.5
         overlay = pygame.Surface(rect.size, pygame.SRCALPHA)
-        overlay.fill((*hex_to_rgb(terrain.color), int(24 + 18 * pulse)))
-        self.screen.blit(overlay, rect.topleft)
-        icon_rect = rect.inflate(-48, -48)
-        glow_rect = rect.inflate(-24, -24)
-        glow = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
-        pygame.draw.ellipse(glow, (*hex_to_rgb(terrain.color), int(24 + 20 * pulse)), glow.get_rect())
-        self.screen.blit(glow, glow_rect.topleft)
-        pygame.draw.rect(self.screen, hex_to_rgb(terrain.color), icon_rect, 2, border_radius=14)
-        initial = terrain.name[0]
-        self._draw_text(initial, self.font_small, hex_to_rgb(terrain.color), rect.center, center=True)
+        glow = pygame.Surface(rect.size, pygame.SRCALPHA)
+
+        if terrain_id == "brush":
+            overlay.fill((*color, int(20 + 14 * pulse)))
+            self.screen.blit(overlay, rect.topleft)
+            patch = pygame.Rect(16, rect.height - 44, rect.width - 32, 24)
+            pygame.draw.ellipse(glow, (*color, int(28 + 18 * pulse)), pygame.Rect(12, rect.height - 56, rect.width - 24, 36))
+            self.screen.blit(glow, rect.topleft)
+            pygame.draw.ellipse(self.screen, tinted(color, 0.08), pygame.Rect(rect.x + patch.x, rect.y + patch.y, patch.width, patch.height))
+            for offset in (26, 42, 58, 74):
+                blade = [(rect.x + offset, rect.bottom - 18), (rect.x + offset - 8, rect.bottom - 42), (rect.x + offset + 4, rect.bottom - 50)]
+                pygame.draw.lines(self.screen, tinted(color, 0.18), False, blade, 3)
+            self._draw_text("풀", self.font_tiny, tinted(color, 0.3), (rect.centerx, rect.centery + 8), center=True)
+        elif terrain_id == "rune":
+            overlay.fill((*color, int(18 + 16 * pulse)))
+            self.screen.blit(overlay, rect.topleft)
+            pygame.draw.ellipse(glow, (*color, int(26 + 22 * pulse)), pygame.Rect(18, 18, rect.width - 36, rect.height - 36))
+            self.screen.blit(glow, rect.topleft)
+            outer = rect.inflate(-34, -34)
+            inner = rect.inflate(-52, -52)
+            diamond = [outer.midtop, outer.midright, outer.midbottom, outer.midleft]
+            pygame.draw.ellipse(self.screen, color, outer, 2)
+            pygame.draw.ellipse(self.screen, tinted(color, 0.24), inner, 1)
+            pygame.draw.polygon(self.screen, color, diamond, 2)
+            pygame.draw.line(self.screen, tinted(color, 0.18), (rect.centerx - 16, rect.centery), (rect.centerx + 16, rect.centery), 2)
+            pygame.draw.line(self.screen, tinted(color, 0.18), (rect.centerx, rect.centery - 16), (rect.centerx, rect.centery + 16), 2)
+        else:
+            overlay.fill((*color, int(20 + 18 * pulse)))
+            self.screen.blit(overlay, rect.topleft)
+            pygame.draw.ellipse(glow, (*color, int(20 + 16 * pulse)), pygame.Rect(16, 22, rect.width - 32, rect.height - 36))
+            self.screen.blit(glow, rect.topleft)
+            crack_points = [
+                (rect.x + 26, rect.bottom - 26),
+                (rect.x + 44, rect.y + 54),
+                (rect.x + 58, rect.centery + 6),
+                (rect.x + 74, rect.y + 28),
+            ]
+            pygame.draw.lines(self.screen, tinted(color, 0.2), False, crack_points, 3)
+            for spark in ((rect.x + 30, rect.y + 30), (rect.x + 66, rect.y + 42), (rect.x + 54, rect.bottom - 28)):
+                pygame.draw.circle(self.screen, tinted(color, 0.3), spark, 3)
+            triangle = [(rect.centerx, rect.y + 26), (rect.x + 34, rect.y + 62), (rect.right - 34, rect.y + 62)]
+            pygame.draw.polygon(self.screen, (*color, 90), triangle)
+            pygame.draw.polygon(self.screen, tinted(color, 0.24), triangle, 1)
 
     def _encounter_badge_for_unit(self, unit) -> tuple[str | None, tuple[int, int, int]]:
         if unit.is_boss:

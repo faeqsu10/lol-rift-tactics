@@ -952,6 +952,28 @@ class GameAppFlowTests(unittest.TestCase):
         self.assertEqual(app.controller.blocked_tiles, set(FINALE_VARIANTS_BY_ID["runic-nexus"].blocked_tiles))
         self.assertEqual(boss.boss_profile_id, "spellstorm")
 
+    def test_stage_one_prefers_verdant_battlefield_theme(self) -> None:
+        app = GameApp(headless=True)
+        app.run_stage = 1
+        app.selected_red_ids = ["red-darius", "red-annie", "red-caitlyn"]
+
+        terrain_tiles = app._terrain_tiles_for_stage(stage=1, enemy_ids=app.selected_red_ids)
+        blocked_tiles = set(app._blocked_tiles_for_stage(stage=1, enemy_ids=app.selected_red_ids))
+        theme = app._battlefield_theme(terrain_tiles, blocked_tiles, enemy_ids=app.selected_red_ids)
+
+        self.assertEqual(theme.id, "verdant-frontier")
+
+    def test_spellstorm_finale_uses_runic_nexus_theme(self) -> None:
+        app = GameApp(headless=True)
+        app.run_stage = 3
+        app.selected_red_ids = ["red-brand", "red-zed", "red-katarina"]
+
+        terrain_tiles = app._terrain_tiles_for_stage(stage=3, enemy_ids=app.selected_red_ids)
+        blocked_tiles = set(app._blocked_tiles_for_stage(stage=3, enemy_ids=app.selected_red_ids))
+        theme = app._battlefield_theme(terrain_tiles, blocked_tiles, enemy_ids=app.selected_red_ids)
+
+        self.assertEqual(theme.id, "runic-nexus")
+
     def test_start_battle_triggers_node_intro_card(self) -> None:
         app = GameApp(headless=True)
         app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
