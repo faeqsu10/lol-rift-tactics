@@ -48,6 +48,7 @@
 - `native_tactics` 스탠디에 `hero/ready/attack/hit/victory` 포즈 차등과 무기 방향 오프셋 추가
 - `native_tactics` 공격 잔상, 피격 스파크, 승리 샤드 오라를 포즈 상태와 연결
 - `native_tactics` `assets/tactics-cutouts/` 실컷아웃 자산 경로와 초상화 기반 합성 컷아웃 폴백 추가
+- `assets/tactics-cutouts/`에 현재 로스터 22명 기준 생성형 투명 컷아웃 PNG 아트팩 추가
 - `native_tactics` 로스터를 `블루 11 / 레드 11`로 확장하고 리븐, 오리아나, 아칼리, 세트를 추가
 - `native_tactics` 공격/피격/사망/승리 포즈와 전투 종료 홀드 기반 애니메이션 1차 추가
 - `native_tactics` 스테이지/결전 테마에 따라 전장 팔레트, 장애물, 지형 문양이 달라지는 맵 아트 1차 추가
@@ -57,6 +58,7 @@
 
 추가 자산 규칙:
 - 실제 전술 컷아웃 PNG를 넣을 때는 [assets/tactics-cutouts/README.md](/home/faeqsu10/projects/lol-rift-tactics/assets/tactics-cutouts/README.md) 형식을 따르면 됩니다.
+- 현재 저장소에는 생성 스크립트 [generate-tactics-cutouts.py](/home/faeqsu10/projects/lol-rift-tactics/scripts/generate-tactics-cutouts.py)가 포함되어 있고 `npm run tactics:generate-cutouts`로 재생성할 수 있습니다.
 - 스킬 버튼 클릭 및 적 유닛 직접 타겟팅
 - 속도 기반 턴 순서
 - 쿨다운, 보호막, 기절, 간단한 적 AI

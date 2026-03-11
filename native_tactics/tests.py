@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -19,6 +20,7 @@ from .app import NodeFollowUp
 from .app import RunNode
 from .app import RUN_STAGE_COUNT
 from .app import StageModifier
+from .app import TACTICS_CUTOUT_ART_DIR
 from .data import ART_FILE_BY_UNIT_ID
 from .data import FINALE_VARIANTS_BY_ID
 from .data import PASSIVE_BY_CHAMPION_ID
@@ -30,6 +32,7 @@ from .history import PersistedRunRecord
 from native_game.data import BLUEPRINTS_BY_ID
 from native_game.data import SELECTABLE_BLUE_IDS
 from native_game.data import SELECTABLE_RED_IDS
+from . import app as app_module
 
 
 class TacticsControllerTests(unittest.TestCase):
@@ -1101,6 +1104,37 @@ class GameAppFlowTests(unittest.TestCase):
         second = app._cutout_surface_for_champion("blue-jinx", (72, 96), (83, 170, 236))
 
         self.assertIs(first, second)
+
+    def test_cutout_artpack_exists_for_all_mapped_champions(self) -> None:
+        missing = [filename for filename in ART_FILE_BY_UNIT_ID.values() if not (TACTICS_CUTOUT_ART_DIR / filename).exists()]
+
+        self.assertEqual(missing, [])
+
+    def test_generate_cutouts_script_supports_temp_output_and_loader(self) -> None:
+        script_path = Path(__file__).resolve().parents[1] / "scripts" / "generate-tactics-cutouts.py"
+        with TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir)
+            subprocess.run(
+                ["python3", str(script_path), "--output-dir", str(output_dir)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            generated_files = {path.name for path in output_dir.glob("*.png")}
+            self.assertEqual(generated_files, set(ART_FILE_BY_UNIT_ID.values()))
+
+            original_cutout_dir = app_module.TACTICS_CUTOUT_ART_DIR
+            app_module.TACTICS_CUTOUT_ART_DIR = output_dir
+            try:
+                app = GameApp(headless=True)
+                self.assertEqual(set(app.champion_cutouts), set(ART_FILE_BY_UNIT_ID))
+                surface = app._cutout_surface_for_champion("blue-jinx", (72, 96), (83, 170, 236))
+                self.assertIsNotNone(surface)
+                assert surface is not None
+                self.assertEqual(surface.get_size(), (72, 96))
+            finally:
+                app_module.TACTICS_CUTOUT_ART_DIR = original_cutout_dir
 
     def test_stage_two_marks_elite_enemy(self) -> None:
         app = GameApp(headless=True)

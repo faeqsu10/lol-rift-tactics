@@ -2,6 +2,14 @@
 
 ## 2026-03-11
 
+### 생성형 컷아웃 아트팩 1차 배포
+
+- `scripts/generate-tactics-cutouts.py`를 추가해 `assets/champions/*.png` 기준으로 `assets/tactics-cutouts/*.png` 투명 컷아웃을 일괄 생성할 수 있게 정리
+- 현재 로스터 22명 전원에 대해 생성형 컷아웃 PNG를 실제 저장소에 채워, 런타임이 합성 폴백이 아니라 파일 기반 실컷아웃 경로를 우선 쓰도록 전환
+- 생성기는 `3:4` 비율 컷아웃 캔버스, 초상화 cover crop, shaped mask, 하단 fade, 가장자리 라인 규칙을 써서 작은 전술 스탠디에서도 읽히는 버스트 컷아웃을 만든다
+- temp output 경로를 받는 옵션을 넣고 테스트에서 실제로 생성기 -> temp dir -> 로더 경로를 확인하게 만들어 이후 아트팩 재생성 회귀를 줄임
+- 검증은 `native_tactics.tests`, `tactics:smoke`, `tactics:capture`, 선택 화면 컷아웃 캡처로 다시 확인
+
 ### 로스터 4차 확장
 
 - `native_tactics`와 공용 챔피언 데이터에 `리븐`, `오리아나`, `아칼리`, `세트`를 추가해 선택 가능 로스터를 `블루 11 / 레드 11`로 확장

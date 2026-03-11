@@ -17,7 +17,8 @@
     "tactics:play": "LD_LIBRARY_PATH=\"$PWD/.vendor/pulse/extracted/usr/lib/x86_64-linux-gnu:$PWD/.vendor/pulse/extracted/usr/lib/x86_64-linux-gnu/pulseaudio:${LD_LIBRARY_PATH:-}\" SDL_AUDIODRIVER=\"${SDL_AUDIODRIVER:-pulseaudio}\" .venv/bin/python -m native_tactics",
     "tactics:test": ".venv/bin/python -m native_tactics.tests",
     "tactics:smoke": "SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy .venv/bin/python -m native_tactics --headless --frames 10",
-    "tactics:capture": "SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy .venv/bin/python -m native_tactics --headless --frames 2 --screenshot /tmp/rift-tactics-grid.png"
+    "tactics:capture": "SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy .venv/bin/python -m native_tactics --headless --frames 2 --screenshot /tmp/rift-tactics-grid.png",
+    "tactics:generate-cutouts": "python3 scripts/generate-tactics-cutouts.py"
   },
   "dependencies": {
     "phaser": "^3.90.0",

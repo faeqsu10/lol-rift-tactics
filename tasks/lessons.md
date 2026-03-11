@@ -57,3 +57,4 @@
 - 포즈 연동 FX도 별도 상태 머신을 늘리기보다 기존 `attack_vector`, `hit_timer`, `victory_timer`를 재사용하는 편이 구현 속도와 회귀 안정성 모두 유리하다
 - 실컷아웃 원본이 아직 없을 때는 초상화를 `합성 bust cutout`으로 먼저 올리고, 나중에 같은 파일명 실컷아웃 PNG를 덮어쓰는 경로를 열어 두는 편이 가장 현실적이다
 - 전술 챔피언 추가는 `blueprint`, `tactical registry`, `art map`, `enemy stage pool`, `engine passive branch`, `tests`를 같이 묶지 않으면 절반만 추가된 상태가 되기 쉽다
+- 생성형 아트팩을 저장소에 실제 파일로 채워 두면 런타임은 단순 로딩만 하면 되고, 품질 개선은 나중에 파일 교체만으로 진행할 수 있어 코드 변경량이 크게 줄어든다
