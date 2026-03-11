@@ -423,6 +423,17 @@ class UnitAnimationState:
 
 
 @dataclass(frozen=True)
+class StandeeLayout:
+    plate_rect: pygame.Rect
+    portrait_rect: pygame.Rect
+    strap_rect: pygame.Rect
+    torso_rect: pygame.Rect
+    hip_rect: pygame.Rect
+    leg_left_rect: pygame.Rect
+    leg_right_rect: pygame.Rect
+
+
+@dataclass(frozen=True)
 class BattlefieldTheme:
     id: str
     top_color: tuple[int, int, int]
@@ -4413,6 +4424,9 @@ class GameApp:
     ) -> pygame.Rect:
         canvas = pygame.Surface(rect.size, pygame.SRCALPHA)
         outline = (13, 21, 31)
+        layout = self._tactical_standee_layout(rect.size)
+        width, height = rect.size
+        center_x = width // 2
         accent_shadow = shaded(accent, 0.52)
         accent_dark = shaded(accent, 0.24)
         accent_mid = tinted(accent, 0.08)
@@ -4420,77 +4434,58 @@ class GameApp:
 
         if hit_flash > 0:
             hit = pygame.Surface(rect.size, pygame.SRCALPHA)
-            pygame.draw.circle(hit, (255, 116, 92, int(140 * clamp(hit_flash / 0.28, 0.0, 1.0))), (rect.width // 2, int(rect.height * 0.42)), 34)
+            pygame.draw.circle(
+                hit,
+                (255, 116, 92, int(140 * clamp(hit_flash / 0.28, 0.0, 1.0))),
+                (center_x, int(height * 0.4)),
+                max(26, int(min(width, height) * 0.26)),
+            )
             canvas.blit(hit, (0, 0))
 
-        glow = pygame.Surface((rect.width + 34, rect.height - 12), pygame.SRCALPHA)
+        glow = pygame.Surface((width + 34, height - 12), pygame.SRCALPHA)
         pygame.draw.ellipse(glow, (*accent, 22), glow.get_rect())
         canvas.blit(glow, (-17, 10))
 
         pennant = [
-            (rect.width // 2 - 8, 18),
-            (rect.width // 2 + 18, 30),
-            (rect.width // 2 + 8, 56),
-            (rect.width // 2 - 18, 44),
+            (center_x - max(8, width // 14), max(8, int(height * 0.06))),
+            (center_x + max(16, width // 7), max(18, int(height * 0.16))),
+            (center_x + max(6, width // 12), max(32, int(height * 0.29))),
+            (center_x - max(20, width // 5), max(24, int(height * 0.22))),
         ]
         pygame.draw.polygon(canvas, (*team_color, 90), pennant)
         pygame.draw.polygon(canvas, (255, 244, 217), pennant, 1)
+        plate = pygame.Surface(layout.plate_rect.size, pygame.SRCALPHA)
+        draw_vertical_gradient(
+            plate,
+            plate.get_rect(),
+            mix((17, 28, 42), accent, 0.14),
+            mix((9, 18, 28), accent, 0.22),
+        )
+        pygame.draw.rect(plate, (*accent, 34), plate.get_rect(), border_radius=max(16, layout.plate_rect.width // 4))
+        pygame.draw.rect(plate, outline, plate.get_rect(), 3, border_radius=max(16, layout.plate_rect.width // 4))
+        gloss_rect = pygame.Rect(8, 6, plate.get_width() - 16, max(18, plate.get_height() // 4))
+        pygame.draw.ellipse(plate, (255, 255, 255, 18), gloss_rect)
+        canvas.blit(plate, layout.plate_rect.topleft)
 
-        cloak_points = [(20, 56), (10, 108), (26, 118), (rect.width // 2, 88), (rect.width - 26, 118), (rect.width - 10, 108), (rect.width - 20, 56)]
-        cloak_color = accent_shadow if role in {"Vanguard", "Mage"} else shaded(team_color, 0.35)
-        pygame.draw.polygon(canvas, cloak_color, cloak_points)
-        pygame.draw.polygon(canvas, outline, cloak_points, 2)
-
-        plate_rect = pygame.Rect(18, 14, rect.width - 36, 88)
-        pygame.draw.rect(canvas, accent_shadow, plate_rect, border_radius=24)
-        pygame.draw.rect(canvas, outline, plate_rect, 3, border_radius=24)
-
-        portrait_rect = pygame.Rect((rect.width - 54) // 2, 18, 54, 54)
+        portrait_border = layout.portrait_rect.inflate(6, 6)
+        pygame.draw.rect(canvas, accent_shadow, portrait_border, border_radius=max(14, layout.portrait_rect.width // 4))
         art = self.champion_art.get(champion_id)
         if art is not None:
-            portrait = self._masked_art_surface(art, portrait_rect.size, border_radius=portrait_rect.width // 2)
-            canvas.blit(portrait, portrait_rect.topleft)
-        pygame.draw.ellipse(canvas, accent_light, portrait_rect, 3)
-        pygame.draw.ellipse(canvas, (248, 241, 223), portrait_rect.inflate(-8, -8), 1)
-
-        sash_rect = pygame.Rect(24, 78, rect.width - 48, 14)
-        pygame.draw.rect(canvas, team_color, sash_rect, border_radius=8)
-        pygame.draw.rect(canvas, outline, sash_rect, 2, border_radius=8)
-
-        body_rect = pygame.Rect(26, 88, rect.width - 52, 24)
-        pygame.draw.rect(canvas, accent_dark, body_rect, border_radius=10)
-        pygame.draw.rect(canvas, outline, body_rect, 2, border_radius=10)
-
-        shoulder_left = pygame.Rect(16, 84, 18, 18)
-        shoulder_right = pygame.Rect(rect.width - 34, 84, 18, 18)
-        shoulder_color = accent_light if role in {"Vanguard", "Marksman"} else accent_mid
-        pygame.draw.ellipse(canvas, shoulder_color, shoulder_left)
-        pygame.draw.ellipse(canvas, shoulder_color, shoulder_right)
-        pygame.draw.ellipse(canvas, outline, shoulder_left, 2)
-        pygame.draw.ellipse(canvas, outline, shoulder_right, 2)
-
-        chest_rect = pygame.Rect(rect.width // 2 - 11, 91, 22, 18)
-        if role == "Vanguard":
-            pygame.draw.rect(canvas, team_color, chest_rect, border_radius=6)
-            pygame.draw.rect(canvas, outline, chest_rect, 2, border_radius=6)
-        elif role == "Mage":
-            pygame.draw.circle(canvas, team_color, chest_rect.center, 10)
-            pygame.draw.circle(canvas, outline, chest_rect.center, 10, 2)
-        elif role == "Marksman":
-            pygame.draw.rect(canvas, tinted(team_color, 0.12), chest_rect, border_radius=4)
-            pygame.draw.rect(canvas, outline, chest_rect, 2, border_radius=4)
-            pygame.draw.line(canvas, team_color, (chest_rect.x + 4, chest_rect.centery), (chest_rect.right - 4, chest_rect.centery), 2)
+            portrait = self._masked_art_surface(art, layout.portrait_rect.size, border_radius=max(12, layout.portrait_rect.width // 4))
+            canvas.blit(portrait, layout.portrait_rect.topleft)
         else:
-            diamond = [(chest_rect.centerx, chest_rect.y), (chest_rect.right, chest_rect.centery), (chest_rect.centerx, chest_rect.bottom), (chest_rect.x, chest_rect.centery)]
-            pygame.draw.polygon(canvas, team_color, diamond)
-            pygame.draw.polygon(canvas, outline, diamond, 2)
+            fallback = pygame.Surface(layout.portrait_rect.size, pygame.SRCALPHA)
+            draw_vertical_gradient(fallback, fallback.get_rect(), mix(accent, (255, 255, 255), 0.08), accent_dark)
+            canvas.blit(fallback, layout.portrait_rect.topleft)
+        pygame.draw.rect(canvas, accent_light, portrait_border, 3, border_radius=max(14, layout.portrait_rect.width // 4))
+        pygame.draw.rect(canvas, (248, 241, 223), layout.portrait_rect, 1, border_radius=max(12, layout.portrait_rect.width // 4))
 
-        leg_left = pygame.Rect(rect.width // 2 - 18, 110, 12, 18)
-        leg_right = pygame.Rect(rect.width // 2 + 6, 110, 12, 18)
-        for leg_rect in (leg_left, leg_right):
-            pygame.draw.rect(canvas, accent_shadow, leg_rect, border_radius=5)
-            pygame.draw.rect(canvas, outline, leg_rect, 2, border_radius=5)
+        pygame.draw.rect(canvas, team_color, layout.strap_rect, border_radius=max(6, layout.strap_rect.height // 2))
+        pygame.draw.rect(canvas, outline, layout.strap_rect, 2, border_radius=max(6, layout.strap_rect.height // 2))
+        strap_gloss = pygame.Rect(layout.strap_rect.x + 4, layout.strap_rect.y + 2, max(10, layout.strap_rect.width // 2), max(3, layout.strap_rect.height // 3))
+        pygame.draw.ellipse(canvas, (255, 255, 255, 26), strap_gloss)
 
+        self._draw_tactical_body_layer(canvas, layout, role, accent, team_color, outline, accent_shadow, accent_dark, accent_mid, accent_light)
         self._draw_tactical_accessory(canvas, champion_id, role, accent, team_color, outline)
 
         if badge_text is not None:
@@ -4508,6 +4503,181 @@ class GameApp:
         self.screen.blit(canvas, blit_rect.topleft)
         return blit_rect
 
+    def _tactical_standee_layout(self, size: tuple[int, int]) -> StandeeLayout:
+        width, height = size
+        plate_width = max(42, int(width * 0.64))
+        plate_height = max(58, int(height * 0.48))
+        plate_rect = pygame.Rect((width - plate_width) // 2, max(8, int(height * 0.08)), plate_width, plate_height)
+
+        portrait_pad_x = max(6, int(width * 0.06))
+        portrait_pad_top = max(6, int(height * 0.05))
+        portrait_pad_bottom = max(14, int(height * 0.12))
+        portrait_rect = pygame.Rect(
+            plate_rect.x + portrait_pad_x,
+            plate_rect.y + portrait_pad_top,
+            max(24, plate_rect.width - portrait_pad_x * 2),
+            max(26, plate_rect.height - portrait_pad_top - portrait_pad_bottom),
+        )
+
+        strap_height = max(10, int(height * 0.07))
+        strap_rect = pygame.Rect(
+            plate_rect.x + max(8, int(width * 0.06)),
+            plate_rect.bottom - strap_height - max(6, int(height * 0.03)),
+            max(24, plate_rect.width - max(16, int(width * 0.12))),
+            strap_height,
+        )
+
+        torso_width = max(28, int(width * 0.34))
+        torso_height = max(24, int(height * 0.18))
+        torso_rect = pygame.Rect(
+            width // 2 - torso_width // 2,
+            portrait_rect.bottom - max(6, int(height * 0.04)),
+            torso_width,
+            torso_height,
+        )
+
+        hip_width = max(26, int(width * 0.3))
+        hip_height = max(12, int(height * 0.08))
+        hip_rect = pygame.Rect(
+            width // 2 - hip_width // 2,
+            torso_rect.bottom - max(4, int(height * 0.02)),
+            hip_width,
+            hip_height,
+        )
+
+        leg_width = max(9, int(width * 0.1))
+        leg_height = max(18, int(height * 0.16))
+        leg_gap = max(5, int(width * 0.06))
+        leg_y = hip_rect.bottom - 2
+        leg_left_rect = pygame.Rect(width // 2 - leg_gap - leg_width, leg_y, leg_width, leg_height)
+        leg_right_rect = pygame.Rect(width // 2 + leg_gap, leg_y, leg_width, leg_height)
+        return StandeeLayout(plate_rect, portrait_rect, strap_rect, torso_rect, hip_rect, leg_left_rect, leg_right_rect)
+
+    def _draw_tactical_body_layer(
+        self,
+        surface: pygame.Surface,
+        layout: StandeeLayout,
+        role: str,
+        accent: tuple[int, int, int],
+        team_color: tuple[int, int, int],
+        outline: tuple[int, int, int],
+        accent_shadow: tuple[int, int, int],
+        accent_dark: tuple[int, int, int],
+        accent_mid: tuple[int, int, int],
+        accent_light: tuple[int, int, int],
+    ) -> None:
+        width, height = surface.get_size()
+        cloak_color = accent_shadow if role in {"Vanguard", "Mage"} else shaded(team_color, 0.38)
+        center_x = width // 2
+        base_top = layout.torso_rect.y - max(8, int(height * 0.05))
+        base_bottom = min(height - 10, layout.leg_left_rect.bottom + max(6, int(height * 0.03)))
+        left_edge = max(8, center_x - max(22, int(width * 0.24)))
+        right_edge = min(width - 8, center_x + max(22, int(width * 0.24)))
+        if role == "Assassin":
+            cloak_points = [
+                (left_edge + 10, base_top),
+                (left_edge, base_bottom - 22),
+                (center_x - 8, base_bottom - 34),
+                (center_x - 18, base_bottom),
+                (center_x + 8, base_bottom - 30),
+                (right_edge, base_bottom - 18),
+                (right_edge - 10, base_top + 10),
+            ]
+        elif role == "Marksman":
+            cloak_points = [
+                (left_edge + 12, base_top + 4),
+                (left_edge + 2, base_bottom - 26),
+                (center_x, base_bottom - 38),
+                (right_edge - 2, base_bottom - 20),
+                (right_edge - 12, base_top + 8),
+            ]
+        else:
+            cloak_points = [
+                (left_edge + 10, base_top),
+                (left_edge, base_bottom - 18),
+                (left_edge + 18, base_bottom),
+                (center_x, base_bottom - 30),
+                (right_edge - 18, base_bottom),
+                (right_edge, base_bottom - 18),
+                (right_edge - 10, base_top),
+            ]
+        pygame.draw.polygon(surface, cloak_color, cloak_points)
+        pygame.draw.polygon(surface, outline, cloak_points, 2)
+
+        arm_width = max(8, int(width * 0.09))
+        arm_height = max(18, int(height * 0.16))
+        shoulder_offset = max(8, int(width * 0.05))
+        arm_y = layout.torso_rect.y + max(6, int(height * 0.03))
+        left_arm = pygame.Rect(layout.torso_rect.x - shoulder_offset, arm_y, arm_width, arm_height)
+        right_arm = pygame.Rect(layout.torso_rect.right - arm_width + shoulder_offset, arm_y, arm_width, arm_height)
+        for arm_rect in (left_arm, right_arm):
+            pygame.draw.rect(surface, accent_mid, arm_rect, border_radius=max(5, arm_rect.width // 2))
+            pygame.draw.rect(surface, outline, arm_rect, 2, border_radius=max(5, arm_rect.width // 2))
+
+        shoulder_w = max(14, int(width * 0.16))
+        shoulder_h = max(12, int(height * 0.08))
+        shoulder_y = layout.torso_rect.y - max(2, int(height * 0.01))
+        left_shoulder = pygame.Rect(layout.torso_rect.x - shoulder_w // 2 + 2, shoulder_y, shoulder_w, shoulder_h)
+        right_shoulder = pygame.Rect(layout.torso_rect.right - shoulder_w // 2 - 2, shoulder_y, shoulder_w, shoulder_h)
+        shoulder_color = accent_light if role in {"Vanguard", "Marksman"} else accent_mid
+        for shoulder_rect in (left_shoulder, right_shoulder):
+            pygame.draw.ellipse(surface, shoulder_color, shoulder_rect)
+            pygame.draw.ellipse(surface, outline, shoulder_rect, 2)
+
+        torso_color = accent_dark if role != "Mage" else mix(accent_dark, team_color, 0.16)
+        pygame.draw.rect(surface, torso_color, layout.torso_rect, border_radius=max(10, layout.torso_rect.width // 3))
+        pygame.draw.rect(surface, outline, layout.torso_rect, 2, border_radius=max(10, layout.torso_rect.width // 3))
+        pygame.draw.rect(surface, accent_shadow, layout.hip_rect, border_radius=max(6, layout.hip_rect.height // 2))
+        pygame.draw.rect(surface, outline, layout.hip_rect, 2, border_radius=max(6, layout.hip_rect.height // 2))
+
+        if role == "Mage":
+            robe = [
+                (layout.torso_rect.x + 2, layout.torso_rect.bottom - 2),
+                (layout.hip_rect.x - 4, layout.leg_left_rect.bottom - 6),
+                (center_x, layout.leg_left_rect.bottom - 16),
+                (layout.hip_rect.right + 4, layout.leg_right_rect.bottom - 6),
+                (layout.torso_rect.right - 2, layout.torso_rect.bottom - 2),
+            ]
+            pygame.draw.polygon(surface, tinted(accent, 0.12), robe)
+            pygame.draw.polygon(surface, outline, robe, 2)
+        elif role == "Assassin":
+            sash_left = [(center_x - 4, layout.hip_rect.bottom - 2), (center_x - 18, layout.leg_left_rect.bottom), (center_x - 8, layout.leg_left_rect.bottom)]
+            sash_right = [(center_x + 4, layout.hip_rect.bottom - 2), (center_x + 18, layout.leg_right_rect.bottom), (center_x + 8, layout.leg_right_rect.bottom)]
+            pygame.draw.polygon(surface, team_color, sash_left)
+            pygame.draw.polygon(surface, team_color, sash_right)
+            pygame.draw.polygon(surface, outline, sash_left, 2)
+            pygame.draw.polygon(surface, outline, sash_right, 2)
+
+        for leg_rect in (layout.leg_left_rect, layout.leg_right_rect):
+            pygame.draw.rect(surface, accent_shadow, leg_rect, border_radius=max(5, leg_rect.width // 2))
+            pygame.draw.rect(surface, outline, leg_rect, 2, border_radius=max(5, leg_rect.width // 2))
+            boot_rect = pygame.Rect(leg_rect.x - 1, leg_rect.bottom - max(5, int(height * 0.03)), leg_rect.width + 2, max(6, int(height * 0.04)))
+            pygame.draw.rect(surface, shaded(accent_shadow, 0.22), boot_rect, border_radius=max(4, boot_rect.height // 2))
+            pygame.draw.rect(surface, outline, boot_rect, 2, border_radius=max(4, boot_rect.height // 2))
+
+        chest_rect = pygame.Rect(
+            center_x - max(9, int(width * 0.1)),
+            layout.torso_rect.y + max(6, int(height * 0.03)),
+            max(18, int(width * 0.2)),
+            max(14, int(height * 0.1)),
+        )
+        if role == "Vanguard":
+            pygame.draw.rect(surface, team_color, chest_rect, border_radius=max(5, chest_rect.height // 2))
+            pygame.draw.rect(surface, outline, chest_rect, 2, border_radius=max(5, chest_rect.height // 2))
+            pygame.draw.line(surface, (255, 244, 217), (chest_rect.centerx, chest_rect.y + 3), (chest_rect.centerx, chest_rect.bottom - 3), 2)
+        elif role == "Mage":
+            pygame.draw.circle(surface, team_color, chest_rect.center, max(8, chest_rect.height // 2))
+            pygame.draw.circle(surface, outline, chest_rect.center, max(8, chest_rect.height // 2), 2)
+            pygame.draw.circle(surface, (255, 244, 217), chest_rect.center, max(3, chest_rect.height // 4))
+        elif role == "Marksman":
+            pygame.draw.rect(surface, tinted(team_color, 0.16), chest_rect, border_radius=4)
+            pygame.draw.rect(surface, outline, chest_rect, 2, border_radius=4)
+            pygame.draw.line(surface, team_color, (chest_rect.x + 3, chest_rect.centery), (chest_rect.right - 3, chest_rect.centery), 2)
+        else:
+            diamond = [(chest_rect.centerx, chest_rect.y), (chest_rect.right, chest_rect.centery), (chest_rect.centerx, chest_rect.bottom), (chest_rect.x, chest_rect.centery)]
+            pygame.draw.polygon(surface, team_color, diamond)
+            pygame.draw.polygon(surface, outline, diamond, 2)
+
     def _draw_tactical_accessory(
         self,
         surface: pygame.Surface,
@@ -4522,71 +4692,88 @@ class GameApp:
         width, height = surface.get_size()
         center_x = width // 2
 
+        def point(rx: float, ry: float) -> tuple[int, int]:
+            return int(width * rx), int(height * ry)
+
+        def rect_ratio(rx: float, ry: float, rw: float, rh: float) -> pygame.Rect:
+            return pygame.Rect(int(width * rx), int(height * ry), max(2, int(width * rw)), max(2, int(height * rh)))
+
         if champion_id in {"blue-garen", "red-darius", "blue-leona", "red-yasuo"}:
-            shaft = pygame.Rect(width - 20, 38, 6, 56)
-            pygame.draw.rect(surface, metal, shaft, border_radius=4)
-            pygame.draw.rect(surface, outline, shaft, 2, border_radius=4)
-            blade = [(shaft.centerx, 20), (shaft.right + 10, 40), (shaft.x - 10, 40)]
+            shaft = rect_ratio(0.79, 0.23, 0.05, 0.44)
+            pygame.draw.rect(surface, metal, shaft, border_radius=max(3, shaft.width // 2))
+            pygame.draw.rect(surface, outline, shaft, 2, border_radius=max(3, shaft.width // 2))
+            blade = [point(0.815, 0.11), point(0.92, 0.26), point(0.71, 0.26)]
             pygame.draw.polygon(surface, warm_metal if champion_id != "red-darius" else metal, blade)
             pygame.draw.polygon(surface, outline, blade, 2)
             if champion_id == "red-darius":
-                axe = [(shaft.centerx, 46), (shaft.x - 16, 58), (shaft.centerx - 2, 72)]
+                axe = [point(0.81, 0.35), point(0.66, 0.44), point(0.79, 0.54)]
                 pygame.draw.polygon(surface, metal, axe)
                 pygame.draw.polygon(surface, outline, axe, 2)
+            if champion_id == "blue-leona":
+                shield = rect_ratio(0.08, 0.43, 0.14, 0.24)
+                pygame.draw.rect(surface, warm_metal, shield, border_radius=max(5, shield.width // 2))
+                pygame.draw.rect(surface, outline, shield, 2, border_radius=max(5, shield.width // 2))
+                pygame.draw.line(surface, team_color, (shield.centerx, shield.y + 4), (shield.centerx, shield.bottom - 4), 2)
         elif champion_id in {"blue-jinx", "red-caitlyn", "blue-ezreal", "blue-ashe"}:
-            weapon = pygame.Rect(width - 24, 76, 28, 8)
-            pygame.draw.rect(surface, metal, weapon, border_radius=4)
-            pygame.draw.rect(surface, outline, weapon, 2, border_radius=4)
-            muzzle = pygame.Rect(width - 4, 78, 6, 4)
-            pygame.draw.rect(surface, team_color, muzzle, border_radius=2)
-            pygame.draw.rect(surface, outline, muzzle, 1, border_radius=2)
+            weapon = rect_ratio(0.73, 0.6, 0.24, 0.07)
+            pygame.draw.rect(surface, metal, weapon, border_radius=max(3, weapon.height // 2))
+            pygame.draw.rect(surface, outline, weapon, 2, border_radius=max(3, weapon.height // 2))
+            muzzle = rect_ratio(0.94, 0.613, 0.05, 0.03)
+            pygame.draw.rect(surface, team_color, muzzle, border_radius=max(2, muzzle.height // 2))
+            pygame.draw.rect(surface, outline, muzzle, 1, border_radius=max(2, muzzle.height // 2))
+            if champion_id == "blue-jinx":
+                rocket = rect_ratio(0.76, 0.49, 0.16, 0.05)
+                pygame.draw.rect(surface, tinted(accent, 0.18), rocket, border_radius=max(3, rocket.height // 2))
+                pygame.draw.rect(surface, outline, rocket, 2, border_radius=max(3, rocket.height // 2))
             if champion_id == "blue-ashe":
-                bow = [(14, 70), (4, 90), (14, 110)]
+                bow = [point(0.14, 0.5), point(0.05, 0.67), point(0.14, 0.84)]
                 pygame.draw.lines(surface, warm_metal, False, bow, 4)
                 pygame.draw.lines(surface, outline, False, bow, 2)
         elif champion_id == "blue-vi":
-            for offset in (-20, 20):
-                gauntlet = pygame.Rect(center_x + offset - 10, 86, 18, 16)
-                pygame.draw.rect(surface, team_color, gauntlet, border_radius=6)
-                pygame.draw.rect(surface, outline, gauntlet, 2, border_radius=6)
+            for offset in (-1, 1):
+                gauntlet = pygame.Rect(center_x + offset * max(10, int(width * 0.13)) - max(9, int(width * 0.09)), int(height * 0.63), max(16, int(width * 0.18)), max(14, int(height * 0.12)))
+                pygame.draw.rect(surface, team_color, gauntlet, border_radius=max(5, gauntlet.height // 2))
+                pygame.draw.rect(surface, outline, gauntlet, 2, border_radius=max(5, gauntlet.height // 2))
         elif champion_id == "blue-braum":
-            shield = pygame.Rect(width - 28, 62, 18, 34)
-            pygame.draw.rect(surface, warm_metal, shield, border_radius=8)
-            pygame.draw.rect(surface, outline, shield, 2, border_radius=8)
-            pygame.draw.line(surface, team_color, (shield.centerx, shield.y + 4), (shield.centerx, shield.bottom - 4), 2)
+            shield = rect_ratio(0.73, 0.48, 0.16, 0.26)
+            pygame.draw.rect(surface, warm_metal, shield, border_radius=max(6, shield.width // 2))
+            pygame.draw.rect(surface, outline, shield, 2, border_radius=max(6, shield.width // 2))
+            pygame.draw.line(surface, team_color, (shield.centerx, shield.y + 5), (shield.centerx, shield.bottom - 5), 2)
         elif champion_id in {"red-zed", "red-katarina"}:
-            left_blade = [(18, 84), (6, 98), (22, 98)]
-            right_blade = [(width - 18, 84), (width - 6, 98), (width - 22, 98)]
+            left_blade = [point(0.18, 0.62), point(0.06, 0.74), point(0.2, 0.76)]
+            right_blade = [point(0.82, 0.62), point(0.94, 0.74), point(0.8, 0.76)]
             pygame.draw.polygon(surface, metal, left_blade)
             pygame.draw.polygon(surface, metal, right_blade)
             pygame.draw.polygon(surface, outline, left_blade, 2)
             pygame.draw.polygon(surface, outline, right_blade, 2)
         elif champion_id in {"blue-ahri", "blue-lux", "red-morgana", "red-lissandra", "red-brand", "red-annie"}:
-            orb_center = (width - 18, 52)
+            orb_center = point(0.82, 0.39)
+            orb_radius = max(8, int(min(width, height) * 0.07))
             orb_color = (255, 198, 92) if champion_id in {"red-brand", "red-annie"} else tinted(team_color, 0.18)
-            pygame.draw.circle(surface, orb_color, orb_center, 10)
-            pygame.draw.circle(surface, outline, orb_center, 10, 2)
+            pygame.draw.circle(surface, orb_color, orb_center, orb_radius)
+            pygame.draw.circle(surface, outline, orb_center, orb_radius, 2)
             if champion_id in {"blue-lux", "red-lissandra"}:
-                for angle in (0, math.pi / 2):
-                    dx = int(math.cos(angle) * 14)
-                    dy = int(math.sin(angle) * 14)
-                    pygame.draw.line(surface, (255, 244, 217), (orb_center[0] - dx, orb_center[1] - dy), (orb_center[0] + dx, orb_center[1] + dy), 2)
+                sparkle = max(10, int(min(width, height) * 0.11))
+                pygame.draw.line(surface, (255, 244, 217), (orb_center[0] - sparkle, orb_center[1]), (orb_center[0] + sparkle, orb_center[1]), 2)
+                pygame.draw.line(surface, (255, 244, 217), (orb_center[0], orb_center[1] - sparkle), (orb_center[0], orb_center[1] + sparkle), 2)
         else:
             if role == "Mage":
-                pygame.draw.circle(surface, tinted(team_color, 0.16), (width - 18, 52), 9)
-                pygame.draw.circle(surface, outline, (width - 18, 52), 9, 2)
+                orb_center = point(0.82, 0.39)
+                orb_radius = max(8, int(min(width, height) * 0.07))
+                pygame.draw.circle(surface, tinted(team_color, 0.16), orb_center, orb_radius)
+                pygame.draw.circle(surface, outline, orb_center, orb_radius, 2)
             elif role == "Marksman":
-                weapon = pygame.Rect(width - 22, 78, 24, 6)
-                pygame.draw.rect(surface, metal, weapon, border_radius=3)
-                pygame.draw.rect(surface, outline, weapon, 2, border_radius=3)
+                weapon = rect_ratio(0.76, 0.62, 0.2, 0.05)
+                pygame.draw.rect(surface, metal, weapon, border_radius=max(3, weapon.height // 2))
+                pygame.draw.rect(surface, outline, weapon, 2, border_radius=max(3, weapon.height // 2))
             elif role == "Assassin":
-                blade = [(width - 16, 70), (width - 4, 94), (width - 20, 90)]
+                blade = [point(0.82, 0.52), point(0.95, 0.72), point(0.78, 0.68)]
                 pygame.draw.polygon(surface, metal, blade)
                 pygame.draw.polygon(surface, outline, blade, 2)
             else:
-                shield = pygame.Rect(width - 24, 64, 16, 30)
-                pygame.draw.rect(surface, warm_metal, shield, border_radius=7)
-                pygame.draw.rect(surface, outline, shield, 2, border_radius=7)
+                shield = rect_ratio(0.75, 0.5, 0.14, 0.22)
+                pygame.draw.rect(surface, warm_metal, shield, border_radius=max(5, shield.width // 2))
+                pygame.draw.rect(surface, outline, shield, 2, border_radius=max(5, shield.width // 2))
 
     def _draw_portrait_art(self, champion_id: str, rect: pygame.Rect, accent: tuple[int, int, int]) -> None:
         panel = pygame.Surface(rect.size, pygame.SRCALPHA)

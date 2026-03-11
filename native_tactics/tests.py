@@ -907,6 +907,38 @@ class GameAppFlowTests(unittest.TestCase):
         self.assertTrue(all(card.bottom <= action_rect.top for card in card_rects))
         self.assertTrue(all(card.width == card_rects[0].width for card in card_rects))
 
+    def test_tactical_standee_layout_scales_inside_bounds(self) -> None:
+        app = GameApp(headless=True)
+        small = app._tactical_standee_layout((96, 132))
+        large = app._tactical_standee_layout((172, 208))
+
+        small_bounds = pygame.Rect(0, 0, 96, 132)
+        large_bounds = pygame.Rect(0, 0, 172, 208)
+        for part in (
+            small.plate_rect,
+            small.portrait_rect,
+            small.strap_rect,
+            small.torso_rect,
+            small.hip_rect,
+            small.leg_left_rect,
+            small.leg_right_rect,
+        ):
+            self.assertTrue(small_bounds.contains(part))
+        for part in (
+            large.plate_rect,
+            large.portrait_rect,
+            large.strap_rect,
+            large.torso_rect,
+            large.hip_rect,
+            large.leg_left_rect,
+            large.leg_right_rect,
+        ):
+            self.assertTrue(large_bounds.contains(part))
+
+        self.assertGreater(large.portrait_rect.width, small.portrait_rect.width)
+        self.assertLess(small.portrait_rect.y, small.torso_rect.y)
+        self.assertLess(small.torso_rect.bottom, small.leg_left_rect.bottom)
+
     def test_stage_two_marks_elite_enemy(self) -> None:
         app = GameApp(headless=True)
         app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
