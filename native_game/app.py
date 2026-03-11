@@ -34,6 +34,8 @@ CHAMPION_ART_FILES = {
     "blue-leona": "Leona.png",
     "blue-ashe": "Ashe.png",
     "blue-braum": "Braum.png",
+    "blue-riven": "Riven.png",
+    "blue-orianna": "Orianna.png",
     "red-darius": "Darius.png",
     "red-annie": "Annie.png",
     "red-caitlyn": "Caitlyn.png",
@@ -43,6 +45,8 @@ CHAMPION_ART_FILES = {
     "red-lissandra": "Lissandra.png",
     "red-katarina": "Katarina.png",
     "red-brand": "Brand.png",
+    "red-akali": "Akali.png",
+    "red-sett": "Sett.png",
 }
 
 

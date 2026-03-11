@@ -58,6 +58,7 @@
 - [x] `native_tactics` 스탠디 `hero/ready/attack/hit/victory` 포즈 차등 1차 적용
 - [x] `native_tactics` 포즈 연동 공격 잔상/피격 스파크/승리 샤드 FX 1차 적용
 - [x] `native_tactics` 실컷아웃 자산 경로와 초상화 기반 합성 컷아웃 폴백 1차 추가
+- [x] `native_tactics` 로스터를 `블루 11 / 레드 11`로 4차 확장하고 리븐, 오리아나, 아칼리, 세트 추가
 - [x] `native_tactics` 공격/피격/사망/승리 전용 전투 애니메이션 1차 추가
 - [x] `native_tactics` 스테이지/결전 테마 기반 배경 맵 아트와 장애물 렌더 1차 추가
 - [x] `native_tactics` 챔피언 선택 화면 대표 챔피언 패널과 가로형 적 조합 프리뷰/전술 행동 바로 2차 개편

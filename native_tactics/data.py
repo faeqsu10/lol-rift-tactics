@@ -33,6 +33,8 @@ ART_FILE_BY_UNIT_ID: dict[str, str] = {
     "blue-leona": "Leona.png",
     "blue-ashe": "Ashe.png",
     "blue-braum": "Braum.png",
+    "blue-riven": "Riven.png",
+    "blue-orianna": "Orianna.png",
     "red-darius": "Darius.png",
     "red-annie": "Annie.png",
     "red-caitlyn": "Caitlyn.png",
@@ -42,6 +44,8 @@ ART_FILE_BY_UNIT_ID: dict[str, str] = {
     "red-lissandra": "Lissandra.png",
     "red-katarina": "Katarina.png",
     "red-brand": "Brand.png",
+    "red-akali": "Akali.png",
+    "red-sett": "Sett.png",
 }
 
 ROLE_MOVE_RANGE: dict[str, int] = {
@@ -281,6 +285,8 @@ PASSIVE_BY_CHAMPION_ID: dict[str, tuple[str, str]] = {
     "blue-leona": ("여명의 수호", "보호막이 있는 상태로 인접 공격하면 피해가 3 증가합니다. 태양 폭발이 둘 이상 맞으면 모두 1턴 기절합니다."),
     "blue-ashe": ("서리 노출", "거리 3칸 이상에서 가한 피해가 3 증가합니다. 먼 거리에서 수정화살을 맞히면 기절이 1턴 늘어납니다."),
     "blue-braum": ("불굴", "턴 시작 시 보호막 12를 얻습니다. 공격 후 상대가 기절 상태면 보호막 6을 추가로 얻습니다."),
+    "blue-riven": ("룬 검격", "이번 턴 2칸 이상 이동했다면 피해가 5 증가합니다. 윈드 슬래시가 둘 이상 적중하면 보호막 6을 얻습니다."),
+    "blue-orianna": ("오토마톤 공명", "기절한 적에게 주는 피해가 4 증가합니다. 충격파를 쓰면 보호막 8을 얻습니다."),
     "red-darius": ("학살 본능", "체력이 절반 이하인 적에게 주는 피해가 5 증가합니다. 녹서스의 단두대로 처치하면 보호막 12를 얻습니다."),
     "red-annie": ("화염 점화", "보호막이 없는 적에게 티버 피해가 4 증가합니다. 티버가 둘 이상 맞으면 보호막 8을 얻습니다."),
     "red-caitlyn": ("헤드샷", "거리 4칸 이상 기본기 피해가 4 증가합니다. 기절한 적을 노리면 피해가 2 더 증가합니다."),
@@ -290,6 +296,8 @@ PASSIVE_BY_CHAMPION_ID: dict[str, tuple[str, str]] = {
     "red-lissandra": ("냉기 균열", "기절한 적에게 주는 피해가 5 증가합니다. 얼음 무덤이 기절한 적에게 닿으면 기절을 1턴 연장합니다."),
     "red-katarina": ("연쇄 참수", "적을 처치하면 즉시 보호막 10을 얻습니다. 죽음의 연꽃이 둘 이상 맞으면 보호막 6을 추가로 얻습니다."),
     "red-brand": ("확산 화염", "파멸의 불덩이 피해가 3 증가합니다. 맞은 타일을 화염 지대로 바꿉니다."),
+    "red-akali": ("암살 표식", "고립된 적에게 주는 피해가 6 증가합니다. 무결처형으로 고립 대상을 맞히면 보호막 8과 재사용 대기시간 1 감소를 얻습니다."),
+    "red-sett": ("거리의 투지", "체력이 절반 이하일 때 주는 피해가 5 증가합니다. 대미장식을 쓰면 보호막 10을 얻습니다."),
 }
 
 TACTICAL_ABILITY_OVERRIDES: dict[tuple[str, str], dict[str, int]] = {
@@ -298,11 +306,14 @@ TACTICAL_ABILITY_OVERRIDES: dict[tuple[str, str], dict[str, int]] = {
     ("blue-ezreal", "trueshot-barrage"): {"cast_range": 5},
     ("blue-lux", "final-spark"): {"cast_range": 5},
     ("blue-vi", "cease-and-desist"): {"cast_range": 3},
+    ("blue-orianna", "shockwave"): {"cast_range": 5},
     ("red-caitlyn", "piltover-peacemaker"): {"cast_range": 5},
     ("red-caitlyn", "ace-in-the-hole"): {"cast_range": 5},
     ("red-darius", "noxian-guillotine"): {"cast_range": 2},
     ("red-zed", "death-mark"): {"cast_range": 3},
     ("red-brand", "pyroclasm"): {"cast_range": 5},
+    ("red-akali", "perfect-execution"): {"cast_range": 3},
+    ("red-sett", "show-stopper"): {"cast_range": 2},
 }
 
 TACTICAL_SPECIAL_ABILITY_IDS: dict[str, str] = {
@@ -315,6 +326,8 @@ TACTICAL_SPECIAL_ABILITY_IDS: dict[str, str] = {
     "blue-leona": "solar-flare",
     "blue-ashe": "enchanted-crystal-arrow",
     "blue-braum": "glacial-fissure",
+    "blue-riven": "wind-slash",
+    "blue-orianna": "shockwave",
     "red-darius": "noxian-guillotine",
     "red-annie": "summon-tibbers",
     "red-caitlyn": "ace-in-the-hole",
@@ -324,6 +337,8 @@ TACTICAL_SPECIAL_ABILITY_IDS: dict[str, str] = {
     "red-lissandra": "frozen-tomb",
     "red-katarina": "death-lotus",
     "red-brand": "pyroclasm",
+    "red-akali": "perfect-execution",
+    "red-sett": "show-stopper",
 }
 
 

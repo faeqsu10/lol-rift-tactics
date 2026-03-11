@@ -67,9 +67,9 @@ RUN_REWARDS = (
     ("bonus-shield", "수호 문장", "아군 전원 시작 보호막 +12"),
 )
 STAGE_RED_POOLS = {
-    1: ("red-annie", "red-caitlyn", "red-darius", "red-morgana", "red-brand"),
-    2: ("red-darius", "red-caitlyn", "red-morgana", "red-yasuo", "red-brand", "red-lissandra"),
-    3: ("red-darius", "red-yasuo", "red-zed", "red-brand", "red-katarina", "red-lissandra"),
+    1: ("red-annie", "red-caitlyn", "red-darius", "red-morgana", "red-brand", "red-sett"),
+    2: ("red-darius", "red-caitlyn", "red-morgana", "red-yasuo", "red-brand", "red-lissandra", "red-akali", "red-sett"),
+    3: ("red-darius", "red-yasuo", "red-zed", "red-brand", "red-katarina", "red-lissandra", "red-akali", "red-sett"),
 }
 ROUTE_OPTIONS = (
     ("supply-line", "보급로", "목표: 중앙 보급 칸 진입 1회"),
@@ -4930,7 +4930,7 @@ class GameApp:
                 max(2, int(height * rh)),
             )
 
-        if champion_id in {"blue-garen", "red-darius", "blue-leona", "red-yasuo"}:
+        if champion_id in {"blue-garen", "red-darius", "blue-leona", "red-yasuo", "blue-riven"}:
             shaft = rect_ratio(0.79, 0.23, 0.05, 0.44)
             pygame.draw.rect(surface, metal, shaft, border_radius=max(3, shaft.width // 2))
             pygame.draw.rect(surface, outline, shaft, 2, border_radius=max(3, shaft.width // 2))
@@ -4961,7 +4961,7 @@ class GameApp:
                 bow = [point(0.14, 0.5), point(0.05, 0.67), point(0.14, 0.84)]
                 pygame.draw.lines(surface, warm_metal, False, bow, 4)
                 pygame.draw.lines(surface, outline, False, bow, 2)
-        elif champion_id == "blue-vi":
+        elif champion_id in {"blue-vi", "red-sett"}:
             for offset in (-1, 1):
                 gauntlet = pygame.Rect(center_x + offset * max(10, int(width * 0.13)) - max(9, int(width * 0.09)), int(height * 0.63), max(16, int(width * 0.18)), max(14, int(height * 0.12)))
                 pygame.draw.rect(surface, team_color, gauntlet, border_radius=max(5, gauntlet.height // 2))
@@ -4971,20 +4971,20 @@ class GameApp:
             pygame.draw.rect(surface, warm_metal, shield, border_radius=max(6, shield.width // 2))
             pygame.draw.rect(surface, outline, shield, 2, border_radius=max(6, shield.width // 2))
             pygame.draw.line(surface, team_color, (shield.centerx, shield.y + 5), (shield.centerx, shield.bottom - 5), 2)
-        elif champion_id in {"red-zed", "red-katarina"}:
+        elif champion_id in {"red-zed", "red-katarina", "red-akali"}:
             left_blade = [point(0.18, 0.62), point(0.06, 0.74), point(0.2, 0.76)]
             right_blade = [point(0.82, 0.62), point(0.94, 0.74), point(0.8, 0.76)]
             pygame.draw.polygon(surface, metal, left_blade)
             pygame.draw.polygon(surface, metal, right_blade)
             pygame.draw.polygon(surface, outline, left_blade, 2)
             pygame.draw.polygon(surface, outline, right_blade, 2)
-        elif champion_id in {"blue-ahri", "blue-lux", "red-morgana", "red-lissandra", "red-brand", "red-annie"}:
+        elif champion_id in {"blue-ahri", "blue-lux", "blue-orianna", "red-morgana", "red-lissandra", "red-brand", "red-annie"}:
             orb_center = point(0.82, 0.39)
             orb_radius = max(8, int(min(width, height) * 0.07))
             orb_color = (255, 198, 92) if champion_id in {"red-brand", "red-annie"} else tinted(team_color, 0.18)
             pygame.draw.circle(surface, orb_color, orb_center, orb_radius)
             pygame.draw.circle(surface, outline, orb_center, orb_radius, 2)
-            if champion_id in {"blue-lux", "red-lissandra"}:
+            if champion_id in {"blue-lux", "blue-orianna", "red-lissandra"}:
                 sparkle = max(10, int(min(width, height) * 0.11))
                 pygame.draw.line(surface, (255, 244, 217), (orb_center[0] - sparkle, orb_center[1]), (orb_center[0] + sparkle, orb_center[1]), 2)
                 pygame.draw.line(surface, (255, 244, 217), (orb_center[0], orb_center[1] - sparkle), (orb_center[0], orb_center[1] + sparkle), 2)

@@ -56,3 +56,4 @@
 - 전신 스탠디 포즈는 새 애니메이션 시스템을 따로 만들기보다, 기존 공격/피격/승리 타이머를 받아 몸통·팔·무기 오프셋만 바꾸는 방식이 가장 회귀 위험이 낮다
 - 포즈 연동 FX도 별도 상태 머신을 늘리기보다 기존 `attack_vector`, `hit_timer`, `victory_timer`를 재사용하는 편이 구현 속도와 회귀 안정성 모두 유리하다
 - 실컷아웃 원본이 아직 없을 때는 초상화를 `합성 bust cutout`으로 먼저 올리고, 나중에 같은 파일명 실컷아웃 PNG를 덮어쓰는 경로를 열어 두는 편이 가장 현실적이다
+- 전술 챔피언 추가는 `blueprint`, `tactical registry`, `art map`, `enemy stage pool`, `engine passive branch`, `tests`를 같이 묶지 않으면 절반만 추가된 상태가 되기 쉽다

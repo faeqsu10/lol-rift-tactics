@@ -98,8 +98,8 @@
   - Blue team: Garen, Ahri, Jinx
   - Red team: Darius, Annie, Caitlyn
 - Expanded selectable roster:
-  - Blue pool: Garen, Ahri, Jinx, Lux, Vi, Ezreal, Leona, Ashe, Braum
-  - Red pool: Darius, Annie, Caitlyn, Morgana, Yasuo, Zed, Lissandra, Katarina, Brand
+  - Blue pool: Garen, Ahri, Jinx, Lux, Vi, Ezreal, Leona, Ashe, Braum, Riven, Orianna
+  - Red pool: Darius, Annie, Caitlyn, Morgana, Yasuo, Zed, Lissandra, Katarina, Brand, Akali, Sett
 - Native dependency file: `requirements-native.txt`
 - Native run command: `.venv/bin/python -m native_game`
 - Tactics run command: `.venv/bin/python -m native_tactics`

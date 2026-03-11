@@ -33,12 +33,16 @@ class BattleControllerTests(unittest.TestCase):
         self.assertIn("blue-leona", SELECTABLE_BLUE_IDS)
         self.assertIn("blue-ashe", SELECTABLE_BLUE_IDS)
         self.assertIn("blue-braum", SELECTABLE_BLUE_IDS)
+        self.assertIn("blue-riven", SELECTABLE_BLUE_IDS)
+        self.assertIn("blue-orianna", SELECTABLE_BLUE_IDS)
         self.assertIn("red-zed", SELECTABLE_RED_IDS)
         self.assertIn("red-lissandra", SELECTABLE_RED_IDS)
         self.assertIn("red-katarina", SELECTABLE_RED_IDS)
         self.assertIn("red-brand", SELECTABLE_RED_IDS)
-        self.assertEqual(len(SELECTABLE_BLUE_IDS), 9)
-        self.assertEqual(len(SELECTABLE_RED_IDS), 9)
+        self.assertIn("red-akali", SELECTABLE_RED_IDS)
+        self.assertIn("red-sett", SELECTABLE_RED_IDS)
+        self.assertEqual(len(SELECTABLE_BLUE_IDS), 11)
+        self.assertEqual(len(SELECTABLE_RED_IDS), 11)
 
     def test_enemy_targeting_returns_all_living_enemies(self) -> None:
         controller = BattleController()

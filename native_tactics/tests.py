@@ -19,10 +19,17 @@ from .app import NodeFollowUp
 from .app import RunNode
 from .app import RUN_STAGE_COUNT
 from .app import StageModifier
+from .data import ART_FILE_BY_UNIT_ID
 from .data import FINALE_VARIANTS_BY_ID
+from .data import PASSIVE_BY_CHAMPION_ID
+from .data import TACTICAL_SPECIAL_ABILITY_IDS
 from .data import TACTICAL_BLUEPRINTS_BY_ID
+from .data import build_tactical_blueprint
 from .engine import TacticsController
 from .history import PersistedRunRecord
+from native_game.data import BLUEPRINTS_BY_ID
+from native_game.data import SELECTABLE_BLUE_IDS
+from native_game.data import SELECTABLE_RED_IDS
 
 
 class TacticsControllerTests(unittest.TestCase):
@@ -204,6 +211,85 @@ class TacticsControllerTests(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(controller.get_unit("red-zed").shield, 6)
         self.assertEqual(controller.get_unit("red-zed").cooldowns["death-mark"], controller.get_unit("red-zed").special_ability.cooldown - 1)
+
+    def test_new_roster_entries_are_synced_across_tactics_registries(self) -> None:
+        for champion_id in ("blue-riven", "blue-orianna", "red-akali", "red-sett"):
+            self.assertIn(champion_id, BLUEPRINTS_BY_ID)
+            self.assertIn(champion_id, TACTICAL_BLUEPRINTS_BY_ID)
+            self.assertIn(champion_id, PASSIVE_BY_CHAMPION_ID)
+            self.assertIn(champion_id, TACTICAL_SPECIAL_ABILITY_IDS)
+            self.assertIn(champion_id, ART_FILE_BY_UNIT_ID)
+            self.assertEqual(build_tactical_blueprint(champion_id).id, champion_id)
+            self.assertTrue(any(ability.id == TACTICAL_SPECIAL_ABILITY_IDS[champion_id] for ability in BLUEPRINTS_BY_ID[champion_id].abilities))
+
+    def test_new_roster_ids_appear_in_selectable_pools(self) -> None:
+        self.assertIn("blue-riven", SELECTABLE_BLUE_IDS)
+        self.assertIn("blue-orianna", SELECTABLE_BLUE_IDS)
+        self.assertIn("red-akali", SELECTABLE_RED_IDS)
+        self.assertIn("red-sett", SELECTABLE_RED_IDS)
+
+    def test_new_red_champions_appear_in_stage_enemy_pools(self) -> None:
+        app = GameApp(headless=True)
+
+        self.assertIn("red-sett", app._enemy_pool_for_stage(1))
+        self.assertIn("red-akali", app._enemy_pool_for_stage(2))
+        self.assertIn("red-sett", app._enemy_pool_for_stage(3))
+
+    def test_riven_dash_passive_adds_damage(self) -> None:
+        controller = TacticsController(("blue-riven",), ("red-darius",))
+        controller.blocked_tiles.clear()
+        riven = controller.get_unit("blue-riven")
+        target = controller.get_unit("red-darius")
+        riven.position = (0, 1)
+        target.position = (1, 1)
+        riven.moved_distance_this_turn = 2
+
+        result = controller.use_basic("red-darius")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(controller.get_unit("red-darius").hp, TACTICAL_BLUEPRINTS_BY_ID["red-darius"].max_hp - 22)
+
+    def test_orianna_special_grants_shield(self) -> None:
+        controller = TacticsController(("blue-orianna",), ("red-darius", "red-annie"))
+        controller.blocked_tiles.clear()
+        orianna = controller.get_unit("blue-orianna")
+        controller.get_unit("red-darius").position = (3, 2)
+        controller.get_unit("red-annie").position = (4, 2)
+        orianna.position = (0, 2)
+        controller.state.active_unit_id = "blue-orianna"
+        controller.state.turn_queue = ["blue-orianna"]
+
+        result = controller.use_special("red-darius")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(orianna.shield, 8)
+
+    def test_akali_special_on_isolated_target_refunds_cooldown(self) -> None:
+        controller = TacticsController(("blue-garen",), ("red-akali",))
+        controller.blocked_tiles.clear()
+        controller.get_unit("blue-garen").position = (3, 2)
+        controller.get_unit("red-akali").position = (0, 2)
+        controller.state.active_unit_id = "red-akali"
+        controller.state.turn_queue = ["red-akali"]
+
+        result = controller.use_special("blue-garen")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(controller.get_unit("red-akali").shield, 8)
+        self.assertEqual(controller.get_unit("red-akali").cooldowns["perfect-execution"], controller.get_unit("red-akali").special_ability.cooldown - 1)
+
+    def test_sett_special_grants_shield(self) -> None:
+        controller = TacticsController(("blue-garen",), ("red-sett",))
+        controller.blocked_tiles.clear()
+        controller.get_unit("blue-garen").position = (2, 2)
+        controller.get_unit("red-sett").position = (1, 2)
+        controller.state.active_unit_id = "red-sett"
+        controller.state.turn_queue = ["red-sett"]
+
+        result = controller.use_special("blue-garen")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(controller.get_unit("red-sett").shield, 10)
 
     def test_boss_phase_triggers_once_below_half_hp(self) -> None:
         controller = TacticsController(("blue-garen",), ("red-darius",))

@@ -933,6 +933,12 @@ class TacticsController:
         elif actor.id == "blue-lux" and target.stun_turns > 0:
             bonus_damage += 4
             notes.append("광채 공명 발동.")
+        elif actor.id == "blue-riven" and movement_distance >= 2:
+            bonus_damage += 5
+            notes.append("룬 검격 발동.")
+        elif actor.id == "blue-orianna" and target.stun_turns > 0:
+            bonus_damage += 4
+            notes.append("오토마톤 공명 발동.")
         elif actor.id == "red-darius" and target.hp <= target.max_hp // 2:
             bonus_damage += 5
             notes.append("학살 본능 발동.")
@@ -966,6 +972,12 @@ class TacticsController:
             if self._terrain_at(target.position) == "hazard":
                 bonus_damage += 4
                 notes.append("불길 증폭 발동.")
+        elif actor.id == "red-akali" and self._is_isolated(target):
+            bonus_damage += 6
+            notes.append("암살 표식 발동.")
+        elif actor.id == "red-sett" and actor.hp <= actor.max_hp // 2:
+            bonus_damage += 5
+            notes.append("거리의 투지 발동.")
 
         if bonus_damage <= 0 and bonus_stun_turns <= 0:
             return effects, notes
@@ -1036,6 +1048,10 @@ class TacticsController:
             (target := self.get_unit(target_id)) is not None and target.stun_turns > 0 for target_id in target_ids
         ):
             grant_shield(6, "불굴 반격 발동.")
+        if actor.id == "blue-riven" and ability_kind == "special" and len(target_ids) >= 2:
+            grant_shield(6, "룬 검격 발동.")
+        if actor.id == "blue-orianna" and ability_kind == "special":
+            grant_shield(8, "오토마톤 공명 발동.")
         if actor.id == "red-darius" and ability_kind == "special" and defeated_any:
             grant_shield(12, "녹서스 집행 발동.")
         if actor.id == "red-annie" and ability_kind == "special" and len(target_ids) >= 2:
@@ -1056,6 +1072,13 @@ class TacticsController:
             if target is not None:
                 self.terrain_tiles[target.position] = "hazard"
                 notes.append("불씨 잔류 발동.")
+        if actor.id == "red-akali" and ability_kind == "special" and primary_target_id is not None:
+            target = self.get_unit(primary_target_id)
+            if target is not None and self._is_isolated(target):
+                grant_shield(8, "암살 표식 발동.")
+                reduce_special_cooldown(1, "암살 표식 발동.")
+        if actor.id == "red-sett" and ability_kind == "special" and hit_any:
+            grant_shield(10, "거리의 투지 발동.")
         return notes
 
     def _boost_ability_damage(self, ability: TacticalAbility, bonus_damage: int) -> TacticalAbility:
