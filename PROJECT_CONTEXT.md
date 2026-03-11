@@ -85,6 +85,7 @@
   - battle presentation first pass with animated battlefield atmosphere, stronger unit emphasis, pulse rings, and attack trails
   - portrait-based tactical standees on deploy and battle screens to reduce the placeholder-token look
   - portrait-driven sprite standees now use scale-aware full-body silhouettes and accessory rendering so select, deploy, and battle units read more like character pieces than tokens
+  - standees now also switch between hero, ready, attack, hit, and victory poses so combat states are reflected in the body silhouette and weapon posture
   - battle-only attack, hit, death, and victory animation states with a short end-of-battle hold so finishing blows are visible
   - stage/finale-specific battlefield themes, richer terrain glyphs, and prop-style obstacle rendering
   - terrain-aware red-team AI movement and targeting

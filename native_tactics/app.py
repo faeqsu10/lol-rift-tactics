@@ -434,6 +434,19 @@ class StandeeLayout:
 
 
 @dataclass(frozen=True)
+class StandeePoseState:
+    body_shift_x: int = 0
+    body_shift_y: int = 0
+    arm_lift: int = 0
+    arm_spread: int = 0
+    weapon_shift_x: int = 0
+    weapon_shift_y: int = 0
+    cloak_shift_x: int = 0
+    cloak_lift: int = 0
+    portrait_shift_y: int = 0
+
+
+@dataclass(frozen=True)
 class BattlefieldTheme:
     id: str
     top_color: tuple[int, int, int]
@@ -2770,6 +2783,9 @@ class GameApp:
             standee_rect,
             badge_text="L" if self.selected_blue_ids else "P",
             badge_color=(236, 218, 176),
+            pose="hero",
+            pose_amount=1.0,
+            pose_direction=1,
         )
 
         info_x = panel_rect.x + 224
@@ -3877,6 +3893,9 @@ class GameApp:
         render_scale = 1.0
         render_tilt = 0.0
         victory_active = False
+        pose = "ready" if is_active else "idle"
+        pose_amount = 0.5 if is_active else 0.22
+        pose_direction = 1 if unit.team == "blue" else -1
 
         if animation.attack_timer > 0 and animation.attack_duration > 0:
             progress = 1.0 - clamp(animation.attack_timer / animation.attack_duration, 0.0, 1.0)
@@ -3885,12 +3904,18 @@ class GameApp:
             render_center.y += animation.attack_vector[1] * burst
             render_scale += 0.04 * burst
             render_tilt += clamp(animation.attack_vector[0] * -0.22 * burst, -8.0, 8.0)
+            pose = "attack"
+            pose_amount = burst
+            pose_direction = 1 if animation.attack_vector[0] >= 0 else -1
 
         if animation.hit_timer > 0 and animation.hit_duration > 0:
             progress = clamp(animation.hit_timer / animation.hit_duration, 0.0, 1.0)
             shake = math.sin((1.0 - progress) * math.pi * 7.0) * progress * 7.0
             render_center.x += shake
             render_tilt += shake * 0.45
+            pose = "hit"
+            pose_amount = progress
+            pose_direction = -1 if shake >= 0 else 1
 
         if unit.hp <= 0 and animation.death_timer > 0 and animation.death_duration > 0:
             progress = 1.0 - clamp(animation.death_timer / animation.death_duration, 0.0, 1.0)
@@ -3899,6 +3924,9 @@ class GameApp:
             render_scale -= 0.18 * progress
             render_tilt += (-16 if unit.team == "blue" else 16) * progress
             render_alpha = int(255 * (1.0 - progress * 0.9))
+            pose = "hit"
+            pose_amount = progress
+            pose_direction = -1 if unit.team == "blue" else 1
         elif (
             self.controller is not None
             and self.controller.state.winner == unit.team
@@ -3913,6 +3941,9 @@ class GameApp:
             render_scale += abs(cheer) * 0.05
             render_tilt += cheer * 3.5
             victory_active = True
+            pose = "victory"
+            pose_amount = abs(cheer)
+            pose_direction = 1 if unit.team == "blue" else -1
 
         render_scale = max(0.74, render_scale)
         shadow_scale = render_scale if unit.hp > 0 else max(0.54, render_scale - 0.12)
@@ -3952,6 +3983,9 @@ class GameApp:
             alpha=render_alpha,
             scale=render_scale,
             tilt=render_tilt,
+            pose=pose,
+            pose_amount=pose_amount,
+            pose_direction=pose_direction,
         )
 
         if unit.hp > 0:
@@ -4409,6 +4443,9 @@ class GameApp:
             standee_rect,
             badge_text=badge_text,
             badge_color=badge_color,
+            pose="ready" if selected else "idle",
+            pose_amount=1.0 if selected else 0.35,
+            pose_direction=1 if blueprint.team == "blue" else -1,
         )
         self._draw_text(blueprint.name, self.font_small, (244, 239, 225), (standee_rect.centerx, standee_rect.bottom + 16), center=True)
 
@@ -4426,10 +4463,14 @@ class GameApp:
         alpha: int = 255,
         scale: float = 1.0,
         tilt: float = 0.0,
+        pose: str = "idle",
+        pose_amount: float = 0.0,
+        pose_direction: int = 1,
     ) -> pygame.Rect:
         canvas = pygame.Surface(rect.size, pygame.SRCALPHA)
         outline = (13, 21, 31)
         layout = self._tactical_standee_layout(rect.size)
+        pose_state = self._tactical_pose_state(pose, pose_amount, direction=pose_direction)
         width, height = rect.size
         center_x = width // 2
         accent_shadow = shaded(accent, 0.52)
@@ -4470,28 +4511,31 @@ class GameApp:
         pygame.draw.rect(plate, outline, plate.get_rect(), 3, border_radius=max(16, layout.plate_rect.width // 4))
         gloss_rect = pygame.Rect(8, 6, plate.get_width() - 16, max(18, plate.get_height() // 4))
         pygame.draw.ellipse(plate, (255, 255, 255, 18), gloss_rect)
-        canvas.blit(plate, layout.plate_rect.topleft)
+        plate_rect = layout.plate_rect.move(pose_state.body_shift_x // 3, pose_state.portrait_shift_y)
+        portrait_rect = layout.portrait_rect.move(pose_state.body_shift_x // 3, pose_state.portrait_shift_y)
+        strap_rect = layout.strap_rect.move(pose_state.body_shift_x // 2, pose_state.portrait_shift_y)
+        canvas.blit(plate, plate_rect.topleft)
 
-        portrait_border = layout.portrait_rect.inflate(6, 6)
-        pygame.draw.rect(canvas, accent_shadow, portrait_border, border_radius=max(14, layout.portrait_rect.width // 4))
+        portrait_border = portrait_rect.inflate(6, 6)
+        pygame.draw.rect(canvas, accent_shadow, portrait_border, border_radius=max(14, portrait_rect.width // 4))
         art = self.champion_art.get(champion_id)
         if art is not None:
-            portrait = self._masked_art_surface(art, layout.portrait_rect.size, border_radius=max(12, layout.portrait_rect.width // 4))
-            canvas.blit(portrait, layout.portrait_rect.topleft)
+            portrait = self._masked_art_surface(art, portrait_rect.size, border_radius=max(12, portrait_rect.width // 4))
+            canvas.blit(portrait, portrait_rect.topleft)
         else:
-            fallback = pygame.Surface(layout.portrait_rect.size, pygame.SRCALPHA)
+            fallback = pygame.Surface(portrait_rect.size, pygame.SRCALPHA)
             draw_vertical_gradient(fallback, fallback.get_rect(), mix(accent, (255, 255, 255), 0.08), accent_dark)
-            canvas.blit(fallback, layout.portrait_rect.topleft)
-        pygame.draw.rect(canvas, accent_light, portrait_border, 3, border_radius=max(14, layout.portrait_rect.width // 4))
-        pygame.draw.rect(canvas, (248, 241, 223), layout.portrait_rect, 1, border_radius=max(12, layout.portrait_rect.width // 4))
+            canvas.blit(fallback, portrait_rect.topleft)
+        pygame.draw.rect(canvas, accent_light, portrait_border, 3, border_radius=max(14, portrait_rect.width // 4))
+        pygame.draw.rect(canvas, (248, 241, 223), portrait_rect, 1, border_radius=max(12, portrait_rect.width // 4))
 
-        pygame.draw.rect(canvas, team_color, layout.strap_rect, border_radius=max(6, layout.strap_rect.height // 2))
-        pygame.draw.rect(canvas, outline, layout.strap_rect, 2, border_radius=max(6, layout.strap_rect.height // 2))
-        strap_gloss = pygame.Rect(layout.strap_rect.x + 4, layout.strap_rect.y + 2, max(10, layout.strap_rect.width // 2), max(3, layout.strap_rect.height // 3))
+        pygame.draw.rect(canvas, team_color, strap_rect, border_radius=max(6, strap_rect.height // 2))
+        pygame.draw.rect(canvas, outline, strap_rect, 2, border_radius=max(6, strap_rect.height // 2))
+        strap_gloss = pygame.Rect(strap_rect.x + 4, strap_rect.y + 2, max(10, strap_rect.width // 2), max(3, strap_rect.height // 3))
         pygame.draw.ellipse(canvas, (255, 255, 255, 26), strap_gloss)
 
-        self._draw_tactical_body_layer(canvas, layout, role, accent, team_color, outline, accent_shadow, accent_dark, accent_mid, accent_light)
-        self._draw_tactical_accessory(canvas, champion_id, role, accent, team_color, outline)
+        self._draw_tactical_body_layer(canvas, layout, role, accent, team_color, outline, accent_shadow, accent_dark, accent_mid, accent_light, pose_state)
+        self._draw_tactical_accessory(canvas, champion_id, role, accent, team_color, outline, pose_state)
 
         if badge_text is not None:
             badge_rect = pygame.Rect(6, 6, 22, 18)
@@ -4558,6 +4602,62 @@ class GameApp:
         leg_right_rect = pygame.Rect(width // 2 + leg_gap, leg_y, leg_width, leg_height)
         return StandeeLayout(plate_rect, portrait_rect, strap_rect, torso_rect, hip_rect, leg_left_rect, leg_right_rect)
 
+    def _tactical_pose_state(self, pose: str, amount: float, *, direction: int = 1) -> StandeePoseState:
+        direction = 1 if direction >= 0 else -1
+        amount = clamp(amount, 0.0, 1.0)
+        if pose == "attack":
+            return StandeePoseState(
+                body_shift_x=int(6 * amount) * direction,
+                body_shift_y=-int(3 * amount),
+                arm_lift=int(4 * amount),
+                arm_spread=int(6 * amount),
+                weapon_shift_x=int(10 * amount) * direction,
+                weapon_shift_y=-int(8 * amount),
+                cloak_shift_x=-int(5 * amount) * direction,
+                cloak_lift=int(6 * amount),
+                portrait_shift_y=-int(2 * amount),
+            )
+        if pose == "hit":
+            return StandeePoseState(
+                body_shift_x=-int(4 * amount) * direction,
+                body_shift_y=int(4 * amount),
+                arm_lift=-int(2 * amount),
+                arm_spread=int(2 * amount),
+                weapon_shift_x=-int(6 * amount) * direction,
+                weapon_shift_y=int(4 * amount),
+                cloak_shift_x=int(4 * amount) * direction,
+                cloak_lift=-int(2 * amount),
+                portrait_shift_y=int(2 * amount),
+            )
+        if pose == "victory":
+            return StandeePoseState(
+                body_shift_y=-int(4 * amount),
+                arm_lift=int(10 * amount),
+                arm_spread=int(7 * amount),
+                weapon_shift_y=-int(12 * amount),
+                cloak_lift=int(8 * amount),
+                portrait_shift_y=-int(3 * amount),
+            )
+        if pose == "ready":
+            return StandeePoseState(
+                body_shift_y=-int(2 * amount),
+                arm_lift=int(3 * amount),
+                arm_spread=int(2 * amount),
+                weapon_shift_y=-int(3 * amount),
+                cloak_lift=int(3 * amount),
+                portrait_shift_y=-int(amount),
+            )
+        if pose == "hero":
+            return StandeePoseState(
+                body_shift_y=-int(3 * amount),
+                arm_lift=int(5 * amount),
+                arm_spread=int(4 * amount),
+                weapon_shift_y=-int(6 * amount),
+                cloak_lift=int(5 * amount),
+                portrait_shift_y=-int(2 * amount),
+            )
+        return StandeePoseState()
+
     def _draw_tactical_body_layer(
         self,
         surface: pygame.Surface,
@@ -4570,14 +4670,19 @@ class GameApp:
         accent_dark: tuple[int, int, int],
         accent_mid: tuple[int, int, int],
         accent_light: tuple[int, int, int],
+        pose_state: StandeePoseState,
     ) -> None:
         width, height = surface.get_size()
         cloak_color = accent_shadow if role in {"Vanguard", "Mage"} else shaded(team_color, 0.38)
         center_x = width // 2
-        base_top = layout.torso_rect.y - max(8, int(height * 0.05))
+        base_top = layout.torso_rect.y - max(8, int(height * 0.05)) - pose_state.cloak_lift
         base_bottom = min(height - 10, layout.leg_left_rect.bottom + max(6, int(height * 0.03)))
-        left_edge = max(8, center_x - max(22, int(width * 0.24)))
-        right_edge = min(width - 8, center_x + max(22, int(width * 0.24)))
+        left_edge = max(8, center_x - max(22, int(width * 0.24)) + pose_state.cloak_shift_x)
+        right_edge = min(width - 8, center_x + max(22, int(width * 0.24)) + pose_state.cloak_shift_x)
+        torso_rect = layout.torso_rect.move(pose_state.body_shift_x, pose_state.body_shift_y)
+        hip_rect = layout.hip_rect.move(pose_state.body_shift_x, pose_state.body_shift_y)
+        leg_left_rect = layout.leg_left_rect.move(pose_state.body_shift_x - pose_state.arm_spread // 2, pose_state.body_shift_y)
+        leg_right_rect = layout.leg_right_rect.move(pose_state.body_shift_x + pose_state.arm_spread // 2, pose_state.body_shift_y)
         if role == "Assassin":
             cloak_points = [
                 (left_edge + 10, base_top),
@@ -4612,48 +4717,48 @@ class GameApp:
         arm_width = max(8, int(width * 0.09))
         arm_height = max(18, int(height * 0.16))
         shoulder_offset = max(8, int(width * 0.05))
-        arm_y = layout.torso_rect.y + max(6, int(height * 0.03))
-        left_arm = pygame.Rect(layout.torso_rect.x - shoulder_offset, arm_y, arm_width, arm_height)
-        right_arm = pygame.Rect(layout.torso_rect.right - arm_width + shoulder_offset, arm_y, arm_width, arm_height)
+        arm_y = torso_rect.y + max(6, int(height * 0.03)) - pose_state.arm_lift
+        left_arm = pygame.Rect(torso_rect.x - shoulder_offset - pose_state.arm_spread, arm_y, arm_width, arm_height)
+        right_arm = pygame.Rect(torso_rect.right - arm_width + shoulder_offset + pose_state.arm_spread, arm_y, arm_width, arm_height)
         for arm_rect in (left_arm, right_arm):
             pygame.draw.rect(surface, accent_mid, arm_rect, border_radius=max(5, arm_rect.width // 2))
             pygame.draw.rect(surface, outline, arm_rect, 2, border_radius=max(5, arm_rect.width // 2))
 
         shoulder_w = max(14, int(width * 0.16))
         shoulder_h = max(12, int(height * 0.08))
-        shoulder_y = layout.torso_rect.y - max(2, int(height * 0.01))
-        left_shoulder = pygame.Rect(layout.torso_rect.x - shoulder_w // 2 + 2, shoulder_y, shoulder_w, shoulder_h)
-        right_shoulder = pygame.Rect(layout.torso_rect.right - shoulder_w // 2 - 2, shoulder_y, shoulder_w, shoulder_h)
+        shoulder_y = torso_rect.y - max(2, int(height * 0.01)) - pose_state.arm_lift // 2
+        left_shoulder = pygame.Rect(torso_rect.x - shoulder_w // 2 + 2 - pose_state.arm_spread, shoulder_y, shoulder_w, shoulder_h)
+        right_shoulder = pygame.Rect(torso_rect.right - shoulder_w // 2 - 2 + pose_state.arm_spread, shoulder_y, shoulder_w, shoulder_h)
         shoulder_color = accent_light if role in {"Vanguard", "Marksman"} else accent_mid
         for shoulder_rect in (left_shoulder, right_shoulder):
             pygame.draw.ellipse(surface, shoulder_color, shoulder_rect)
             pygame.draw.ellipse(surface, outline, shoulder_rect, 2)
 
         torso_color = accent_dark if role != "Mage" else mix(accent_dark, team_color, 0.16)
-        pygame.draw.rect(surface, torso_color, layout.torso_rect, border_radius=max(10, layout.torso_rect.width // 3))
-        pygame.draw.rect(surface, outline, layout.torso_rect, 2, border_radius=max(10, layout.torso_rect.width // 3))
-        pygame.draw.rect(surface, accent_shadow, layout.hip_rect, border_radius=max(6, layout.hip_rect.height // 2))
-        pygame.draw.rect(surface, outline, layout.hip_rect, 2, border_radius=max(6, layout.hip_rect.height // 2))
+        pygame.draw.rect(surface, torso_color, torso_rect, border_radius=max(10, torso_rect.width // 3))
+        pygame.draw.rect(surface, outline, torso_rect, 2, border_radius=max(10, torso_rect.width // 3))
+        pygame.draw.rect(surface, accent_shadow, hip_rect, border_radius=max(6, hip_rect.height // 2))
+        pygame.draw.rect(surface, outline, hip_rect, 2, border_radius=max(6, hip_rect.height // 2))
 
         if role == "Mage":
             robe = [
-                (layout.torso_rect.x + 2, layout.torso_rect.bottom - 2),
-                (layout.hip_rect.x - 4, layout.leg_left_rect.bottom - 6),
-                (center_x, layout.leg_left_rect.bottom - 16),
-                (layout.hip_rect.right + 4, layout.leg_right_rect.bottom - 6),
-                (layout.torso_rect.right - 2, layout.torso_rect.bottom - 2),
+                (torso_rect.x + 2, torso_rect.bottom - 2),
+                (hip_rect.x - 4, leg_left_rect.bottom - 6),
+                (center_x + pose_state.body_shift_x // 2, leg_left_rect.bottom - 16),
+                (hip_rect.right + 4, leg_right_rect.bottom - 6),
+                (torso_rect.right - 2, torso_rect.bottom - 2),
             ]
             pygame.draw.polygon(surface, tinted(accent, 0.12), robe)
             pygame.draw.polygon(surface, outline, robe, 2)
         elif role == "Assassin":
-            sash_left = [(center_x - 4, layout.hip_rect.bottom - 2), (center_x - 18, layout.leg_left_rect.bottom), (center_x - 8, layout.leg_left_rect.bottom)]
-            sash_right = [(center_x + 4, layout.hip_rect.bottom - 2), (center_x + 18, layout.leg_right_rect.bottom), (center_x + 8, layout.leg_right_rect.bottom)]
+            sash_left = [(center_x + pose_state.body_shift_x - 4, hip_rect.bottom - 2), (center_x + pose_state.body_shift_x - 18, leg_left_rect.bottom), (center_x + pose_state.body_shift_x - 8, leg_left_rect.bottom)]
+            sash_right = [(center_x + pose_state.body_shift_x + 4, hip_rect.bottom - 2), (center_x + pose_state.body_shift_x + 18, leg_right_rect.bottom), (center_x + pose_state.body_shift_x + 8, leg_right_rect.bottom)]
             pygame.draw.polygon(surface, team_color, sash_left)
             pygame.draw.polygon(surface, team_color, sash_right)
             pygame.draw.polygon(surface, outline, sash_left, 2)
             pygame.draw.polygon(surface, outline, sash_right, 2)
 
-        for leg_rect in (layout.leg_left_rect, layout.leg_right_rect):
+        for leg_rect in (leg_left_rect, leg_right_rect):
             pygame.draw.rect(surface, accent_shadow, leg_rect, border_radius=max(5, leg_rect.width // 2))
             pygame.draw.rect(surface, outline, leg_rect, 2, border_radius=max(5, leg_rect.width // 2))
             boot_rect = pygame.Rect(leg_rect.x - 1, leg_rect.bottom - max(5, int(height * 0.03)), leg_rect.width + 2, max(6, int(height * 0.04)))
@@ -4661,8 +4766,8 @@ class GameApp:
             pygame.draw.rect(surface, outline, boot_rect, 2, border_radius=max(4, boot_rect.height // 2))
 
         chest_rect = pygame.Rect(
-            center_x - max(9, int(width * 0.1)),
-            layout.torso_rect.y + max(6, int(height * 0.03)),
+            center_x + pose_state.body_shift_x - max(9, int(width * 0.1)),
+            torso_rect.y + max(6, int(height * 0.03)),
             max(18, int(width * 0.2)),
             max(14, int(height * 0.1)),
         )
@@ -4691,17 +4796,23 @@ class GameApp:
         accent: tuple[int, int, int],
         team_color: tuple[int, int, int],
         outline: tuple[int, int, int],
+        pose_state: StandeePoseState,
     ) -> None:
         metal = (198, 207, 220)
         warm_metal = (236, 206, 146)
         width, height = surface.get_size()
-        center_x = width // 2
+        center_x = width // 2 + pose_state.weapon_shift_x // 2
 
         def point(rx: float, ry: float) -> tuple[int, int]:
-            return int(width * rx), int(height * ry)
+            return int(width * rx) + pose_state.weapon_shift_x, int(height * ry) + pose_state.weapon_shift_y
 
         def rect_ratio(rx: float, ry: float, rw: float, rh: float) -> pygame.Rect:
-            return pygame.Rect(int(width * rx), int(height * ry), max(2, int(width * rw)), max(2, int(height * rh)))
+            return pygame.Rect(
+                int(width * rx) + pose_state.weapon_shift_x,
+                int(height * ry) + pose_state.weapon_shift_y,
+                max(2, int(width * rw)),
+                max(2, int(height * rh)),
+            )
 
         if champion_id in {"blue-garen", "red-darius", "blue-leona", "red-yasuo"}:
             shaft = rect_ratio(0.79, 0.23, 0.05, 0.44)

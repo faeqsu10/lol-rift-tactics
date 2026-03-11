@@ -962,6 +962,24 @@ class GameAppFlowTests(unittest.TestCase):
         self.assertEqual(len(lines), 1)
         self.assertTrue(lines[0].endswith("..."))
 
+    def test_tactical_pose_state_attack_pushes_weapon_forward(self) -> None:
+        app = GameApp(headless=True)
+
+        pose = app._tactical_pose_state("attack", 1.0, direction=1)
+
+        self.assertGreater(pose.weapon_shift_x, 0)
+        self.assertLess(pose.weapon_shift_y, 0)
+        self.assertGreater(pose.arm_spread, 0)
+
+    def test_tactical_pose_state_victory_raises_pose(self) -> None:
+        app = GameApp(headless=True)
+
+        pose = app._tactical_pose_state("victory", 1.0, direction=-1)
+
+        self.assertLess(pose.body_shift_y, 0)
+        self.assertLess(pose.weapon_shift_y, 0)
+        self.assertGreater(pose.arm_lift, 0)
+
     def test_stage_two_marks_elite_enemy(self) -> None:
         app = GameApp(headless=True)
         app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
