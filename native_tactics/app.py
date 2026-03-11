@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import random
 from dataclasses import dataclass
 from dataclasses import replace
@@ -375,6 +376,28 @@ class FloatingText:
 
 
 @dataclass
+class BattleRingEffect:
+    center: tuple[float, float]
+    color: tuple[int, int, int]
+    radius: float
+    growth: float
+    width: int
+    lifetime: float
+    duration: float
+
+
+@dataclass
+class BattleTrailEffect:
+    start: tuple[float, float]
+    end: tuple[float, float]
+    color: tuple[int, int, int]
+    width: int
+    lifetime: float
+    duration: float
+    style: str = "beam"
+
+
+@dataclass
 class BattleIntroCard:
     title: str
     subtitle: str
@@ -616,7 +639,10 @@ class GameApp:
         self.controller: TacticsController | None = None
         self.ai_timer = 0.55
         self.last_active_id: str | None = None
+        self.time_accumulator = 0.0
         self.floaters: list[FloatingText] = []
+        self.battle_rings: list[BattleRingEffect] = []
+        self.battle_trails: list[BattleTrailEffect] = []
         self.hit_flash: dict[str, float] = {}
         self.unit_visual_positions: dict[str, pygame.Vector2] = {}
         self.finale_banner_title: str | None = None
@@ -624,6 +650,9 @@ class GameApp:
         self.finale_banner_color: tuple[int, int, int] = (236, 126, 90)
         self.finale_banner_timer = 0.0
         self.battle_intro_card: BattleIntroCard | None = None
+        self.last_action_banner_text: str | None = None
+        self.last_action_banner_color: tuple[int, int, int] = (214, 182, 112)
+        self.last_action_banner_timer = 0.0
 
         self.tile_rects: dict[tuple[int, int], pygame.Rect] = {}
         self.button_rects: dict[str, pygame.Rect] = {}
@@ -1605,6 +1634,8 @@ class GameApp:
         if self.current_route_event is not None:
             controller._push_log(f"{self.current_route_event.name} 적용 · {self._route_event_effect_label(self.current_route_event, self.current_route_node)}.")
         self._reset_battle_stats()
+        self.battle_rings.clear()
+        self.battle_trails.clear()
         self.hit_flash = {unit.id: 0.0 for unit in controller.units}
         self.unit_visual_positions = {
             unit.id: pygame.Vector2(self._tile_center(unit.position)) for unit in controller.units
@@ -1613,6 +1644,8 @@ class GameApp:
         self.ai_timer = 0.55
         self.last_active_id = None
         self.mode = "move"
+        self.last_action_banner_text = None
+        self.last_action_banner_timer = 0.0
 
     def _boost_damage_effects(self, ability, bonus_damage: int, *, range_bonus: int = 0):
         boosted_effects = tuple(
@@ -2127,12 +2160,17 @@ class GameApp:
             self._apply_action_result(result)
 
     def _update(self, dt: float) -> None:
+        self.time_accumulator += dt
         if self.finale_banner_timer > 0:
             self.finale_banner_timer = max(0.0, self.finale_banner_timer - dt)
         if self.battle_intro_card is not None:
             self.battle_intro_card.timer = max(0.0, self.battle_intro_card.timer - dt)
             if self.battle_intro_card.timer <= 0:
                 self.battle_intro_card = None
+        if self.last_action_banner_timer > 0:
+            self.last_action_banner_timer = max(0.0, self.last_action_banner_timer - dt)
+            if self.last_action_banner_timer <= 0:
+                self.last_action_banner_text = None
 
         if self.screen_mode != "battle" or self.controller is None:
             return
@@ -2159,6 +2197,17 @@ class GameApp:
         for unit_id in list(self.hit_flash):
             self.hit_flash[unit_id] = max(0.0, self.hit_flash[unit_id] - dt)
 
+        for ring in list(self.battle_rings):
+            ring.lifetime -= dt
+            ring.radius += ring.growth * dt
+            if ring.lifetime <= 0:
+                self.battle_rings.remove(ring)
+
+        for trail in list(self.battle_trails):
+            trail.lifetime -= dt
+            if trail.lifetime <= 0:
+                self.battle_trails.remove(trail)
+
         for floater in list(self.floaters):
             floater.lifetime -= dt
             floater.y -= dt * 34
@@ -2174,14 +2223,55 @@ class GameApp:
                     self._apply_action_result(result)
                 self.ai_timer = 0.55
 
+    def _spawn_battle_ring(
+        self,
+        center: tuple[float, float],
+        color: tuple[int, int, int],
+        *,
+        radius: float = 28.0,
+        growth: float = 180.0,
+        width: int = 3,
+        duration: float = 0.36,
+    ) -> None:
+        self.battle_rings.append(BattleRingEffect(center, color, radius, growth, width, duration, duration))
+
+    def _spawn_battle_trail(
+        self,
+        start: tuple[float, float],
+        end: tuple[float, float],
+        color: tuple[int, int, int],
+        *,
+        width: int = 6,
+        duration: float = 0.24,
+        style: str = "beam",
+    ) -> None:
+        self.battle_trails.append(BattleTrailEffect(start, end, color, width, duration, duration, style))
+
+    def _battle_trail_style_for_unit(self, unit) -> tuple[str, int]:
+        if unit.role == "Marksman":
+            return "beam", 5
+        if unit.role == "Mage":
+            return "orb", 6
+        return "slash", 8
+
     def _apply_action_result(self, result: TacticalActionResult) -> None:
         actor = self.controller.get_unit(result.actor_id) if self.controller else None
+        actor_anchor = self.unit_visual_positions.get(actor.id) if actor is not None else None
         if result.kind == "move":
             self.audio.play("ui-confirm", champion_id=result.actor_id)
+            if actor_anchor is not None:
+                self._spawn_battle_ring((actor_anchor.x, actor_anchor.y + 8), (104, 191, 234), radius=24, growth=110, width=2, duration=0.28)
         elif result.kind == "end":
             self.audio.play("ui-confirm")
         else:
             self.audio.play("cast", champion_id=result.actor_id)
+            if actor is not None and actor_anchor is not None:
+                cast_color = hex_to_rgb(actor.accent)
+                self._spawn_battle_ring((actor_anchor.x, actor_anchor.y - 6), cast_color, radius=26, growth=160, width=3, duration=0.34)
+                if result.ability_name:
+                    self.last_action_banner_text = result.ability_name
+                    self.last_action_banner_color = cast_color
+                    self.last_action_banner_timer = 0.8
 
         any_damage = False
         any_shield = False
@@ -2206,14 +2296,21 @@ class GameApp:
                 any_damage = True
                 self.hit_flash[unit.id] = 0.28
                 self.floaters.append(FloatingText(anchor.x, anchor.y - 46, f"-{impact.damage}", (255, 172, 144)))
+                self._spawn_battle_ring((anchor.x, anchor.y - 2), (255, 128, 92), radius=22, growth=170, width=3, duration=0.34)
             if impact.shield_gained:
                 any_shield = True
                 self.floaters.append(FloatingText(anchor.x, anchor.y - 70, f"+보호막 {impact.shield_gained}", (166, 235, 191)))
+                self._spawn_battle_ring((anchor.x, anchor.y - 4), (132, 226, 173), radius=24, growth=120, width=2, duration=0.4)
             if impact.stun_applied:
                 any_stun = True
                 self.floaters.append(FloatingText(anchor.x, anchor.y - 94, "기절", (255, 229, 145)))
+                self._spawn_battle_ring((anchor.x, anchor.y - 10), (255, 213, 110), radius=28, growth=100, width=2, duration=0.42)
             if impact.defeated:
                 self.floaters.append(FloatingText(anchor.x, anchor.y - 118, "처치", (255, 216, 168)))
+                self._spawn_battle_ring((anchor.x, anchor.y - 12), (255, 216, 168), radius=30, growth=220, width=3, duration=0.46)
+            if actor is not None and actor_anchor is not None and actor.id != unit.id and result.kind in {"basic", "special"}:
+                trail_style, trail_width = self._battle_trail_style_for_unit(actor)
+                self._spawn_battle_trail((actor_anchor.x, actor_anchor.y - 6), (anchor.x, anchor.y - 6), hex_to_rgb(actor.accent), width=trail_width, duration=0.22, style=trail_style)
 
         if any_damage:
             heavy = any(impact.damage >= 18 for impact in result.impacts)
@@ -3038,6 +3135,7 @@ class GameApp:
         self._draw_battle_left_panel()
         self._draw_battle_right_panel()
         self._draw_battle_bottom_panel()
+        self._draw_battle_action_banner()
         self._draw_floaters()
         self._draw_winner_overlay()
 
@@ -3048,6 +3146,7 @@ class GameApp:
         grid_surface = pygame.Surface(GRID_RECT.size, pygame.SRCALPHA)
         draw_vertical_gradient(grid_surface, grid_surface.get_rect(), (7, 16, 26), (10, 22, 36))
         self.screen.blit(grid_surface, GRID_RECT.topleft)
+        self._draw_battle_atmosphere()
 
         reachable = self.controller.get_reachable_tiles()
         basic_targets = set(self.controller.get_valid_targets("basic")) if self.mode == "basic" else set()
@@ -3062,8 +3161,10 @@ class GameApp:
                 rect = pygame.Rect(GRID_RECT.x + x * GRID_CELL, GRID_RECT.y + y * GRID_CELL, GRID_CELL, GRID_CELL)
                 self.tile_rects[(x, y)] = rect
                 base = (18, 31, 49) if (x + y) % 2 == 0 else (15, 26, 41)
-                pygame.draw.rect(self.screen, base, rect)
-                pygame.draw.rect(self.screen, (255, 255, 255, 18), rect, 1)
+                inner = rect.inflate(-6, -6)
+                pygame.draw.rect(self.screen, base, rect, border_radius=16)
+                pygame.draw.rect(self.screen, (255, 255, 255, 18), rect, 1, border_radius=16)
+                pygame.draw.rect(self.screen, (255, 255, 255, 10), inner, 1, border_radius=12)
                 self._draw_terrain_tile((x, y), rect, terrain_tiles)
 
                 if (x, y) in self.controller.blocked_tiles:
@@ -3074,15 +3175,20 @@ class GameApp:
                     overlay = pygame.Surface(rect.size, pygame.SRCALPHA)
                     overlay.fill((89, 170, 219, 58))
                     self.screen.blit(overlay, rect.topleft)
+                    pygame.draw.rect(self.screen, (120, 202, 246), rect.inflate(-22, -22), 2, border_radius=14)
 
         if self.current_objective is not None:
+            pulse = (math.sin(self.time_accumulator * 5.5) + 1) * 0.5
             for objective_tile in self.current_objective.objective_tiles:
                 rect = self.tile_rects.get(objective_tile)
                 if rect is None:
                     continue
                 objective_color = (236, 126, 90) if self.current_objective.is_finale else (241, 214, 126)
-                pygame.draw.rect(self.screen, objective_color, rect.inflate(-18, -18), 2, border_radius=18)
+                pygame.draw.rect(self.screen, objective_color, rect.inflate(-18, -18), 2 + int(pulse > 0.6), border_radius=18)
                 pygame.draw.rect(self.screen, objective_color, rect.inflate(-34, -34), 1, border_radius=12)
+                glow = pygame.Surface(rect.size, pygame.SRCALPHA)
+                glow.fill((*objective_color, int(18 + 14 * pulse)))
+                self.screen.blit(glow, rect.topleft)
 
         for pressure_tile in boss_pressure_tiles:
             rect = self.tile_rects.get(pressure_tile)
@@ -3163,27 +3269,103 @@ class GameApp:
                 continue
             self._draw_battle_unit(unit, active.id == unit.id if active else False)
 
+        self._draw_battle_rings()
+        self._draw_battle_trails()
         pygame.draw.rect(self.screen, (236, 218, 176), GRID_RECT, 1, border_radius=26)
+
+    def _draw_battle_atmosphere(self) -> None:
+        overlay = pygame.Surface(GRID_RECT.size, pygame.SRCALPHA)
+        pulse = (math.sin(self.time_accumulator * 1.4) + 1) * 0.5
+        blue_alpha = int(44 + pulse * 28)
+        red_alpha = int(38 + (1 - pulse) * 34)
+        gold_alpha = int(16 + pulse * 18)
+        pygame.draw.ellipse(overlay, (58, 123, 190, blue_alpha), pygame.Rect(12, GRID_RECT.height - 184, 316, 156))
+        pygame.draw.ellipse(overlay, (172, 71, 55, red_alpha), pygame.Rect(GRID_RECT.width - 332, 34, 312, 156))
+        pygame.draw.ellipse(overlay, (214, 184, 114, gold_alpha), pygame.Rect(GRID_RECT.width // 2 - 160, GRID_RECT.height // 2 - 72, 320, 144))
+        for index in range(5):
+            radius = 118 + index * 28 + math.sin(self.time_accumulator * 0.9 + index) * 6
+            ring_rect = pygame.Rect(0, 0, int(radius * 2.1), int(radius * 0.88))
+            ring_rect.center = (GRID_RECT.width // 2, GRID_RECT.height // 2 + 4)
+            pygame.draw.ellipse(overlay, (214, 184, 114, max(8, 28 - index * 4)), ring_rect, 1)
+        self.screen.blit(overlay, GRID_RECT.topleft)
+
+    def _draw_battle_rings(self) -> None:
+        for ring in self.battle_rings:
+            progress = clamp(ring.lifetime / max(ring.duration, 0.001), 0.0, 1.0)
+            surface = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+            alpha = int(140 * progress)
+            pygame.draw.circle(surface, (*ring.color, alpha), (int(ring.center[0]), int(ring.center[1])), int(ring.radius), ring.width)
+            pygame.draw.circle(surface, (*mix(ring.color, (255, 255, 255), 0.45), min(255, alpha + 40)), (int(ring.center[0]), int(ring.center[1])), max(8, int(ring.radius * 0.55)), 1)
+            self.screen.blit(surface, (0, 0))
+
+    def _draw_battle_trails(self) -> None:
+        for trail in self.battle_trails:
+            progress = 1.0 - clamp(trail.lifetime / max(trail.duration, 0.001), 0.0, 1.0)
+            start = pygame.Vector2(trail.start)
+            end = pygame.Vector2(trail.end)
+            current = start.lerp(end, progress)
+            surface = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+            pygame.draw.line(surface, (*trail.color, 66), start, current, trail.width + 8)
+            pygame.draw.line(surface, (*mix(trail.color, (255, 255, 255), 0.35), 220), start, current, trail.width)
+            if trail.style == "orb":
+                pygame.draw.circle(surface, (*trail.color, 230), (int(current.x), int(current.y)), trail.width + 4)
+                pygame.draw.circle(surface, (*mix(trail.color, (255, 255, 255), 0.45), 255), (int(current.x), int(current.y)), max(3, trail.width // 2))
+            elif trail.style == "slash":
+                slash_rect = pygame.Rect(0, 0, trail.width * 4, trail.width * 2)
+                slash_rect.center = (int(current.x), int(current.y))
+                pygame.draw.ellipse(surface, (*trail.color, 220), slash_rect)
+            else:
+                pygame.draw.circle(surface, (*mix(trail.color, (255, 255, 255), 0.3), 255), (int(current.x), int(current.y)), max(4, trail.width))
+            self.screen.blit(surface, (0, 0))
+
+    def _draw_battle_action_banner(self) -> None:
+        if self.last_action_banner_text is None or self.last_action_banner_timer <= 0:
+            return
+        alpha = int(180 * clamp(self.last_action_banner_timer / 0.8, 0.0, 1.0))
+        banner_rect = pygame.Rect(GRID_RECT.centerx - 170, GRID_RECT.y + 18, 340, 42)
+        banner = pygame.Surface(banner_rect.size, pygame.SRCALPHA)
+        draw_vertical_gradient(
+            banner,
+            banner.get_rect(),
+            mix((12, 21, 31), self.last_action_banner_color, 0.22),
+            mix((9, 18, 29), self.last_action_banner_color, 0.08),
+        )
+        pygame.draw.rect(banner, (*self.last_action_banner_color, 44), banner.get_rect(), border_radius=16)
+        pygame.draw.rect(banner, (255, 244, 217, min(255, alpha + 50)), banner.get_rect(), 1, border_radius=16)
+        banner.set_alpha(alpha)
+        self.screen.blit(banner, banner_rect.topleft)
+        self._draw_text(self.last_action_banner_text, self.font_ui, (255, 244, 217), banner_rect.center, center=True)
 
     def _draw_battle_unit(self, unit, is_active: bool) -> None:
         center = self.unit_visual_positions[unit.id]
         tile_rect = self.tile_rects[unit.position]
         accent = hex_to_rgb(unit.accent)
         pulse = 0.2 + 0.2 * self.hit_flash.get(unit.id, 0.0)
+        bob = math.sin(self.time_accumulator * 2.6 + unit.position[0] * 0.7 + unit.position[1] * 0.45 + (0 if unit.team == "blue" else 1.2)) * 3.6
+        highlight_pulse = (math.sin(self.time_accumulator * 6.2) + 1) * 0.5
         badge_text, badge_color = self._encounter_badge_for_unit(unit)
+        render_center = pygame.Vector2(center.x, center.y + bob - (3 if is_active else 0))
 
-        shadow_rect = pygame.Rect(0, 0, 64, 18)
-        shadow_rect.center = (int(center.x), int(center.y + 28))
-        pygame.draw.ellipse(self.screen, (0, 0, 0, 90), shadow_rect)
+        shadow_rect = pygame.Rect(0, 0, 64 + (10 if is_active else 0), 18)
+        shadow_rect.center = (int(render_center.x), int(center.y + 30))
+        shadow_alpha = 92 if is_active else 78
+        pygame.draw.ellipse(self.screen, (0, 0, 0, shadow_alpha), shadow_rect)
 
         if is_active:
+            active_ring = pygame.Surface((shadow_rect.width + 54, shadow_rect.height + 24), pygame.SRCALPHA)
+            pygame.draw.ellipse(active_ring, (214, 186, 114, int(130 + 40 * highlight_pulse)), active_ring.get_rect(), 4)
+            self.screen.blit(active_ring, (shadow_rect.x - 27, shadow_rect.y - 10))
             pygame.draw.rect(self.screen, (255, 219, 122), tile_rect.inflate(-12, -12), 3, border_radius=18)
 
         frame_rect = pygame.Rect(0, 0, 74, 74)
-        frame_rect.center = (int(center.x), int(center.y - 2))
+        frame_rect.center = (int(render_center.x), int(render_center.y - 2))
         frame_fill = badge_color if badge_text is not None else mix(accent, (255, 255, 255), pulse)
         pygame.draw.rect(self.screen, frame_fill, frame_rect, border_radius=22)
         pygame.draw.rect(self.screen, (255, 244, 217), frame_rect, 2 if badge_text is not None else 1, border_radius=22)
+
+        flare = pygame.Surface((118, 118), pygame.SRCALPHA)
+        pygame.draw.circle(flare, (*accent, int(22 + 40 * pulse)), (59, 59), 42)
+        self.screen.blit(flare, (frame_rect.centerx - 59, frame_rect.centery - 59))
 
         art = self.champion_art.get(unit.id)
         if art is not None:
@@ -3198,10 +3380,21 @@ class GameApp:
         pygame.draw.rect(self.screen, (101, 226, 148), (hp_rect.x, hp_rect.y, int(hp_rect.width * hp_ratio), hp_rect.height), border_radius=4)
         pygame.draw.rect(self.screen, (255, 255, 255), hp_rect, 1, border_radius=4)
         if unit.shield > 0:
+            shield_surface = pygame.Surface((116, 116), pygame.SRCALPHA)
+            pygame.draw.ellipse(shield_surface, (132, 226, 173, 108), pygame.Rect(10, 16, 96, 84), 3)
+            self.screen.blit(shield_surface, (frame_rect.centerx - 58, frame_rect.centery - 52))
+        if self.hit_flash.get(unit.id, 0.0) > 0:
+            hit_surface = pygame.Surface((126, 126), pygame.SRCALPHA)
+            pygame.draw.circle(hit_surface, (255, 126, 98, int(120 * self.hit_flash[unit.id] / 0.28)), (63, 63), 48)
+            self.screen.blit(hit_surface, (frame_rect.centerx - 63, frame_rect.centery - 63))
+        if unit.shield > 0:
             self._draw_text(f"보 {unit.shield}", self.font_tiny, (164, 225, 243), (frame_rect.x, frame_rect.bottom + 6))
         if unit.stun_turns > 0:
             self._draw_text("기절", self.font_tiny, (255, 228, 150), (frame_rect.right - 28, frame_rect.bottom + 6))
-        self._draw_text(unit.name, self.font_small, (244, 239, 225), (frame_rect.centerx, frame_rect.bottom + 18), center=True)
+        nameplate_rect = pygame.Rect(frame_rect.x - 6, frame_rect.bottom + 10, frame_rect.width + 12, 20)
+        pygame.draw.rect(self.screen, (10, 20, 31), nameplate_rect, border_radius=10)
+        pygame.draw.rect(self.screen, (*accent, 110), nameplate_rect, 1, border_radius=10)
+        self._draw_text(unit.name, self.font_small, (244, 239, 225), nameplate_rect.center, center=True)
 
     def _draw_battle_left_panel(self) -> None:
         active = self.controller.get_active_unit() if self.controller else None
@@ -3482,10 +3675,15 @@ class GameApp:
         if terrain_id is None:
             return
         terrain = TERRAIN_BY_ID[terrain_id]
+        pulse = (math.sin(self.time_accumulator * 2.2 + tile[0] * 0.5 + tile[1] * 0.3) + 1) * 0.5
         overlay = pygame.Surface(rect.size, pygame.SRCALPHA)
-        overlay.fill((*hex_to_rgb(terrain.color), 34))
+        overlay.fill((*hex_to_rgb(terrain.color), int(24 + 18 * pulse)))
         self.screen.blit(overlay, rect.topleft)
         icon_rect = rect.inflate(-48, -48)
+        glow_rect = rect.inflate(-24, -24)
+        glow = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
+        pygame.draw.ellipse(glow, (*hex_to_rgb(terrain.color), int(24 + 20 * pulse)), glow.get_rect())
+        self.screen.blit(glow, glow_rect.topleft)
         pygame.draw.rect(self.screen, hex_to_rgb(terrain.color), icon_rect, 2, border_radius=14)
         initial = terrain.name[0]
         self._draw_text(initial, self.font_small, hex_to_rgb(terrain.color), rect.center, center=True)
@@ -3551,7 +3749,11 @@ class GameApp:
             alpha = int(255 * clamp(floater.lifetime / 0.8, 0.0, 1.0))
             rendered = self.font_ui.render(floater.text, True, floater.color)
             rendered.set_alpha(alpha)
-            self.screen.blit(rendered, rendered.get_rect(center=(int(floater.x), int(floater.y))))
+            shadow = self.font_ui.render(floater.text, True, (0, 0, 0))
+            shadow.set_alpha(alpha // 2)
+            rect = rendered.get_rect(center=(int(floater.x), int(floater.y)))
+            self.screen.blit(shadow, shadow.get_rect(center=(rect.centerx + 2, rect.centery + 2)))
+            self.screen.blit(rendered, rect)
 
     def _draw_finale_banner(self) -> None:
         if self.finale_banner_timer <= 0 or self.finale_banner_title is None or self.finale_banner_subtitle is None:

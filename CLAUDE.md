@@ -10,7 +10,7 @@ This file provides guidance for working in this repository.
 - Current primary build: native `Pygame` client
 - Current active native tracks:
   - `native_game`: 9인 풀에서 3인 선택 -> 3v3 battle
-  - `native_tactics`: 3인 선택 -> 시작 배치 -> 3전 원정 -> 보상 -> 전투 요약 -> 3안 경로+런 노드 선택 + 전투 이벤트 + 노드 후속 이벤트 -> 패시브 2차/챔피언별 특수기/적 의도 4차/연속 턴 예고/지형/엘리트 특성/보스 결전/보스 전용 목표/보스 패턴 2종/결전 전용 지형 변주/보스 각성 추가 규칙/결전 위험 타일 예고/저장 기록 기반 원정 교리/경로 재추첨/맵 목표/목표 경쟁 AI/실패 페널티/휴식·변수·정예 노드 분기/전투 시작 컷인/UI 밀도 정리 -> 런 종료 결산/저장 기록 비교/즉시 새 원정
+  - `native_tactics`: 3인 선택 -> 시작 배치 -> 3전 원정 -> 보상 -> 전투 요약 -> 3안 경로+런 노드 선택 + 전투 이벤트 + 노드 후속 이벤트 -> 패시브 2차/챔피언별 특수기/적 의도 4차/연속 턴 예고/지형/엘리트 특성/보스 결전/보스 전용 목표/보스 패턴 2종/결전 전용 지형 변주/보스 각성 추가 규칙/결전 위험 타일 예고/저장 기록 기반 원정 교리/경로 재추첨/맵 목표/목표 경쟁 AI/실패 페널티/휴식·변수·정예 노드 분기/전투 시작 컷인/UI 밀도 정리/전장 분위기·링·타격 궤적 1차 -> 런 종료 결산/저장 기록 비교/즉시 새 원정
 - Current secondary build: legacy web prototype under `src/*`
 
 ## Commands
