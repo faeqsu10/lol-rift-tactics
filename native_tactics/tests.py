@@ -549,6 +549,48 @@ class GameAppFlowTests(unittest.TestCase):
     def tearDown(self) -> None:
         pygame.quit()
 
+    def test_missing_help_settings_default_to_first_run_overlay(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            history_path = Path(temp_dir) / "history.json"
+            app = GameApp(headless=True, history_path=history_path)
+
+            self.assertEqual(app.screen_mode, "select")
+            self.assertTrue(app.help_overlay_visible)
+            self.assertEqual(app.help_overlay_source, "auto")
+
+    def test_dismissed_first_run_overlay_persists_across_reload(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            history_path = Path(temp_dir) / "history.json"
+
+            app = GameApp(headless=True, history_path=history_path)
+            app._handle_keydown(pygame.K_ESCAPE)
+
+            self.assertFalse(app.help_overlay_visible)
+            self.assertTrue(app.history_store.help_overlay_seen)
+
+            reloaded = GameApp(headless=True, history_path=history_path)
+            self.assertFalse(reloaded.help_overlay_visible)
+            self.assertTrue(reloaded.history_store.help_overlay_seen)
+
+    def test_help_overlay_is_modal_and_does_not_trigger_underlying_actions(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            history_path = Path(temp_dir) / "history.json"
+            app = GameApp(headless=True, history_path=history_path)
+            app._draw()
+
+            start_rect = app.button_rects["selection-start"]
+            app._handle_click(start_rect.center)
+
+            self.assertEqual(app.screen_mode, "select")
+            self.assertFalse(app.help_overlay_visible)
+            self.assertEqual(len(app.selected_blue_ids), 3)
+
+            app._toggle_help_overlay()
+            app._handle_keydown(pygame.K_RETURN)
+
+            self.assertEqual(app.screen_mode, "select")
+            self.assertFalse(app.help_overlay_visible)
+
     def test_reward_selection_advances_run_to_next_deploy(self) -> None:
         app = GameApp(headless=True)
         app._start_deploy()
@@ -801,8 +843,9 @@ class GameAppFlowTests(unittest.TestCase):
 
             self.assertTrue(history_path.exists())
             payload = json.loads(history_path.read_text(encoding="utf-8"))
-            self.assertEqual(payload["version"], 1)
+            self.assertEqual(payload["version"], 2)
             self.assertEqual(len(payload["records"]), 1)
+            self.assertIn("help_overlay_seen", payload)
             self.assertEqual(payload["records"][0]["result_label"], "원정 성공")
             self.assertIn("저장 기록 1런", app.run_summary.history_overview_lines[0])
 

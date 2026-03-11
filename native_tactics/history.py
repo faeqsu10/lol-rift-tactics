@@ -12,7 +12,7 @@ from native_game.runtime import project_root
 if TYPE_CHECKING:
     from .app import RunSummary
 
-HISTORY_VERSION = 1
+HISTORY_VERSION = 2
 MAX_HISTORY_RECORDS = 30
 
 
@@ -120,9 +120,16 @@ class HistorySummary:
 
 
 class RunHistoryStore:
-    def __init__(self, path: Path | None, records: list[PersistedRunRecord] | None = None) -> None:
+    def __init__(
+        self,
+        path: Path | None,
+        records: list[PersistedRunRecord] | None = None,
+        *,
+        help_overlay_seen: bool = False,
+    ) -> None:
         self.path = path
         self.records = records or []
+        self.help_overlay_seen = help_overlay_seen
 
     @staticmethod
     def default_path() -> Path:
@@ -139,14 +146,19 @@ class RunHistoryStore:
             payload = json.loads(resolved_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return cls(resolved_path, [])
-        if payload.get("version") != HISTORY_VERSION:
+        version = payload.get("version")
+        if version not in {1, HISTORY_VERSION}:
             return cls(resolved_path, [])
         records = [
             PersistedRunRecord(**record)
             for record in payload.get("records", [])
             if isinstance(record, dict)
         ]
-        return cls(resolved_path, records)
+        return cls(
+            resolved_path,
+            records,
+            help_overlay_seen=bool(payload.get("help_overlay_seen", False)) if version == HISTORY_VERSION else False,
+        )
 
     def save(self) -> None:
         if self.path is None:
@@ -156,10 +168,17 @@ class RunHistoryStore:
             payload = {
                 "version": HISTORY_VERSION,
                 "records": [asdict(record) for record in self.records[:MAX_HISTORY_RECORDS]],
+                "help_overlay_seen": self.help_overlay_seen,
             }
             self.path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         except OSError:
             return
+
+    def mark_help_overlay_seen(self) -> None:
+        if self.help_overlay_seen:
+            return
+        self.help_overlay_seen = True
+        self.save()
 
     def best_overall(self) -> PersistedRunRecord | None:
         if not self.records:

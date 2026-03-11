@@ -580,6 +580,62 @@ class BattleObjective:
     failure_label: str | None = None
 
 
+@dataclass(frozen=True)
+class HelpOverlayCard:
+    title: str
+    subtitle: str
+    lines: tuple[str, ...]
+
+
+HELP_OVERLAY_BY_MODE: dict[str, HelpOverlayCard] = {
+    "select": HelpOverlayCard(
+        title="원정 시작 안내",
+        subtitle="먼저 3명의 챔피언을 고르고 적 조합을 확인하세요.",
+        lines=(
+            "1. 왼쪽 후보 로스터에서 챔피언 3명을 선택합니다.",
+            "2. 오른쪽에서 적 조합과 교리를 확인하고 필요하면 재추첨합니다.",
+            "3. 준비가 끝나면 '배치 시작'으로 넘어갑니다.",
+        ),
+    ),
+    "deploy": HelpOverlayCard(
+        title="배치 단계 안내",
+        subtitle="전투 전 시작 위치가 승패를 크게 바꿉니다.",
+        lines=(
+            "1. 왼쪽 카드에서 챔피언을 고른 뒤 파란 시작 칸을 클릭합니다.",
+            "2. 전열은 앞, 원거리와 메이지는 뒤에 두는 편이 안정적입니다.",
+            "3. 준비되면 Enter 또는 '전투 시작'으로 진입합니다.",
+        ),
+    ),
+    "reward": HelpOverlayCard(
+        title="보상 선택 안내",
+        subtitle="전투 뒤엔 보상 하나만 고를 수 있습니다.",
+        lines=(
+            "1. 오른쪽 보상 카드 3개 중 하나를 선택합니다.",
+            "2. 왼쪽의 다음 적 조합과 현재 강화를 함께 보고 고릅니다.",
+            "3. 보상을 고르면 다음 경로 선택으로 이어집니다.",
+        ),
+    ),
+    "route": HelpOverlayCard(
+        title="경로 선택 안내",
+        subtitle="오른쪽 카드는 요약, 왼쪽은 선택한 경로 상세입니다.",
+        lines=(
+            "1. 각 카드의 목표와 보상/위험만 먼저 빠르게 비교합니다.",
+            "2. 마음에 드는 경로를 고르면 왼쪽 프리뷰에서 상세가 보입니다.",
+            "3. 확정 후 '다음 전투 배치'로 넘어갑니다.",
+        ),
+    ),
+    "battle": HelpOverlayCard(
+        title="전투 조작 안내",
+        subtitle="이동과 행동을 한 턴 안에 조합하면 됩니다.",
+        lines=(
+            "1. 파란 칸을 눌러 이동하고, 아래 버튼으로 기본기/특수기를 고릅니다.",
+            "2. 왼쪽은 활성 유닛과 적 의도, 오른쪽은 전체 전장 상태를 보여 줍니다.",
+            "3. H 또는 F1로 이 도움말을 다시 열 수 있습니다.",
+        ),
+    ),
+}
+
+
 def clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
@@ -734,8 +790,12 @@ class GameApp:
         self.deploy_roster_rects: dict[str, pygame.Rect] = {}
         self.reward_card_rects: dict[str, pygame.Rect] = {}
         self.route_card_rects: dict[str, pygame.Rect] = {}
+        self.help_overlay_visible = False
+        self.help_overlay_source: Literal["auto", "manual"] | None = None
         self._refresh_doctrine_statuses()
         self.selection_message = "플레이어 팀 3명을 고른 뒤 배치 단계로 넘어가세요."
+        if resolved_history_path is not None and not self.history_store.help_overlay_seen:
+            self._show_help_overlay("select", source="auto")
 
     def run(self, max_frames: int | None = None, screenshot_path: str | None = None) -> None:
         frames = 0
@@ -788,6 +848,27 @@ class GameApp:
         unlocked_ids = [status.id for status in self.doctrine_statuses if status.unlocked]
         if self.selected_doctrine_id not in unlocked_ids:
             self.selected_doctrine_id = unlocked_ids[0] if unlocked_ids else None
+
+    def _help_card_for_mode(self, mode: str | None = None) -> HelpOverlayCard | None:
+        return HELP_OVERLAY_BY_MODE.get(mode or self.screen_mode)
+
+    def _show_help_overlay(self, mode: str | None = None, *, source: Literal["auto", "manual"] = "manual") -> None:
+        if self._help_card_for_mode(mode) is None:
+            return
+        self.help_overlay_visible = True
+        self.help_overlay_source = source
+
+    def _dismiss_help_overlay(self) -> None:
+        if self.help_overlay_source == "auto":
+            self.history_store.mark_help_overlay_seen()
+        self.help_overlay_visible = False
+        self.help_overlay_source = None
+
+    def _toggle_help_overlay(self) -> None:
+        if self.help_overlay_visible:
+            self._dismiss_help_overlay()
+            return
+        self._show_help_overlay(source="manual")
 
     def _selected_doctrine(self) -> DoctrineStatus | None:
         return next(
@@ -1082,6 +1163,8 @@ class GameApp:
             self.selection_message = f"{penalty_line} · 보상 하나를 고르세요."
         else:
             self.selection_message = "보상 하나를 고른 뒤 다음 전투로 넘어가세요."
+        if not self.history_store.help_overlay_seen:
+            self._show_help_overlay("reward", source="auto")
 
     def _roll_route_choices(self) -> None:
         self.route_option_ids = random.sample(list(self.route_options), 3)
@@ -1108,6 +1191,8 @@ class GameApp:
             self.selection_message = f"전투 요약을 보고 경로를 고르세요. 예약 페널티: {self.pending_stage_penalty.description}"
         else:
             self.selection_message = "전투 요약을 확인하고 다음 경로 하나를 선택하세요."
+        if not self.history_store.help_overlay_seen:
+            self._show_help_overlay("route", source="auto")
 
     def _reroll_route_choices(self) -> None:
         if self.route_reroll_charges <= 0:
@@ -1189,6 +1274,8 @@ class GameApp:
         doctrine_line = f" · 교리 {doctrine.name}" if doctrine is not None else ""
         self.selection_message = f"{self._current_stage_label()} 시작 위치를 조정하세요{doctrine_line}."
         self.audio.play("ui-confirm")
+        if not self.history_store.help_overlay_seen:
+            self._show_help_overlay("deploy", source="auto")
 
     def _advance_after_reward(self) -> None:
         if self.selected_reward_id is None:
@@ -1321,6 +1408,8 @@ class GameApp:
         self.finale_banner_subtitle = None
         self.finale_banner_timer = 0.0
         self.selection_message = self.run_summary.recommendation
+        self.help_overlay_visible = False
+        self.help_overlay_source = None
 
     def _roll_route_event(self, route_id: str) -> RouteEvent:
         template = random.choice(ROUTE_EVENT_TEMPLATES[route_id])
@@ -1929,6 +2018,8 @@ class GameApp:
         doctrine_line = f" · 교리 {doctrine.name}" if doctrine is not None else ""
         self.selection_message = f"{self._current_stage_label()} 시작 위치를 조정한 뒤 전투를 시작하세요{doctrine_line}."
         self.audio.play("ui-confirm")
+        if not self.history_store.help_overlay_seen:
+            self._show_help_overlay("deploy", source="auto")
 
     def _start_battle(self) -> None:
         if len(self.deploy_assignments) != 3:
@@ -1963,6 +2054,8 @@ class GameApp:
         self.red_deploy_assignments.clear()
         self.selection_message = "새 원정을 준비하세요. 현재 조합은 유지됩니다."
         self.audio.play("ui-select")
+        self.help_overlay_visible = False
+        self.help_overlay_source = None
 
     def _reset_selection(self) -> None:
         self.screen_mode = "select"
@@ -2063,6 +2156,15 @@ class GameApp:
                 self._handle_click(event.pos)
 
     def _handle_keydown(self, key: int) -> None:
+        if self.help_overlay_visible:
+            if key in {pygame.K_ESCAPE, pygame.K_RETURN, pygame.K_SPACE, pygame.K_h, pygame.K_F1}:
+                self._dismiss_help_overlay()
+            return
+
+        if key in {pygame.K_h, pygame.K_F1}:
+            self._toggle_help_overlay()
+            return
+
         if self.screen_mode == "summary":
             if key in {pygame.K_RETURN, pygame.K_SPACE, pygame.K_r}:
                 self._start_run_with_current_lineup()
@@ -2151,6 +2253,10 @@ class GameApp:
             self._end_turn()
 
     def _handle_click(self, position: tuple[int, int]) -> None:
+        if self.help_overlay_visible:
+            self._dismiss_help_overlay()
+            return
+
         header_action = self.button_rects.get("header-action")
         if header_action and header_action.collidepoint(position):
             if self.screen_mode == "battle":
@@ -2682,6 +2788,7 @@ class GameApp:
             self._draw_battle_screen()
         self._draw_finale_banner()
         self._draw_battle_intro()
+        self._draw_help_overlay()
 
     def _draw_header(self, title: str, subtitle: str, center_text: str, action_label: str) -> None:
         panel = pygame.Surface(HEADER_RECT.size, pygame.SRCALPHA)
@@ -5263,6 +5370,49 @@ class GameApp:
         else:
             pygame.draw.circle(surface, intro.color, center, 40, 2)
             pygame.draw.circle(surface, (255, 244, 217), center, 14)
+
+    def _draw_help_overlay(self) -> None:
+        if not self.help_overlay_visible:
+            return
+        card = self._help_card_for_mode()
+        if card is None:
+            return
+
+        shade = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+        shade.fill((6, 12, 20, 158))
+        self.screen.blit(shade, (0, 0))
+
+        card_rect = pygame.Rect(WINDOW_WIDTH // 2 - 350, WINDOW_HEIGHT // 2 - 170, 700, 300)
+        panel = pygame.Surface(card_rect.size, pygame.SRCALPHA)
+        draw_vertical_gradient(panel, panel.get_rect(), (14, 24, 37), (18, 31, 47))
+        pygame.draw.rect(panel, (74, 157, 214, 28), panel.get_rect(), border_radius=28)
+        pygame.draw.rect(panel, (236, 218, 176), panel.get_rect(), 1, border_radius=28)
+        self.screen.blit(panel, card_rect.topleft)
+
+        badge_rect = pygame.Rect(card_rect.x + 24, card_rect.y + 24, 110, 28)
+        pygame.draw.rect(self.screen, (214, 182, 112), badge_rect, border_radius=10)
+        pygame.draw.rect(self.screen, (10, 18, 29), badge_rect, 1, border_radius=10)
+        self._draw_text("도움말", self.font_small, (10, 18, 29), badge_rect.center, center=True)
+        self._draw_text_fit(card.title, (self.font_title, self.font_heading, self.font_ui), (255, 244, 217), (card_rect.x + 24, card_rect.y + 66), max_width=card_rect.width - 48)
+        self._draw_wrapped_text_fit(card.subtitle, (self.font_ui, self.font_small, self.font_tiny), (208, 219, 226), pygame.Rect(card_rect.x + 24, card_rect.y + 112, card_rect.width - 48, 32), max_lines=2)
+
+        for index, line in enumerate(card.lines[:4]):
+            bullet_rect = pygame.Rect(card_rect.x + 28, card_rect.y + 162 + index * 30, 12, 12)
+            pygame.draw.ellipse(self.screen, (108, 224, 203), bullet_rect)
+            self._draw_wrapped_text_fit(line, (self.font_small, self.font_tiny, self.font_micro), (220, 229, 235), pygame.Rect(card_rect.x + 50, card_rect.y + 156 + index * 30, card_rect.width - 78, 24), max_lines=1)
+
+        dismiss_rect = pygame.Rect(card_rect.right - 192, card_rect.bottom - 58, 168, 36)
+        self.button_rects["help-close"] = dismiss_rect
+        pygame.draw.rect(self.screen, (214, 182, 112), dismiss_rect, border_radius=14)
+        pygame.draw.rect(self.screen, (255, 244, 217), dismiss_rect, 1, border_radius=14)
+        self._draw_text_fit("닫기", (self.font_ui, self.font_small), (12, 20, 31), dismiss_rect.center, max_width=dismiss_rect.width - 20, center=True)
+
+        footer = (
+            "Enter, Esc, 클릭으로 닫기 · H/F1로 다시 보기"
+            if self.help_overlay_source == "manual"
+            else "닫으면 이후 자동으로 다시 열리지 않습니다 · H/F1로 다시 보기"
+        )
+        self._draw_text_fit(footer, (self.font_small, self.font_tiny, self.font_micro), (176, 194, 206), (card_rect.centerx, card_rect.bottom - 20), max_width=card_rect.width - 48, center=True)
 
     def _draw_winner_overlay(self) -> None:
         if self.controller is None or not self.controller.state.winner:
