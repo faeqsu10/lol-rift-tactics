@@ -22,6 +22,7 @@ from .app import StageModifier
 from .data import FINALE_VARIANTS_BY_ID
 from .data import TACTICAL_BLUEPRINTS_BY_ID
 from .engine import TacticsController
+from .history import PersistedRunRecord
 
 
 class TacticsControllerTests(unittest.TestCase):
@@ -712,6 +713,107 @@ class GameAppFlowTests(unittest.TestCase):
             self.assertIn("저장 기록 2런 · 완주 1회", second_app.run_summary.history_overview_lines[0])
             self.assertIn("전체 최고 원정을 경신했습니다.", second_app.run_summary.history_comparison_lines)
             self.assertIn("현재 조합 최고 기록을 경신했습니다.", second_app.run_summary.history_comparison_lines)
+
+    def test_run_summary_reports_new_doctrine_unlocks(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            history_path = Path(temp_dir) / "tactics-history.json"
+            app = GameApp(headless=True, history_path=history_path)
+            app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
+            app.run_stage = RUN_STAGE_COUNT
+            app.run_history = [
+                BattleRecap(
+                    stage_label="정찰전",
+                    result_label="승리",
+                    rounds=3,
+                    blue_damage=48,
+                    red_damage=20,
+                    blue_kills=1,
+                    red_kills=0,
+                    highlight="[01] 가렌, 돌파.",
+                ),
+                BattleRecap(
+                    stage_label="엘리트전",
+                    result_label="승리",
+                    rounds=4,
+                    blue_damage=60,
+                    red_damage=24,
+                    blue_kills=2,
+                    red_kills=0,
+                    highlight="[02] 아리, 매혹.",
+                ),
+                BattleRecap(
+                    stage_label="결전",
+                    result_label="승리",
+                    rounds=5,
+                    blue_damage=82,
+                    red_damage=33,
+                    blue_kills=3,
+                    red_kills=1,
+                    highlight="[03] 징크스, 마무리.",
+                ),
+            ]
+
+            app._enter_run_summary("원정 성공")
+
+            self.assertTrue(any("보급 교범" in line for line in app.run_summary.unlock_lines))
+            self.assertTrue(any("기동 교범" in line for line in app.run_summary.unlock_lines))
+
+    def test_selected_doctrine_applies_starting_bonus_on_deploy(self) -> None:
+        app = GameApp(headless=True)
+        app.history_store.records = [
+            PersistedRunRecord(
+                timestamp="2026-03-11T10:00:00",
+                lineup_label="가렌 · 아리 · 징크스",
+                result_label="원정 실패",
+                stage_label="정찰전에서 원정 종료",
+                stage_number=1,
+                total_rounds=3,
+                total_blue_damage=40,
+                total_red_damage=38,
+                total_blue_kills=1,
+                total_red_kills=1,
+                best_reward_line="주요 강화 없음",
+            )
+        ]
+        app._refresh_doctrine_statuses()
+        app.selected_doctrine_id = "field-rations"
+        app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
+
+        app._start_deploy()
+
+        self.assertEqual(app.active_doctrine_id, "field-rations")
+        self.assertEqual(app.run_bonuses["bonus-shield"], 1)
+
+    def test_route_reroll_doctrine_grants_and_spends_charge(self) -> None:
+        app = GameApp(headless=True)
+        app.history_store.records = [
+            PersistedRunRecord(
+                timestamp=f"2026-03-11T10:0{index}:00",
+                lineup_label="가렌 · 아리 · 징크스",
+                result_label="원정 실패",
+                stage_label="정찰전에서 원정 종료",
+                stage_number=1,
+                total_rounds=3,
+                total_blue_damage=40 + index,
+                total_red_damage=38,
+                total_blue_kills=1,
+                total_red_kills=1,
+                best_reward_line="주요 강화 없음",
+            )
+            for index in range(3)
+        ]
+        app._refresh_doctrine_statuses()
+        app.selected_doctrine_id = "scout-network"
+        app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
+
+        app._start_deploy()
+        app._prepare_route_phase()
+        app._reroll_route_choices()
+
+        self.assertEqual(app.active_doctrine_id, "scout-network")
+        self.assertEqual(app.route_reroll_charges, 0)
+        self.assertEqual(len(app.route_option_ids), 3)
+        self.assertIn("남은 재추첨 0회", app.selection_message)
 
     def test_stage_two_marks_elite_enemy(self) -> None:
         app = GameApp(headless=True)

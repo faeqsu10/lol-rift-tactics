@@ -17,6 +17,58 @@ MAX_HISTORY_RECORDS = 30
 
 
 @dataclass(frozen=True)
+class DoctrineDefinition:
+    id: str
+    name: str
+    description: str
+    requirement_label: str
+    runs_required: int = 0
+    clears_required: int = 0
+    bonus_reward_id: str | None = None
+    route_reroll_charges: int = 0
+
+
+@dataclass(frozen=True)
+class DoctrineStatus:
+    id: str
+    name: str
+    description: str
+    requirement_label: str
+    unlocked: bool
+    progress_label: str
+    bonus_reward_id: str | None = None
+    route_reroll_charges: int = 0
+
+
+DOCTRINE_DEFINITIONS: tuple[DoctrineDefinition, ...] = (
+    DoctrineDefinition(
+        id="field-rations",
+        name="보급 교범",
+        description="원정 시작 시 수호 문장 +1",
+        requirement_label="기록 1회",
+        runs_required=1,
+        bonus_reward_id="bonus-shield",
+    ),
+    DoctrineDefinition(
+        id="maneuver-drill",
+        name="기동 교범",
+        description="원정 시작 시 기동 훈련 +1",
+        requirement_label="완주 1회",
+        clears_required=1,
+        bonus_reward_id="bonus-move",
+    ),
+    DoctrineDefinition(
+        id="scout-network",
+        name="정찰 네트워크",
+        description="매 런 경로 재추첨 1회",
+        requirement_label="기록 3회",
+        runs_required=3,
+        route_reroll_charges=1,
+    ),
+)
+
+
+@dataclass(frozen=True)
 class PersistedRunRecord:
     timestamp: str
     lineup_label: str
@@ -64,6 +116,7 @@ class PersistedRunRecord:
 class HistorySummary:
     overview_lines: list[str]
     comparison_lines: list[str]
+    unlock_lines: list[str]
 
 
 class RunHistoryStore:
@@ -122,15 +175,47 @@ class RunHistoryStore:
     def clear_count(self) -> int:
         return sum(1 for record in self.records if record.was_success)
 
+    def doctrine_statuses(self) -> list[DoctrineStatus]:
+        record_count = len(self.records)
+        clear_count = self.clear_count()
+        statuses: list[DoctrineStatus] = []
+        for definition in DOCTRINE_DEFINITIONS:
+            unlocked = record_count >= definition.runs_required and clear_count >= definition.clears_required
+            progress_parts: list[str] = []
+            if definition.runs_required > 0:
+                progress_parts.append(f"기록 {min(record_count, definition.runs_required)}/{definition.runs_required}")
+            if definition.clears_required > 0:
+                progress_parts.append(f"완주 {min(clear_count, definition.clears_required)}/{definition.clears_required}")
+            statuses.append(
+                DoctrineStatus(
+                    id=definition.id,
+                    name=definition.name,
+                    description=definition.description,
+                    requirement_label=definition.requirement_label,
+                    unlocked=unlocked,
+                    progress_label=" · ".join(progress_parts) if progress_parts else "즉시 사용 가능",
+                    bonus_reward_id=definition.bonus_reward_id,
+                    route_reroll_charges=definition.route_reroll_charges,
+                )
+            )
+        return statuses
+
     def record_summary(self, summary: RunSummary, *, stage_number: int) -> HistorySummary:
         previous_overall = self.best_overall()
         previous_lineup_best = self.best_for_lineup(summary.lineup_label)
+        previous_unlocks = {status.id for status in self.doctrine_statuses() if status.unlocked}
         current = PersistedRunRecord.from_summary(summary, stage_number=stage_number)
         self.records = [current, *self.records][:MAX_HISTORY_RECORDS]
         self.save()
+        current_statuses = self.doctrine_statuses()
         return HistorySummary(
             overview_lines=self._overview_lines(current),
             comparison_lines=self._comparison_lines(current, previous_overall, previous_lineup_best),
+            unlock_lines=[
+                f"신규 교리 해금 · {status.name}"
+                for status in current_statuses
+                if status.unlocked and status.id not in previous_unlocks
+            ][:2],
         )
 
     def _overview_lines(self, current: PersistedRunRecord) -> list[str]:

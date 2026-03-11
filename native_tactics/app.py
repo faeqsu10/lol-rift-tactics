@@ -33,6 +33,7 @@ from .data import TERRAIN_BY_ID
 from .data import boss_profile_id_for_champion
 from .engine import TacticalActionResult
 from .engine import TacticsController
+from .history import DoctrineStatus
 from .history import RunHistoryStore
 
 WINDOW_WIDTH = 1600
@@ -474,6 +475,7 @@ class RunSummary:
     recap_entries: list[BattleRecap]
     history_overview_lines: list[str]
     history_comparison_lines: list[str]
+    unlock_lines: list[str]
 
 
 @dataclass
@@ -596,6 +598,10 @@ class GameApp:
         self.current_objective: BattleObjective | None = None
         self.last_objective_summary: str | None = None
         self.objective_bonus_applied = False
+        self.doctrine_statuses: list[DoctrineStatus] = []
+        self.selected_doctrine_id: str | None = None
+        self.active_doctrine_id: str | None = None
+        self.route_reroll_charges = 0
         self.battle_stats = {
             "blue_damage": 0,
             "red_damage": 0,
@@ -623,9 +629,11 @@ class GameApp:
         self.button_rects: dict[str, pygame.Rect] = {}
         self.selection_card_rects: dict[str, pygame.Rect] = {}
         self.selection_slot_rects: list[pygame.Rect] = []
+        self.doctrine_card_rects: dict[str, pygame.Rect] = {}
         self.deploy_roster_rects: dict[str, pygame.Rect] = {}
         self.reward_card_rects: dict[str, pygame.Rect] = {}
         self.route_card_rects: dict[str, pygame.Rect] = {}
+        self._refresh_doctrine_statuses()
         self.selection_message = "플레이어 팀 3명을 고른 뒤 배치 단계로 넘어가세요."
 
     def run(self, max_frames: int | None = None, screenshot_path: str | None = None) -> None:
@@ -665,6 +673,39 @@ class GameApp:
 
     def _current_stage_label(self) -> str:
         return RUN_STAGE_LABELS.get(self.run_stage, f"{self.run_stage}전")
+
+    def _refresh_doctrine_statuses(self) -> None:
+        self.doctrine_statuses = self.history_store.doctrine_statuses()
+        unlocked_ids = [status.id for status in self.doctrine_statuses if status.unlocked]
+        if self.selected_doctrine_id not in unlocked_ids:
+            self.selected_doctrine_id = unlocked_ids[0] if unlocked_ids else None
+
+    def _selected_doctrine(self) -> DoctrineStatus | None:
+        return next(
+            (
+                status
+                for status in self.doctrine_statuses
+                if status.id == self.selected_doctrine_id and status.unlocked
+            ),
+            None,
+        )
+
+    def _active_doctrine(self) -> DoctrineStatus | None:
+        return next(
+            (
+                status
+                for status in self.doctrine_statuses
+                if status.id == self.active_doctrine_id and status.unlocked
+            ),
+            None,
+        )
+
+    def _activate_selected_doctrine(self) -> None:
+        doctrine = self._selected_doctrine()
+        self.active_doctrine_id = doctrine.id if doctrine is not None else None
+        self.route_reroll_charges = doctrine.route_reroll_charges if doctrine is not None else 0
+        if doctrine is not None and doctrine.bonus_reward_id is not None:
+            self.run_bonuses[doctrine.bonus_reward_id] += 1
 
     def _enemy_pool_for_stage(self, stage: int) -> tuple[str, ...]:
         return STAGE_RED_POOLS.get(stage, tuple(SELECTABLE_RED_IDS))
@@ -758,6 +799,8 @@ class GameApp:
     def _reset_run_progress(self) -> None:
         self.run_stage = 1
         self.run_bonuses = {reward_id: 0 for reward_id in self.run_rewards}
+        self.active_doctrine_id = None
+        self.route_reroll_charges = 0
         self.reward_option_ids = []
         self.selected_reward_id = None
         self.route_option_ids = []
@@ -838,7 +881,7 @@ class GameApp:
         else:
             self.selection_message = "보상 하나를 고른 뒤 다음 전투로 넘어가세요."
 
-    def _prepare_route_phase(self) -> None:
+    def _roll_route_choices(self) -> None:
         self.route_option_ids = random.sample(list(self.route_options), 3)
         node_ids = random.sample(list(RUN_NODE_TEMPLATES), len(self.route_option_ids))
         self.route_event_by_route_id = {
@@ -854,12 +897,25 @@ class GameApp:
             for route_id in self.route_option_ids
         }
         self.selected_route_id = None
+
+    def _prepare_route_phase(self) -> None:
+        self._roll_route_choices()
         self.current_objective = None
         self.screen_mode = "route"
         if self.pending_stage_penalty is not None:
             self.selection_message = f"전투 요약을 보고 경로를 고르세요. 예약 페널티: {self.pending_stage_penalty.description}"
         else:
             self.selection_message = "전투 요약을 확인하고 다음 경로 하나를 선택하세요."
+
+    def _reroll_route_choices(self) -> None:
+        if self.route_reroll_charges <= 0:
+            self.selection_message = "남은 경로 재추첨이 없습니다."
+            self.audio.play("reset")
+            return
+        self.route_reroll_charges -= 1
+        self._roll_route_choices()
+        self.selection_message = f"경로를 다시 정찰했습니다. 남은 재추첨 {self.route_reroll_charges}회."
+        self.audio.play("ui-confirm")
 
     def _select_route(self, route_id: str) -> None:
         if route_id not in self.route_option_ids:
@@ -921,12 +977,15 @@ class GameApp:
         if len(self.selected_blue_ids) != 3:
             self.selected_blue_ids = list(DEFAULT_BLUE_IDS)
         self._reset_run_progress()
+        self._activate_selected_doctrine()
         self.controller = None
         self.last_active_id = None
         self.selected_deploy_champion_id = None
         self._seed_deployment()
         self.screen_mode = "deploy"
-        self.selection_message = f"{self._current_stage_label()} 시작 위치를 조정하세요."
+        doctrine = self._active_doctrine()
+        doctrine_line = f" · 교리 {doctrine.name}" if doctrine is not None else ""
+        self.selection_message = f"{self._current_stage_label()} 시작 위치를 조정하세요{doctrine_line}."
         self.audio.play("ui-confirm")
 
     def _advance_after_reward(self) -> None:
@@ -1008,6 +1067,9 @@ class GameApp:
         total_red_kills = sum(recap.red_kills for recap in recaps)
         stage_label = "결전 완주" if result_label == "원정 성공" else f"{self._current_stage_label()}에서 원정 종료"
         build_lines: list[str] = []
+        active_doctrine = self._active_doctrine()
+        if active_doctrine is not None:
+            build_lines.append(f"교리 · {active_doctrine.name}")
         for line in self._run_bonus_lines()[:3]:
             build_lines.append(f"강화 · {line}")
         if recaps:
@@ -1034,6 +1096,7 @@ class GameApp:
             recap_entries=recaps,
             history_overview_lines=[],
             history_comparison_lines=[],
+            unlock_lines=[],
         )
 
     def _record_battle_recap(self, result_label: str) -> BattleRecap | None:
@@ -1048,6 +1111,7 @@ class GameApp:
         history_summary = self.history_store.record_summary(self.run_summary, stage_number=self.run_stage)
         self.run_summary.history_overview_lines = history_summary.overview_lines
         self.run_summary.history_comparison_lines = history_summary.comparison_lines
+        self.run_summary.unlock_lines = history_summary.unlock_lines
         self.battle_intro_card = None
         self.screen_mode = "summary"
         self.mode = "move"
@@ -1626,9 +1690,12 @@ class GameApp:
             self.audio.play("reset")
             return
         self._reset_run_progress()
+        self._activate_selected_doctrine()
         self._seed_deployment()
         self.screen_mode = "deploy"
-        self.selection_message = f"{self._current_stage_label()} 시작 위치를 조정한 뒤 전투를 시작하세요."
+        doctrine = self._active_doctrine()
+        doctrine_line = f" · 교리 {doctrine.name}" if doctrine is not None else ""
+        self.selection_message = f"{self._current_stage_label()} 시작 위치를 조정한 뒤 전투를 시작하세요{doctrine_line}."
         self.audio.play("ui-confirm")
 
     def _start_battle(self) -> None:
@@ -1659,6 +1726,7 @@ class GameApp:
         self.selected_deploy_champion_id = None
         self.battle_intro_card = None
         self._reset_run_progress()
+        self._refresh_doctrine_statuses()
         self.deploy_assignments.clear()
         self.red_deploy_assignments.clear()
         self.selection_message = "새 원정을 준비하세요. 현재 조합은 유지됩니다."
@@ -1668,6 +1736,7 @@ class GameApp:
         self.screen_mode = "select"
         self.selected_blue_ids = list(DEFAULT_BLUE_IDS)
         self._reset_run_progress()
+        self._refresh_doctrine_statuses()
         self.deploy_assignments.clear()
         self.red_deploy_assignments.clear()
         self.selected_deploy_champion_id = None
@@ -1706,6 +1775,19 @@ class GameApp:
         self.selected_blue_ids.append(champion_id)
         self.selection_message = f"{blueprint.name}을(를) 플레이어 팀에 추가했습니다."
         self.audio.play("ui-confirm", champion_id=champion_id)
+
+    def _select_doctrine(self, doctrine_id: str) -> None:
+        doctrine = next((status for status in self.doctrine_statuses if status.id == doctrine_id), None)
+        if doctrine is None:
+            return
+        if not doctrine.unlocked:
+            self.selection_message = f"{doctrine.name} 잠금 · {doctrine.requirement_label} ({doctrine.progress_label})"
+            self.audio.play("reset")
+            return
+        self.selected_doctrine_id = doctrine.id
+        reroll_line = f" · 경로 재추첨 {doctrine.route_reroll_charges}회" if doctrine.route_reroll_charges else ""
+        self.selection_message = f"{doctrine.name} 선택 · {doctrine.description}{reroll_line}"
+        self.audio.play("ui-confirm")
 
     def _tile_for_deployed_champion(self, champion_id: str, assignments: dict[tuple[int, int], str]) -> tuple[int, int]:
         for tile, deployed_id in assignments.items():
@@ -1882,6 +1964,10 @@ class GameApp:
             self.selection_message = "적 조합을 다시 섞었습니다."
             self.audio.play("ui-select")
             return
+        for doctrine_id, rect in self.doctrine_card_rects.items():
+            if rect.collidepoint(position):
+                self._select_doctrine(doctrine_id)
+                return
 
         for champion_id, rect in self.selection_card_rects.items():
             if rect.collidepoint(position):
@@ -1929,6 +2015,9 @@ class GameApp:
             return
         if self.button_rects.get("route-select") and self.button_rects["route-select"].collidepoint(position):
             self._return_to_select()
+            return
+        if self.button_rects.get("route-reroll") and self.button_rects["route-reroll"].collidepoint(position):
+            self._reroll_route_choices()
             return
         for route_id, rect in self.route_card_rects.items():
             if rect.collidepoint(position):
@@ -2231,6 +2320,7 @@ class GameApp:
         self._draw_text("적 조합 미리보기", self.font_heading, (244, 239, 225), (SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.y + 18))
         self._draw_text("전술 상대를 재추첨할 수 있습니다", self.font_small, (198, 176, 168), (SELECT_RIGHT_PANEL.x + 24, SELECT_RIGHT_PANEL.y + 52))
         self._draw_selection_slots()
+        self._draw_selection_doctrine_panel()
         self._draw_selection_pool()
         self._draw_selection_enemy_preview()
 
@@ -2261,7 +2351,7 @@ class GameApp:
         columns = 3
         gap_x = 18
         gap_y = 18
-        rows = max(1, len(SELECTABLE_BLUE_IDS) // columns)
+        rows = max(1, (len(SELECTABLE_BLUE_IDS) + columns - 1) // columns)
         card_width = (rect.width - gap_x * (columns - 1)) // columns
         card_height = (rect.height - gap_y * (rows - 1)) // rows
         for index, champion_id in enumerate(SELECTABLE_BLUE_IDS):
@@ -2280,6 +2370,35 @@ class GameApp:
 
         footer = pygame.Rect(rect.x, SELECT_LEFT_PANEL.bottom - 54, rect.width, 36)
         self._draw_text(self.selection_message, self.font_small, (208, 219, 226), (footer.x + 4, footer.y + 6))
+
+    def _draw_selection_doctrine_panel(self) -> None:
+        panel_rect = pygame.Rect(SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.bottom - 240, SELECT_RIGHT_PANEL.width - 44, 96)
+        pygame.draw.rect(self.screen, (11, 20, 31), panel_rect, border_radius=24)
+        pygame.draw.rect(self.screen, (236, 218, 176), panel_rect, 1, border_radius=24)
+        self._draw_text("원정 교리", self.font_ui, (229, 210, 164), (panel_rect.x + 16, panel_rect.y + 12))
+        self._draw_text(
+            f"저장 기록 {len(self.history_store.records)}런 · 완주 {self.history_store.clear_count()}회",
+            self.font_tiny,
+            (170, 191, 207),
+            (panel_rect.right - 16, panel_rect.y + 16),
+            align_right=True,
+        )
+        self.doctrine_card_rects.clear()
+        gap = 14
+        card_width = (panel_rect.width - 32 - gap * 2) // 3
+        for index, doctrine in enumerate(self.doctrine_statuses[:3]):
+            card_rect = pygame.Rect(panel_rect.x + 16 + index * (card_width + gap), panel_rect.y + 40, card_width, 40)
+            self.doctrine_card_rects[doctrine.id] = card_rect
+            selected = doctrine.id == self.selected_doctrine_id and doctrine.unlocked
+            fill = (22, 46, 58) if selected else (15, 26, 39)
+            border = (108, 224, 203) if selected else (236, 218, 176) if doctrine.unlocked else (96, 104, 112)
+            pygame.draw.rect(self.screen, fill, card_rect, border_radius=14)
+            pygame.draw.rect(self.screen, border, card_rect, 1, border_radius=14)
+            title_color = (244, 239, 225) if doctrine.unlocked else (166, 174, 182)
+            sub_color = (170, 222, 210) if doctrine.unlocked else (140, 149, 158)
+            self._draw_text(doctrine.name, self.font_small, title_color, (card_rect.x + 12, card_rect.y + 7))
+            detail_line = doctrine.description if doctrine.unlocked else f"{doctrine.requirement_label} · {doctrine.progress_label}"
+            self._draw_wrapped_text(detail_line, self.font_tiny, sub_color, pygame.Rect(card_rect.x + 12, card_rect.y + 22, card_rect.width - 24, 14), max_lines=1)
 
     def _draw_selection_enemy_preview(self) -> None:
         reroll_rect = pygame.Rect(SELECT_RIGHT_PANEL.x + 100, SELECT_RIGHT_PANEL.bottom - 118, 180, 48)
@@ -2439,24 +2558,31 @@ class GameApp:
         preview_objective = self._preview_battle_objective(route_id=selected_route, enemy_ids=self.selected_red_ids)
         route_hint = "현재 경로 없음" if selected_route is None else f"선택 경로: {self.route_options[selected_route].name}"
         self._draw_text(route_hint, self.font_small, (171, 193, 208), (stage_rect.x + 18, stage_rect.y + 84))
+        active_doctrine = self._active_doctrine()
+        if active_doctrine is not None:
+            doctrine_line = f"원정 교리: {active_doctrine.name}"
+            if active_doctrine.route_reroll_charges:
+                doctrine_line += f" · 남은 재추첨 {self.route_reroll_charges}회"
+            self._draw_text(doctrine_line, self.font_tiny, (170, 222, 210), (stage_rect.x + 18, stage_rect.y + 104))
         if selected_route is not None:
-            self._draw_text(f"보상: {ROUTE_REWARD_BY_ID[selected_route]}", self.font_small, (228, 214, 167), (stage_rect.x + 18, stage_rect.y + 108))
-            self._draw_text(f"위험: {ROUTE_RISK_BY_ID[selected_route]}", self.font_small, (233, 156, 140), (stage_rect.x + 18, stage_rect.y + 132))
+            top_offset = 132 if active_doctrine is not None else 108
+            self._draw_text(f"보상: {ROUTE_REWARD_BY_ID[selected_route]}", self.font_small, (228, 214, 167), (stage_rect.x + 18, stage_rect.y + top_offset))
+            self._draw_text(f"위험: {ROUTE_RISK_BY_ID[selected_route]}", self.font_small, (233, 156, 140), (stage_rect.x + 18, stage_rect.y + top_offset + 24))
             if selected_node is not None:
-                self._draw_text(f"노드: {selected_node.name} · {selected_node.category}", self.font_small, (170, 222, 210), (stage_rect.x + 18, stage_rect.y + 156))
+                self._draw_text(f"노드: {selected_node.name} · {selected_node.category}", self.font_small, (170, 222, 210), (stage_rect.x + 18, stage_rect.y + top_offset + 48))
                 follow_up_line = self._node_effect_preview_label(selected_node, selected_follow_up)
-                self._draw_wrapped_text(follow_up_line, self.font_tiny, (209, 220, 227), pygame.Rect(stage_rect.x + 18, stage_rect.y + 178, stage_rect.width - 36, 32), max_lines=2)
+                self._draw_wrapped_text(follow_up_line, self.font_tiny, (209, 220, 227), pygame.Rect(stage_rect.x + 18, stage_rect.y + top_offset + 70, stage_rect.width - 36, 32), max_lines=2)
             objective_preview_text = (
                 preview_objective.description.replace("목표: ", "")
                 if preview_objective is not None
                 else self.route_options[selected_route].description.replace("목표: ", "")
             )
-            self._draw_text(f"맵 목표: {objective_preview_text}", self.font_small, (174, 208, 235), (stage_rect.x + 18, stage_rect.y + 202))
+            self._draw_text(f"맵 목표: {objective_preview_text}", self.font_small, (174, 208, 235), (stage_rect.x + 18, stage_rect.y + top_offset + 94))
             selected_event = self.route_event_by_route_id.get(selected_route) if self.selected_route_id else self.current_route_event
             if selected_event is not None:
-                self._draw_text(f"경로 이벤트: {selected_event.name}", self.font_small, (170, 222, 210), (stage_rect.x + 18, stage_rect.y + 226))
-                self._draw_wrapped_text(self._route_event_effect_label(selected_event, selected_node), self.font_tiny, (209, 220, 227), pygame.Rect(stage_rect.x + 18, stage_rect.y + 248, stage_rect.width - 36, 18), max_lines=1)
-                self._draw_wrapped_text(f"실패 시: {self._route_event_penalty_label(selected_event, selected_node)}", self.font_tiny, (235, 156, 140), pygame.Rect(stage_rect.x + 18, stage_rect.y + 268, stage_rect.width - 36, 18), max_lines=1)
+                self._draw_text(f"경로 이벤트: {selected_event.name}", self.font_small, (170, 222, 210), (stage_rect.x + 18, stage_rect.y + top_offset + 118))
+                self._draw_wrapped_text(self._route_event_effect_label(selected_event, selected_node), self.font_tiny, (209, 220, 227), pygame.Rect(stage_rect.x + 18, stage_rect.y + top_offset + 140, stage_rect.width - 36, 18), max_lines=1)
+                self._draw_wrapped_text(f"실패 시: {self._route_event_penalty_label(selected_event, selected_node)}", self.font_tiny, (235, 156, 140), pygame.Rect(stage_rect.x + 18, stage_rect.y + top_offset + 160, stage_rect.width - 36, 18), max_lines=1)
         if self.pending_stage_penalty is not None:
             penalty_color = (138, 234, 171) if selected_node is not None and selected_node.clears_pending_penalty else (235, 156, 140)
             penalty_prefix = "해제 예정" if selected_node is not None and selected_node.clears_pending_penalty else "예약 페널티"
@@ -2520,13 +2646,19 @@ class GameApp:
             self._draw_wrapped_text(f"위험: {ROUTE_RISK_BY_ID[route_id]}", self.font_tiny, (231, 168, 152), pygame.Rect(rect.x + 18, rect.y + 138, rect.width - 36, 16), max_lines=1)
             self._draw_wrapped_text(f"보상: {ROUTE_REWARD_BY_ID[route_id]}", self.font_tiny, (221, 215, 178), pygame.Rect(rect.x + 250, rect.y + 22, rect.width - 268, 16), max_lines=1)
 
-        select_rect = pygame.Rect(SELECT_RIGHT_PANEL.x + 32, SELECT_RIGHT_PANEL.bottom - 118, 190, 48)
-        next_rect = pygame.Rect(SELECT_RIGHT_PANEL.right - 242, SELECT_RIGHT_PANEL.bottom - 118, 190, 48)
+        select_rect = pygame.Rect(SELECT_RIGHT_PANEL.x + 24, SELECT_RIGHT_PANEL.bottom - 118, 164, 48)
+        reroll_rect = pygame.Rect(SELECT_RIGHT_PANEL.x + 208, SELECT_RIGHT_PANEL.bottom - 118, 164, 48)
+        next_rect = pygame.Rect(SELECT_RIGHT_PANEL.right - 188, SELECT_RIGHT_PANEL.bottom - 118, 164, 48)
         self.button_rects["route-select"] = select_rect
+        self.button_rects["route-reroll"] = reroll_rect
         self.button_rects["route-next"] = next_rect
         pygame.draw.rect(self.screen, (70, 80, 92), select_rect, border_radius=15)
         pygame.draw.rect(self.screen, (255, 244, 217), select_rect, 1, border_radius=15)
         self._draw_text("선택 화면으로", self.font_ui, (231, 236, 240), select_rect.center, center=True)
+        reroll_enabled = self.route_reroll_charges > 0
+        pygame.draw.rect(self.screen, (214, 182, 112) if reroll_enabled else (76, 84, 96), reroll_rect, border_radius=15)
+        pygame.draw.rect(self.screen, (255, 244, 217), reroll_rect, 1, border_radius=15)
+        self._draw_text(f"경로 재추첨 {self.route_reroll_charges}", self.font_ui, (12, 20, 31) if reroll_enabled else (188, 196, 204), reroll_rect.center, center=True)
         enabled = self.selected_route_id is not None
         pygame.draw.rect(self.screen, (214, 182, 112) if enabled else (76, 84, 96), next_rect, border_radius=15)
         pygame.draw.rect(self.screen, (255, 244, 217), next_rect, 1, border_radius=15)
@@ -2592,8 +2724,11 @@ class GameApp:
         record_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 610, SELECT_LEFT_PANEL.width - 44, 98)
         pygame.draw.rect(self.screen, (11, 20, 31), record_rect, border_radius=24)
         pygame.draw.rect(self.screen, (236, 218, 176), record_rect, 1, border_radius=24)
-        self._draw_text("저장 기록 비교", self.font_ui, (229, 210, 164), (record_rect.x + 18, record_rect.y + 14))
-        history_lines = [*summary.history_overview_lines[:2], *summary.history_comparison_lines[:2]] or ["저장 기록 없음"]
+        self._draw_text("저장 기록과 해금", self.font_ui, (229, 210, 164), (record_rect.x + 18, record_rect.y + 14))
+        history_lines = (
+            [*summary.history_overview_lines[:1], *summary.history_comparison_lines[:1], *summary.unlock_lines[:2]]
+            or ["저장 기록 없음"]
+        )
         for index, line in enumerate(history_lines[:4]):
             self._draw_wrapped_text(line, self.font_tiny, (208, 219, 226), pygame.Rect(record_rect.x + 18, record_rect.y + 44 + index * 14, record_rect.width - 36, 14), max_lines=1)
 
