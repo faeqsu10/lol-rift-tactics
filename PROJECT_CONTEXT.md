@@ -78,6 +78,7 @@
   - saved-history-driven doctrine unlocks that now grant permanent start bonuses or a route reroll choice
   - node-specific and finale-specific battle-start cut-in presentation with a short intro lock
   - boss-specific awakening surge rules that now deal immediate pressure damage and expose predicted danger tiles on the finale map
+  - select, route, and summary screens polished to reduce UI clutter and eliminate major text overlap
   - terrain-aware red-team AI movement and targeting
   - objective-aware red-team AI that contests marked tiles and pressure zones
   - post-victory reward pick with next-enemy preview
