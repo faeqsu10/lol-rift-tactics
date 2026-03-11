@@ -238,6 +238,15 @@ class TacticsControllerTests(unittest.TestCase):
         self.assertIn("red-akali", app._enemy_pool_for_stage(2))
         self.assertIn("red-sett", app._enemy_pool_for_stage(3))
 
+    def test_selection_pool_grid_stays_above_footer_with_expanded_roster(self) -> None:
+        app = GameApp(headless=True)
+
+        app._draw_selection_pool()
+
+        last_card_bottom = max(rect.bottom for rect in app.selection_card_rects.values())
+        message_strip_y = 120 + 784 - 82
+        self.assertLess(last_card_bottom, message_strip_y)
+
     def test_riven_dash_passive_adds_damage(self) -> None:
         controller = TacticsController(("blue-riven",), ("red-darius",))
         controller.blocked_tiles.clear()
