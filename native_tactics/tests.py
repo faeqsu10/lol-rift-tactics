@@ -939,6 +939,29 @@ class GameAppFlowTests(unittest.TestCase):
         self.assertLess(small.portrait_rect.y, small.torso_rect.y)
         self.assertLess(small.torso_rect.bottom, small.leg_left_rect.bottom)
 
+    def test_fit_font_for_width_uses_smaller_font_when_needed(self) -> None:
+        app = GameApp(headless=True)
+        text = "초강력 초토화 로켓!"
+        max_width = app.font_tiny.size(text)[0]
+
+        font, fitted = app._fit_font_for_width(text, (app.font_ui, app.font_small, app.font_tiny), max_width)
+
+        self.assertIs(font, app.font_tiny)
+        self.assertEqual(fitted, text)
+
+    def test_wrapped_lines_ellipsizes_last_line_when_truncated(self) -> None:
+        app = GameApp(headless=True)
+
+        lines = app._wrapped_lines(
+            "아주 긴 설명 문장이 들어가서 마지막 줄이 줄임표로 정리되어야 합니다.",
+            app.font_tiny,
+            120,
+            max_lines=1,
+        )
+
+        self.assertEqual(len(lines), 1)
+        self.assertTrue(lines[0].endswith("..."))
+
     def test_stage_two_marks_elite_enemy(self) -> None:
         app = GameApp(headless=True)
         app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]

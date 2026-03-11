@@ -81,6 +81,7 @@
   - boss-specific awakening surge rules that now deal immediate pressure damage and expose predicted danger tiles on the finale map
   - select, route, and summary screens polished to reduce UI clutter and eliminate major text overlap
   - champion select now uses a featured-champion focus panel, horizontal enemy counter preview, and a separated action footer so right-panel overlap stays resolved
+  - shared text-fitting helpers now keep route cards, reward buttons, summary buttons, battle side panels, and intro overlays from colliding when Korean labels run long
   - battle presentation first pass with animated battlefield atmosphere, stronger unit emphasis, pulse rings, and attack trails
   - portrait-based tactical standees on deploy and battle screens to reduce the placeholder-token look
   - portrait-driven sprite standees now use scale-aware full-body silhouettes and accessory rendering so select, deploy, and battle units read more like character pieces than tokens
