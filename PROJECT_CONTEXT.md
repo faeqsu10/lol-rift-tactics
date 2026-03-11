@@ -113,6 +113,7 @@
 - Tactics UX research: `docs/TACTICS_UX_RESEARCH.md`
 - Tactics release target: `docs/TACTICS_RELEASE_TARGET.md`
 - Tactics milestones: `docs/TACTICS_MILESTONES.md`
+- Local specialist agent pack: `.claude/agents/rift-tactics/*`
 - Verified locally on March 11, 2026:
   - `python -m native_game.tests` passes
   - headless smoke run with SDL dummy drivers passes
@@ -123,11 +124,12 @@
 
 ## Recommended Next Steps
 
-1. Replace shape-based placeholder characters with real sprite art or sprite sheets.
-2. Add more authored node/event presentation on top of the new cut-in system.
-3. Replace placeholder presentation with sprite art, animation, and map polish.
-4. Expand map and objective variety on top of the new doctrine and boss loop.
-5. Add more authored boss variants or finale-only special rules after the doctrine layer settles.
+1. Keep `AGENTS.md`, `README.md`, and `PROJECT_CONTEXT.md` aligned around the native-first direction whenever priorities shift.
+2. Use the local specialist agents under `.claude/agents/rift-tactics/` when work is clearly about art, audio, UX, content, AI, QA, balance, or docs.
+3. Add more authored node/event presentation on top of the new cut-in system.
+4. Introduce real sprite art plus first-pass attack/hit/death/victory animation work.
+5. Expand map and objective variety on top of the new doctrine and boss loop.
+6. Add more authored boss variants or finale-only special rules after the doctrine layer settles.
 
 ## Resume Prompt
 

@@ -77,6 +77,7 @@ src/
 - 새 작업은 `tasks/todo.md`에 체크박스로 추가
 - 사용자 교정이나 반복 실수 방지 규칙은 `tasks/lessons.md`에 추가
 - 완료 후 검증 결과를 `tasks/todo.md`에 반영
+- 반복적으로 쓰는 전문 역할은 `.claude/agents/rift-tactics/` 아래에 저장하고 이후 같은 성격의 작업에서 재사용
 
 ### Verification Before Done
 

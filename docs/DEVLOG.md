@@ -2,6 +2,12 @@
 
 ## 2026-03-11
 
+### 저장소 전용 전문 에이전트 팩 추가
+
+- `.claude/agents/rift-tactics/` 아래에 `tech-art-sprite`, `combat-presentation`, `audio-direction`, `ux-onboarding`, `content-designer`, `qa-release`, `balance-telemetry`, `ai-tactics`, `docs-governance` 9개 역할 정의를 추가
+- 각 에이전트는 이 프로젝트의 실제 파일, 검증 명령, 산출물, 트리거 문구를 포함해 이후 세션에서 바로 재사용할 수 있게 정리
+- README, PROJECT_CONTEXT, AGENTS, CLAUDE, TODO, LESSONS에도 이 전문 에이전트 팩 경로와 운영 원칙을 반영
+
 ### 전투 화면 아트/애니메이션 1차 강화
 
 - `native_tactics` 전장에 팀 색 안개, 중앙 룬 광원, 얕은 링 패턴을 얹어 그리드가 단순 평면처럼 보이지 않게 1차 분위기 레이어를 추가

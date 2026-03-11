@@ -4,6 +4,8 @@
 
 이 프로젝트는 이제 브라우저 UI 중심 MVP보다, 실제로 움직이고 클릭해서 플레이하는 `Pygame` 네이티브 전투 클라이언트를 기본 방향으로 사용합니다.
 
+현재 기준의 주 개발 축은 `native_tactics`이며, `native_game`과 `src/*` 웹 프로토타입은 보조 경로로 유지합니다.
+
 ## 현재 상태
 
 - 기본 플레이 빌드:
@@ -196,6 +198,7 @@ SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./release/rift-tactics --headless --
 
 ## 다음 우선순위
 
+- 문서 기준을 네이티브 중심으로 계속 유지하고 `AGENTS.md`, `README.md`, `PROJECT_CONTEXT.md`를 함께 갱신
 - `native_tactics`에 노드별 전용 컷신 아트/사운드와 특수 상호작용 추가
 - 실제 스프라이트 시트와 캐릭터 아트 적용
 - 공격/피격/사망 전용 애니메이션 세분화
@@ -209,6 +212,8 @@ SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./release/rift-tactics --headless --
 - 기존 `Vite + React + Phaser` 웹 프로토타입도 저장소에 남아 있습니다.
 - 하지만 현재 우선순위는 네이티브 `Pygame` 클라이언트를 더 게임답게 만드는 것입니다.
 - 챔피언 테마 효과음은 공식 Riot 음원을 가져오지 않고, 각 챔피언 성격을 반영한 오리지널 신스 모티프로 구성했습니다.
+- 저장소 전용 전문 에이전트 팩은 `.claude/agents/rift-tactics/` 아래에 있습니다.
+- 현재 준비된 역할은 `tech-art-sprite`, `combat-presentation`, `audio-direction`, `ux-onboarding`, `content-designer`, `qa-release`, `balance-telemetry`, `ai-tactics`, `docs-governance`입니다.
 - 작업 추적은 `tasks/todo.md`, 교정 기록은 `tasks/lessons.md`, 개발 기록은 `docs/DEVLOG.md`를 사용합니다.
 - 전술 UX 설계 근거는 `docs/TACTICS_UX_RESEARCH.md`에 정리했습니다.
 - 출시 목표와 완성 기준은 `docs/TACTICS_RELEASE_TARGET.md`를 기준으로 봅니다.
