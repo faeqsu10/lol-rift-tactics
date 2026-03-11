@@ -885,6 +885,28 @@ class GameAppFlowTests(unittest.TestCase):
         self.assertEqual(len(app.route_option_ids), 3)
         self.assertIn("남은 재추첨 0회", app.selection_message)
 
+    def test_selection_featured_champion_prefers_last_selected_member(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
+
+        self.assertEqual(app._selection_featured_champion_id(), "blue-jinx")
+
+    def test_selection_featured_champion_falls_back_to_first_pool_member(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_blue_ids = []
+
+        self.assertEqual(app._selection_featured_champion_id(), "blue-garen")
+
+    def test_selection_enemy_preview_layout_keeps_cards_above_action_panel(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_red_ids = ["red-darius", "red-annie", "red-caitlyn"]
+
+        card_rects, action_rect = app._selection_enemy_preview_layout()
+
+        self.assertEqual(len(card_rects), 3)
+        self.assertTrue(all(card.bottom <= action_rect.top for card in card_rects))
+        self.assertTrue(all(card.width == card_rects[0].width for card in card_rects))
+
     def test_stage_two_marks_elite_enemy(self) -> None:
         app = GameApp(headless=True)
         app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]

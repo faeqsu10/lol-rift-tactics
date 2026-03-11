@@ -2708,24 +2708,150 @@ class GameApp:
         pygame.draw.rect(card, (236, 218, 176), card.get_rect(), 1, border_radius=22)
         self.screen.blit(card, rect.topleft)
 
+    def _selection_featured_champion_id(self) -> str:
+        if self.selected_blue_ids:
+            return self.selected_blue_ids[-1]
+        return SELECTABLE_BLUE_IDS[0]
+
+    def _selection_role_counts(self) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for champion_id in self.selected_blue_ids:
+            role = BLUEPRINTS_BY_ID[champion_id].role
+            counts[role] = counts.get(role, 0) + 1
+        return counts
+
+    def _draw_selection_focus_panel(self) -> None:
+        panel_rect = pygame.Rect(SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.y + 92, SELECT_RIGHT_PANEL.width - 44, 222)
+        focus_id = self._selection_featured_champion_id()
+        blueprint = BLUEPRINTS_BY_ID[focus_id]
+        tactical = TACTICAL_BLUEPRINTS_BY_ID[focus_id]
+        accent = hex_to_rgb(blueprint.accent)
+        panel = pygame.Surface(panel_rect.size, pygame.SRCALPHA)
+        draw_vertical_gradient(panel, panel.get_rect(), mix((15, 24, 37), accent, 0.1), mix((11, 20, 31), accent, 0.18))
+        pygame.draw.rect(panel, (*accent, 22), panel.get_rect(), border_radius=24)
+        pygame.draw.rect(panel, (236, 218, 176), panel.get_rect(), 1, border_radius=24)
+        glow = pygame.Surface(panel_rect.size, pygame.SRCALPHA)
+        pygame.draw.ellipse(glow, (*accent, 24), pygame.Rect(-28, 40, 240, 180))
+        pygame.draw.ellipse(glow, (214, 182, 112, 16), pygame.Rect(panel_rect.width - 212, 12, 196, 74))
+        self.screen.blit(panel, panel_rect.topleft)
+        self.screen.blit(glow, panel_rect.topleft)
+
+        label_rect = pygame.Rect(panel_rect.x + 18, panel_rect.y + 16, 116, 28)
+        pygame.draw.rect(self.screen, (214, 182, 112), label_rect, border_radius=10)
+        pygame.draw.rect(self.screen, (10, 18, 29), label_rect, 1, border_radius=10)
+        label = "대표 챔피언" if self.selected_blue_ids else "추천 챔피언"
+        self._draw_text(label, self.font_small, (10, 18, 29), label_rect.center, center=True)
+
+        standee_rect = pygame.Rect(0, 0, 172, 208)
+        standee_rect.midbottom = (panel_rect.x + 118, panel_rect.bottom - 14)
+        self._draw_tactical_standee(
+            focus_id,
+            blueprint.role,
+            accent,
+            (83, 170, 236),
+            standee_rect,
+            badge_text="L" if self.selected_blue_ids else "P",
+            badge_color=(236, 218, 176),
+        )
+
+        info_x = panel_rect.x + 224
+        info_width = panel_rect.right - info_x - 18
+        self._draw_text(blueprint.name, self.font_title, (244, 239, 225), (info_x, panel_rect.y + 22))
+        self._draw_wrapped_text(blueprint.title, self.font_ui, (192, 206, 216), pygame.Rect(info_x, panel_rect.y + 58, info_width, 22), max_lines=1)
+        role_rect = pygame.Rect(info_x, panel_rect.y + 92, 122, 28)
+        pygame.draw.rect(self.screen, (*accent, 36), role_rect, border_radius=12)
+        pygame.draw.rect(self.screen, accent, role_rect, 1, border_radius=12)
+        self._draw_text(blueprint.role, self.font_small, (244, 239, 225), role_rect.center, center=True)
+        move_chip = pygame.Rect(role_rect.right + 10, role_rect.y, 114, 28)
+        pygame.draw.rect(self.screen, (18, 30, 43), move_chip, border_radius=12)
+        pygame.draw.rect(self.screen, (108, 192, 235), move_chip, 1, border_radius=12)
+        self._draw_text(f"이동 {tactical.move_range}", self.font_tiny, (205, 220, 229), move_chip.center, center=True)
+        basic_chip = pygame.Rect(move_chip.right + 10, role_rect.y, 124, 28)
+        pygame.draw.rect(self.screen, (18, 30, 43), basic_chip, border_radius=12)
+        pygame.draw.rect(self.screen, (214, 182, 112), basic_chip, 1, border_radius=12)
+        self._draw_text(f"기본 사거리 {tactical.basic_ability.cast_range}", self.font_tiny, (223, 214, 182), basic_chip.center, center=True)
+
+        self._draw_text("패시브", self.font_tiny, accent, (info_x, panel_rect.y + 132))
+        passive_line = self._ellipsize_text(f"{tactical.passive_name} · {tactical.passive_description}", self.font_small, info_width)
+        self._draw_text(passive_line, self.font_small, (214, 223, 230), (info_x, panel_rect.y + 148))
+        self._draw_text("특수기", self.font_tiny, (214, 182, 112), (info_x, panel_rect.y + 174))
+        special_line = self._ellipsize_text(
+            f"{tactical.special_ability.name} · 쿨다운 {tactical.special_ability.cooldown} · 사거리 {tactical.special_ability.cast_range}",
+            self.font_small,
+            info_width,
+        )
+        self._draw_text(special_line, self.font_small, (223, 214, 182), (info_x, panel_rect.y + 190))
+
+        counts = self._selection_role_counts()
+        chip_y = panel_rect.bottom - 34
+        chip_x = info_x
+        if counts:
+            for role in ("Vanguard", "Mage", "Marksman", "Assassin"):
+                count = counts.get(role, 0)
+                if count == 0:
+                    continue
+                role_chip = pygame.Rect(chip_x, chip_y, 90, 22)
+                pygame.draw.rect(self.screen, (15, 28, 40), role_chip, border_radius=11)
+                pygame.draw.rect(self.screen, accent if role == blueprint.role else (91, 134, 166), role_chip, 1, border_radius=11)
+                self._draw_text(f"{role[:3]} {count}", self.font_tiny, (214, 223, 230), role_chip.center, center=True)
+                chip_x += 100
+        else:
+            self._draw_text("아직 출전 조합이 없습니다. 후보 카드를 눌러 팀을 구성하세요.", self.font_tiny, (176, 194, 206), (info_x, chip_y + 4))
+
+    def _draw_selection_summary_strip(self) -> None:
+        strip_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 18, SELECT_LEFT_PANEL.y + 86, SELECT_LEFT_PANEL.width - 36, 72)
+        strip = pygame.Surface(strip_rect.size, pygame.SRCALPHA)
+        draw_vertical_gradient(strip, strip.get_rect(), (13, 24, 37), (18, 33, 48))
+        pygame.draw.rect(strip, (74, 157, 214, 24), strip.get_rect(), border_radius=22)
+        pygame.draw.rect(strip, (236, 218, 176), strip.get_rect(), 1, border_radius=22)
+        self.screen.blit(strip, strip_rect.topleft)
+        self._draw_text("원정 준비 상태", self.font_ui, (229, 210, 164), (strip_rect.x + 18, strip_rect.y + 12))
+        ready_count = len(self.selected_blue_ids)
+        ready_label = "출전 확정" if ready_count == 3 else "선택 진행 중"
+        self._draw_text(f"{ready_count}/3 · {ready_label}", self.font_heading, (244, 239, 225), (strip_rect.x + 18, strip_rect.y + 38))
+
+        bar_rect = pygame.Rect(strip_rect.x + 274, strip_rect.y + 24, 210, 18)
+        pygame.draw.rect(self.screen, (17, 28, 42), bar_rect, border_radius=9)
+        progress = ready_count / 3
+        pygame.draw.rect(self.screen, (95, 222, 201), (bar_rect.x, bar_rect.y, int(bar_rect.width * progress), bar_rect.height), border_radius=9)
+        pygame.draw.rect(self.screen, (255, 244, 217), bar_rect, 1, border_radius=9)
+        detail = self._ellipsize_text(self.selection_message, self.font_tiny, 320)
+        self._draw_text(detail, self.font_tiny, (176, 194, 206), (bar_rect.right + 20, strip_rect.y + 30))
+
+    def _selection_enemy_preview_layout(self) -> tuple[list[pygame.Rect], pygame.Rect]:
+        section_y = SELECT_RIGHT_PANEL.y + 496
+        preview_top = section_y + 52
+        action_rect = pygame.Rect(SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.bottom - 118, SELECT_RIGHT_PANEL.width - 44, 98)
+        gap = 14
+        card_width = (action_rect.width - gap * 2) // 3
+        card_height = max(88, min(110, action_rect.y - preview_top - 8))
+        card_rects = [
+            pygame.Rect(action_rect.x + index * (card_width + gap), preview_top, card_width, card_height)
+            for index in range(len(self.selected_red_ids))
+        ]
+        return card_rects, action_rect
+
     def _draw_selection_screen(self) -> None:
         self._draw_header("리그 오브 레전드: 리프트 택틱스", "3전 원정 준비", f"챔피언 선택 · 1/{RUN_STAGE_COUNT} 시작", "ESC 종료")
         self._draw_panel(SELECT_LEFT_PANEL, (74, 157, 214))
         self._draw_panel(SELECT_RIGHT_PANEL, (212, 105, 86))
         self._draw_text("플레이어 팀 선택", self.font_heading, (244, 239, 225), (SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 18))
-        self._draw_text("3명을 골라 배치 단계로 넘어가세요", self.font_small, (150, 182, 201), (SELECT_LEFT_PANEL.x + 24, SELECT_LEFT_PANEL.y + 52))
-        self._draw_text("적 조합 미리보기", self.font_heading, (244, 239, 225), (SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.y + 18))
-        self._draw_text("전술 상대를 재추첨할 수 있습니다", self.font_small, (198, 176, 168), (SELECT_RIGHT_PANEL.x + 24, SELECT_RIGHT_PANEL.y + 52))
+        self._draw_text("핵심 챔피언을 정하고 출전 조합을 완성하세요", self.font_small, (150, 182, 201), (SELECT_LEFT_PANEL.x + 24, SELECT_LEFT_PANEL.y + 52))
+        self._draw_text("적 카운터와 원정 교리", self.font_heading, (244, 239, 225), (SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.y + 18))
+        self._draw_text("대표 챔피언, 교리, 적 조합을 한 화면에서 조율합니다", self.font_small, (198, 176, 168), (SELECT_RIGHT_PANEL.x + 24, SELECT_RIGHT_PANEL.y + 52))
+        self._draw_selection_summary_strip()
+        self._draw_selection_focus_panel()
         self._draw_selection_slots()
         self._draw_selection_doctrine_panel()
         self._draw_selection_pool()
         self._draw_selection_enemy_preview()
 
     def _draw_selection_slots(self) -> None:
-        rect = pygame.Rect(SELECT_LEFT_PANEL.x + 18, SELECT_LEFT_PANEL.y + 86, SELECT_LEFT_PANEL.width - 36, 178)
+        rect = pygame.Rect(SELECT_LEFT_PANEL.x + 18, SELECT_LEFT_PANEL.y + 166, SELECT_LEFT_PANEL.width - 36, 160)
         self.selection_slot_rects = []
         self._draw_text("출전 라인업", self.font_ui, (229, 210, 164), (rect.x, rect.y))
-        self._draw_text(f"{len(self.selected_blue_ids)}/3 선택", self.font_small, (128, 164, 188), (rect.right, rect.y + 4), align_right=True)
+        readiness = "배치 가능" if len(self.selected_blue_ids) == 3 else "3명 필요"
+        self._draw_text(f"{len(self.selected_blue_ids)}/3 선택 · {readiness}", self.font_small, (128, 164, 188), (rect.right, rect.y + 4), align_right=True)
         slot_width = (rect.width - 36) // 3
         gap = 18
         for index in range(3):
@@ -2741,10 +2867,10 @@ class GameApp:
                 self._draw_text("빈 슬롯", self.font_ui, (180, 192, 204), (slot_rect.centerx, slot_rect.y + 74), center=True)
 
     def _draw_selection_pool(self) -> None:
-        rect = pygame.Rect(SELECT_LEFT_PANEL.x + 18, SELECT_LEFT_PANEL.y + 300, SELECT_LEFT_PANEL.width - 36, SELECT_LEFT_PANEL.height - 394)
+        rect = pygame.Rect(SELECT_LEFT_PANEL.x + 18, SELECT_LEFT_PANEL.y + 350, SELECT_LEFT_PANEL.width - 36, SELECT_LEFT_PANEL.height - 432)
         self.selection_card_rects.clear()
         self._draw_text("후보 로스터", self.font_ui, (229, 210, 164), (rect.x, rect.y))
-        self._draw_text("각 챔피언의 역할과 패시브를 보고 출전 조합을 만드세요", self.font_tiny, (150, 182, 201), (rect.x + 2, rect.y + 28))
+        self._draw_text("역할과 패시브를 보고 마지막 한 자리를 고르세요", self.font_tiny, (150, 182, 201), (rect.x + 2, rect.y + 28))
         grid_rect = pygame.Rect(rect.x, rect.y + 52, rect.width, rect.height - 52)
         columns = 3
         gap_x = 18
@@ -2771,11 +2897,11 @@ class GameApp:
         self._draw_message_strip(footer, self.selection_message, (74, 157, 214))
 
     def _draw_selection_doctrine_panel(self) -> None:
-        panel_rect = pygame.Rect(SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.y + 92, SELECT_RIGHT_PANEL.width - 44, 154)
+        panel_rect = pygame.Rect(SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.y + 332, SELECT_RIGHT_PANEL.width - 44, 144)
         pygame.draw.rect(self.screen, (11, 20, 31), panel_rect, border_radius=24)
         pygame.draw.rect(self.screen, (236, 218, 176), panel_rect, 1, border_radius=24)
         self._draw_text("원정 교리", self.font_ui, (229, 210, 164), (panel_rect.x + 16, panel_rect.y + 12))
-        self._draw_text("기록으로 해금한 시작 보너스 중 하나를 선택합니다", self.font_tiny, (170, 191, 207), (panel_rect.x + 16, panel_rect.y + 40))
+        self._draw_text("시작 보너스와 경로 재추첨 권한을 정합니다", self.font_tiny, (170, 191, 207), (panel_rect.x + 16, panel_rect.y + 38))
         history_chip = pygame.Rect(panel_rect.right - 176, panel_rect.y + 14, 160, 30)
         pygame.draw.rect(self.screen, (15, 28, 40), history_chip, border_radius=12)
         pygame.draw.rect(self.screen, (91, 134, 166), history_chip, 1, border_radius=12)
@@ -2784,7 +2910,7 @@ class GameApp:
         gap = 14
         card_width = (panel_rect.width - 32 - gap * 2) // 3
         for index, doctrine in enumerate(self.doctrine_statuses[:3]):
-            card_rect = pygame.Rect(panel_rect.x + 16 + index * (card_width + gap), panel_rect.y + 74, card_width, 62)
+            card_rect = pygame.Rect(panel_rect.x + 16 + index * (card_width + gap), panel_rect.y + 68, card_width, 56)
             self.doctrine_card_rects[doctrine.id] = card_rect
             selected = doctrine.id == self.selected_doctrine_id and doctrine.unlocked
             fill = (22, 46, 58) if selected else (15, 26, 39)
@@ -2798,26 +2924,37 @@ class GameApp:
             self._draw_wrapped_text(detail_line, self.font_tiny, sub_color, pygame.Rect(card_rect.x + 12, card_rect.y + 28, card_rect.width - 24, 24), max_lines=2)
 
     def _draw_selection_enemy_preview(self) -> None:
-        section_y = SELECT_RIGHT_PANEL.y + 270
+        section_y = SELECT_RIGHT_PANEL.y + 496
         self._draw_text("예상 적 조합", self.font_ui, (229, 210, 164), (SELECT_RIGHT_PANEL.x + 22, section_y))
-        self._draw_text("상대의 핵심 특징만 보고 출전 조합을 마무리하세요", self.font_tiny, (198, 176, 168), (SELECT_RIGHT_PANEL.x + 24, section_y + 28))
+        self._draw_text("상대 핵심 패시브를 보고 카운터 픽을 조정하세요", self.font_tiny, (198, 176, 168), (SELECT_RIGHT_PANEL.x + 24, section_y + 28))
+        card_rects, action_rect = self._selection_enemy_preview_layout()
 
-        for index, champion_id in enumerate(self.selected_red_ids):
-            card_rect = pygame.Rect(SELECT_RIGHT_PANEL.x + 22, section_y + 52 + index * 128, SELECT_RIGHT_PANEL.width - 44, 112)
+        for champion_id, card_rect in zip(self.selected_red_ids, card_rects):
             passive_name = TACTICAL_BLUEPRINTS_BY_ID[champion_id].passive_name
-            self._draw_champion_card(card_rect, champion_id, compact=True, enemy=True, footer=f"패시브 · {passive_name}")
+            badge_text, _badge_color = self._encounter_badge_for_champion(champion_id)
+            self._draw_champion_card(card_rect, champion_id, compact=True, enemy=True, badge=badge_text, footer=f"패시브 · {passive_name}")
 
-        note_rect = pygame.Rect(SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.bottom - 124, SELECT_RIGHT_PANEL.width - 44, 52)
         selected_doctrine = self._selected_doctrine()
-        note_text = (
+        doctrine_line = (
             f"선택 교리 · {selected_doctrine.name} · {selected_doctrine.description}"
             if selected_doctrine is not None
             else "원정 교리를 고르거나 그대로 기본 교리 없이 시작할 수 있습니다."
         )
-        self._draw_message_strip(note_rect, note_text, (212, 105, 86))
+        self._draw_battle_card(action_rect, (212, 105, 86), glow_alpha=18)
+        label_rect = pygame.Rect(action_rect.x + 16, action_rect.y + 12, 82, 24)
+        pygame.draw.rect(self.screen, (214, 182, 112), label_rect, border_radius=10)
+        pygame.draw.rect(self.screen, (10, 18, 29), label_rect, 1, border_radius=10)
+        self._draw_text("전술 행동", self.font_tiny, (10, 18, 29), label_rect.center, center=True)
+        ready_text = "출전 확정" if len(self.selected_blue_ids) == 3 else "아직 3명을 모두 선택하지 않았습니다"
+        self._draw_text(ready_text, self.font_small, (244, 239, 225), (label_rect.right + 14, action_rect.y + 16))
+        doctrine_preview = self._ellipsize_text(doctrine_line, self.font_tiny, action_rect.width - 32)
+        self._draw_text(doctrine_preview, self.font_tiny, (176, 194, 206), (action_rect.x + 16, action_rect.y + 40))
 
-        reroll_rect = pygame.Rect(SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.bottom - 62, 248, 48)
-        start_rect = pygame.Rect(SELECT_RIGHT_PANEL.right - 270, SELECT_RIGHT_PANEL.bottom - 62, 248, 48)
+        button_y = action_rect.bottom - 46
+        button_gap = 18
+        button_width = (action_rect.width - 32 - button_gap) // 2
+        reroll_rect = pygame.Rect(action_rect.x + 16, button_y, button_width, 34)
+        start_rect = pygame.Rect(reroll_rect.right + button_gap, button_y, button_width, 34)
         self.button_rects["selection-reroll"] = reroll_rect
         self.button_rects["selection-start"] = start_rect
         pygame.draw.rect(self.screen, (214, 182, 112), reroll_rect, border_radius=15)

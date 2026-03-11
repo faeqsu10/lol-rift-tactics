@@ -80,6 +80,7 @@
   - node-specific intro motifs, badges, and themed start sounds for rest/event/elite/finale battles
   - boss-specific awakening surge rules that now deal immediate pressure damage and expose predicted danger tiles on the finale map
   - select, route, and summary screens polished to reduce UI clutter and eliminate major text overlap
+  - champion select now uses a featured-champion focus panel, horizontal enemy counter preview, and a separated action footer so right-panel overlap stays resolved
   - battle presentation first pass with animated battlefield atmosphere, stronger unit emphasis, pulse rings, and attack trails
   - portrait-based tactical standees on deploy and battle screens to reduce the placeholder-token look
   - battle-only attack, hit, death, and victory animation states with a short end-of-battle hold so finishing blows are visible
