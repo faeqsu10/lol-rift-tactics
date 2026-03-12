@@ -105,7 +105,7 @@ npm run native:package
 
 ### 윈도우 `.exe` 받기
 
-- 이 저장소의 GitHub Actions `Build Windows EXE` 워크플로가 `rift-tactics-win.exe`와 `rift-tactics-win.zip` 아티팩트를 생성합니다.
+- 이 저장소의 GitHub Actions `Build Windows EXE` 워크플로는 현재 `native_tactics` 기준 `rift-tactics-win.exe`와 `rift-tactics-win.zip` 아티팩트를 생성합니다.
 - GitHub 저장소의 `Actions` 탭에서 최신 `Build Windows EXE` 성공 실행을 연 뒤 `Artifacts`에서 받으면 됩니다.
 - 저장소에는 `.exe`를 커밋하지 않고, 액션 아티팩트로만 배포합니다.
 - 로컬 Windows 환경에서는 `scripts/build-windows.ps1`로 같은 빌드를 재현할 수 있습니다.
@@ -113,7 +113,7 @@ npm run native:package
 ### 현재 준비된 배포 형태
 
 - Linux/WSL 실행 파일: `release/rift-tactics`
-- Windows 실행 파일: GitHub Actions 아티팩트 `rift-tactics-win.exe`
+- Windows 실행 파일: GitHub Actions 아티팩트 `rift-tactics-win.exe` (`native_tactics`)
 - WSL/Linux 환경에서는 저장소에 포함된 PulseAudio 런타임 번들로 소리가 나도록 구성했습니다.
 
 ## 조작

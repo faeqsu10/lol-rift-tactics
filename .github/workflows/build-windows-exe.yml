@@ -8,10 +8,11 @@ on:
     paths:
       - ".github/workflows/build-windows-exe.yml"
       - "scripts/build-windows.ps1"
+      - "native_tactics/**"
       - "native_game/**"
       - "assets/**"
       - "requirements-native.txt"
-      - "run_native.py"
+      - "run_tactics.py"
 
 jobs:
   build-windows:

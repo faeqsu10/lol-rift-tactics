@@ -19,7 +19,7 @@ if (-not (Test-Path $venvPython)) {
     --workpath build\pyinstaller-windows `
     --paths . `
     --add-data "assets;assets" `
-    run_native.py
+    run_tactics.py
 
 Compress-Archive `
     -Path release\windows\rift-tactics-win.exe `

@@ -108,7 +108,7 @@
 - Tactics run command: `.venv/bin/python -m native_tactics`
 - Native package command: `npm run native:package`
 - Native packaged executable: `release/rift-tactics`
-- Windows package workflow: `.github/workflows/build-windows-exe.yml`
+- Windows package workflow: `.github/workflows/build-windows-exe.yml` (`native_tactics` 대상)
 - Windows build script: `scripts/build-windows.ps1`
 - Native tests: `.venv/bin/python -m native_game.tests`
 - Tactics tests: `.venv/bin/python -m native_tactics.tests`
