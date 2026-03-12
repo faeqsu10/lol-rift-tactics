@@ -123,6 +123,7 @@
 - Task tracker: `tasks/todo.md`
 - Lessons log: `tasks/lessons.md`
 - Dev log: `docs/DEVLOG.md`
+- Latest session handoff: `docs/SESSION_HANDOFF_2026-03-12.md`
 - Tactics fun roadmap: `docs/TACTICS_FUN_ROADMAP.md`
 - Tactics UX research: `docs/TACTICS_UX_RESEARCH.md`
 - Tactics release target: `docs/TACTICS_RELEASE_TARGET.md`
