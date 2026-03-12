@@ -56,6 +56,7 @@
 - `native_tactics` 경로 카드, 보상 버튼, 결산 버튼, 전투 패널, 전투 시작 컷인에 반응형 텍스트 fitting 적용
 - `native_tactics` 첫 실행 도움말 오버레이와 `H/F1` 재호출 도움말 추가
 - `native_tactics` `F10` 설정 오버레이로 마스터 볼륨, 앰비언트 볼륨, 전투 속도, 키 안내 저장/복원 추가
+- `native_tactics` `Standard / Veteran` 2단계 난이도 추가
 - 헤드리스 스크린샷 캡처로 비주얼 결과 확인 가능
 
 추가 자산 규칙:

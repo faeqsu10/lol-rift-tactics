@@ -640,6 +640,44 @@ class GameAppFlowTests(unittest.TestCase):
             app._handle_keydown(pygame.K_ESCAPE)
             self.assertFalse(app.settings_overlay_visible)
 
+    def test_default_difficulty_preserves_current_stage_scaling(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
+        app.selected_red_ids = ["red-brand", "red-sett", "red-akali"]
+        app.run_stage = 2
+        app._seed_deployment()
+
+        controller = app._build_controller_from_current_setup()
+        app._attach_controller(controller)
+
+        sett = app.controller.get_unit("red-sett")
+        self.assertEqual(sett.max_hp, TACTICAL_BLUEPRINTS_BY_ID["red-sett"].max_hp + 24)
+        self.assertEqual(sett.speed, TACTICAL_BLUEPRINTS_BY_ID["red-sett"].speed + 4)
+
+    def test_veteran_difficulty_changes_enemy_scaling_once(self) -> None:
+        app = GameApp(headless=True)
+        app.selected_difficulty_id = "veteran"
+        app.active_difficulty_id = "veteran"
+        app.selected_blue_ids = ["blue-garen", "blue-ahri", "blue-jinx"]
+        app.selected_red_ids = ["red-brand", "red-sett", "red-akali"]
+        app.run_stage = 3
+        app._seed_deployment()
+
+        controller = app._build_controller_from_current_setup()
+        app._attach_controller(controller)
+        boss_id = app._boss_enemy_id_for_stage(lineup=app.selected_red_ids)
+        assert boss_id is not None
+        boss = app.controller.get_unit(boss_id)
+
+        base_boss = TACTICAL_BLUEPRINTS_BY_ID[boss_id]
+        self.assertEqual(boss.max_hp, base_boss.max_hp + 16 + 8 + 36 + 12)
+        self.assertEqual(boss.shield, 14 + 6)
+        self.assertEqual(boss.speed, base_boss.speed + 4 + 2 + 4)
+
+        app._reset_battle()
+        boss = app.controller.get_unit(boss_id)
+        self.assertEqual(boss.max_hp, base_boss.max_hp + 16 + 8 + 36 + 12)
+
     def test_reward_selection_advances_run_to_next_deploy(self) -> None:
         app = GameApp(headless=True)
         app._start_deploy()
@@ -892,7 +930,7 @@ class GameAppFlowTests(unittest.TestCase):
 
             self.assertTrue(history_path.exists())
             payload = json.loads(history_path.read_text(encoding="utf-8"))
-            self.assertEqual(payload["version"], 4)
+            self.assertEqual(payload["version"], 5)
             self.assertEqual(len(payload["records"]), 1)
             self.assertIn("help_overlay_seen", payload)
             self.assertIn("master_volume", payload)

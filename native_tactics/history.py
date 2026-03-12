@@ -12,7 +12,7 @@ from native_game.runtime import project_root
 if TYPE_CHECKING:
     from .app import RunSummary
 
-HISTORY_VERSION = 4
+HISTORY_VERSION = 5
 MAX_HISTORY_RECORDS = 30
 
 
@@ -129,6 +129,7 @@ class RunHistoryStore:
         master_volume: float = 1.0,
         ambient_volume: float = 0.45,
         fast_mode: bool = False,
+        difficulty_id: str = "standard",
     ) -> None:
         self.path = path
         self.records = records or []
@@ -136,6 +137,7 @@ class RunHistoryStore:
         self.master_volume = master_volume
         self.ambient_volume = ambient_volume
         self.fast_mode = fast_mode
+        self.difficulty_id = difficulty_id
 
     @staticmethod
     def default_path() -> Path:
@@ -153,7 +155,7 @@ class RunHistoryStore:
         except (OSError, json.JSONDecodeError):
             return cls(resolved_path, [])
         version = payload.get("version")
-        if version not in {1, 2, 3, HISTORY_VERSION}:
+        if version not in {1, 2, 3, 4, HISTORY_VERSION}:
             return cls(resolved_path, [])
         records = [
             PersistedRunRecord(**record)
@@ -164,9 +166,10 @@ class RunHistoryStore:
             resolved_path,
             records,
             help_overlay_seen=bool(payload.get("help_overlay_seen", False)) if version in {2, HISTORY_VERSION} else False,
-            master_volume=float(payload.get("master_volume", 1.0)) if version in {3, HISTORY_VERSION} else 1.0,
-            ambient_volume=float(payload.get("ambient_volume", 0.45)) if version in {3, HISTORY_VERSION} else 0.45,
-            fast_mode=bool(payload.get("fast_mode", False)) if version == HISTORY_VERSION else False,
+            master_volume=float(payload.get("master_volume", 1.0)) if version in {3, 4, HISTORY_VERSION} else 1.0,
+            ambient_volume=float(payload.get("ambient_volume", 0.45)) if version in {3, 4, HISTORY_VERSION} else 0.45,
+            fast_mode=bool(payload.get("fast_mode", False)) if version in {4, HISTORY_VERSION} else False,
+            difficulty_id=str(payload.get("difficulty_id", "standard")) if version == HISTORY_VERSION else "standard",
         )
 
     def save(self) -> None:
@@ -181,6 +184,7 @@ class RunHistoryStore:
                 "master_volume": self.master_volume,
                 "ambient_volume": self.ambient_volume,
                 "fast_mode": self.fast_mode,
+                "difficulty_id": self.difficulty_id,
             }
             self.path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         except OSError:
@@ -198,6 +202,7 @@ class RunHistoryStore:
         master_volume: float | None = None,
         ambient_volume: float | None = None,
         fast_mode: bool | None = None,
+        difficulty_id: str | None = None,
     ) -> None:
         if master_volume is not None:
             self.master_volume = max(0.0, min(1.0, master_volume))
@@ -205,6 +210,8 @@ class RunHistoryStore:
             self.ambient_volume = max(0.0, min(1.0, ambient_volume))
         if fast_mode is not None:
             self.fast_mode = bool(fast_mode)
+        if difficulty_id is not None:
+            self.difficulty_id = difficulty_id
         self.save()
 
     def best_overall(self) -> PersistedRunRecord | None:

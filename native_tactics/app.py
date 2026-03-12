@@ -644,6 +644,14 @@ HELP_OVERLAY_BY_MODE: dict[str, HelpOverlayCard] = {
     ),
 }
 FLOW_STEPS: tuple[str, ...] = ("선택", "배치", "전투", "보상", "경로", "결산")
+DIFFICULTY_LABEL_BY_ID = {
+    "standard": "Standard",
+    "veteran": "Veteran",
+}
+DIFFICULTY_ENEMY_MODIFIERS = {
+    "standard": {},
+    "veteran": {"enemy_hp": 8, "enemy_damage": 1, "enemy_speed": 2},
+}
 
 
 def clamp(value: float, low: float, high: float) -> float:
@@ -803,6 +811,8 @@ class GameApp:
         self.help_overlay_visible = False
         self.help_overlay_source: Literal["auto", "manual"] | None = None
         self.settings_overlay_visible = False
+        self.selected_difficulty_id = self.history_store.difficulty_id if self.history_store.difficulty_id in DIFFICULTY_LABEL_BY_ID else "standard"
+        self.active_difficulty_id = self.selected_difficulty_id
         self.audio.set_master_volume(self.history_store.master_volume)
         self.audio.set_ambient_volume(self.history_store.ambient_volume)
         self._refresh_doctrine_statuses()
@@ -927,6 +937,16 @@ class GameApp:
 
     def _battle_ai_delay(self) -> float:
         return 0.32 if self.history_store.fast_mode else 0.55
+
+    def _difficulty_label(self, difficulty_id: str | None = None) -> str:
+        return DIFFICULTY_LABEL_BY_ID.get(difficulty_id or self.selected_difficulty_id, "Standard")
+
+    def _toggle_difficulty(self) -> None:
+        new_id = "veteran" if self.selected_difficulty_id == "standard" else "standard"
+        self.selected_difficulty_id = new_id
+        self.history_store.save_settings(difficulty_id=new_id)
+        self.selection_message = f"난이도 {self._difficulty_label(new_id)}"
+        self.audio.play("ui-confirm")
 
     def _selected_doctrine(self) -> DoctrineStatus | None:
         return next(
@@ -1139,6 +1159,7 @@ class GameApp:
 
     def _reset_run_progress(self) -> None:
         self.run_stage = 1
+        self.active_difficulty_id = self.selected_difficulty_id
         self.run_bonuses = {reward_id: 0 for reward_id in self.run_rewards}
         self.active_doctrine_id = None
         self.route_reroll_charges = 0
@@ -1323,6 +1344,7 @@ class GameApp:
             self.selected_blue_ids = list(DEFAULT_BLUE_IDS)
         self._reset_run_progress()
         self._activate_selected_doctrine()
+        self.active_difficulty_id = self.selected_difficulty_id
         self.controller = None
         self.last_active_id = None
         self.selected_deploy_champion_id = None
@@ -1330,7 +1352,7 @@ class GameApp:
         self.screen_mode = "deploy"
         doctrine = self._active_doctrine()
         doctrine_line = f" · 교리 {doctrine.name}" if doctrine is not None else ""
-        self.selection_message = f"{self._current_stage_label()} 시작 위치를 조정하세요{doctrine_line}."
+        self.selection_message = f"{self._current_stage_label()} 시작 위치를 조정하세요{doctrine_line} · 난이도 {self._difficulty_label(self.active_difficulty_id)}."
         self.audio.play("ui-confirm")
         if not self.history_store.help_overlay_seen:
             self._show_help_overlay("deploy", source="auto")
@@ -2022,6 +2044,10 @@ class GameApp:
         enemy_route_speed_bonus = stage_modifiers.get("enemy_speed", 0)
         enemy_route_shield_bonus = stage_modifiers.get("enemy_shield", 0)
         enemy_route_hp_bonus = stage_modifiers.get("enemy_hp", 0)
+        difficulty_enemy_modifiers = DIFFICULTY_ENEMY_MODIFIERS.get(self.active_difficulty_id or "standard", {})
+        enemy_difficulty_hp_bonus = difficulty_enemy_modifiers.get("enemy_hp", 0)
+        enemy_difficulty_damage_bonus = difficulty_enemy_modifiers.get("enemy_damage", 0)
+        enemy_difficulty_speed_bonus = difficulty_enemy_modifiers.get("enemy_speed", 0)
 
         for unit in controller.units:
             if unit.team == "blue":
@@ -2033,12 +2059,12 @@ class GameApp:
                 unit.basic_ability = self._boost_damage_effects(unit.basic_ability, damage_bonus + route_damage_bonus)
                 unit.special_ability = self._boost_damage_effects(unit.special_ability, damage_bonus + route_damage_bonus)
             else:
-                unit.max_hp = max(1, unit.max_hp + enemy_tier * 8 + enemy_route_hp_bonus)
+                unit.max_hp = max(1, unit.max_hp + enemy_tier * 8 + enemy_route_hp_bonus + enemy_difficulty_hp_bonus)
                 unit.hp = unit.max_hp
-                unit.speed += enemy_tier * 2 + enemy_route_speed_bonus
+                unit.speed += enemy_tier * 2 + enemy_route_speed_bonus + enemy_difficulty_speed_bonus
                 unit.shield += enemy_route_shield_bonus
-                unit.basic_ability = self._boost_damage_effects(unit.basic_ability, enemy_tier * 2 + enemy_route_damage_bonus)
-                unit.special_ability = self._boost_damage_effects(unit.special_ability, enemy_tier * 2 + enemy_route_damage_bonus)
+                unit.basic_ability = self._boost_damage_effects(unit.basic_ability, enemy_tier * 2 + enemy_route_damage_bonus + enemy_difficulty_damage_bonus)
+                unit.special_ability = self._boost_damage_effects(unit.special_ability, enemy_tier * 2 + enemy_route_damage_bonus + enemy_difficulty_damage_bonus)
                 if boss_id is not None and unit.id == boss_id:
                     unit.is_boss = True
                     unit.boss_profile_id = boss_profile.id if boss_profile is not None else None
@@ -2048,6 +2074,10 @@ class GameApp:
                     unit.speed += 4
                     unit.move_range += 1
                     unit.shield += 14
+                    if self.active_difficulty_id == "veteran":
+                        unit.max_hp += 12
+                        unit.hp = unit.max_hp
+                        unit.shield += 6
                     unit.basic_ability = self._boost_damage_effects(unit.basic_ability, 6, range_bonus=1)
                     unit.special_ability = self._boost_damage_effects(unit.special_ability, 6, range_bonus=1)
                 elif unit.id in elite_ids:
@@ -2401,6 +2431,9 @@ class GameApp:
             return
         if self.button_rects.get("settings-fast-toggle") and self.button_rects["settings-fast-toggle"].collidepoint(position):
             self._toggle_fast_mode()
+            return
+        if self.button_rects.get("settings-difficulty-toggle") and self.button_rects["settings-difficulty-toggle"].collidepoint(position):
+            self._toggle_difficulty()
             return
         self.settings_overlay_visible = False
 
@@ -5585,6 +5618,7 @@ class GameApp:
             SettingsOption("마스터 볼륨", f"{int(self.history_store.master_volume * 100)}%", "settings-master", "settings-master-down", "settings-master-up"),
             SettingsOption("앰비언트 볼륨", f"{int(self.history_store.ambient_volume * 100)}%", "settings-ambient", "settings-ambient-down", "settings-ambient-up"),
             SettingsOption("전투 속도", "빠름" if self.history_store.fast_mode else "기본", "settings-fast", "settings-fast-toggle", "settings-fast-toggle"),
+            SettingsOption("난이도", self._difficulty_label(self.selected_difficulty_id), "settings-difficulty", "settings-difficulty-toggle", "settings-difficulty-toggle"),
         ]
         for index, option in enumerate(option_specs):
             row_rect = pygame.Rect(card_rect.x + 24, card_rect.y + 112 + index * 48, 352, 38)
@@ -5596,9 +5630,9 @@ class GameApp:
             pygame.draw.rect(self.screen, (108, 192, 235), value_rect, 1, border_radius=10)
             self._draw_text_fit(option.value, (self.font_small, self.font_tiny), (220, 231, 236), value_rect.center, max_width=value_rect.width - 8, center=True)
 
-            if option.action_key == "settings-fast":
+            if option.action_key in {"settings-fast", "settings-difficulty"}:
                 toggle_rect = pygame.Rect(row_rect.right - 66, row_rect.y + 6, 52, 26)
-                self.button_rects["settings-fast-toggle"] = toggle_rect
+                self.button_rects[option.increment_key] = toggle_rect
                 pygame.draw.rect(self.screen, (214, 182, 112), toggle_rect, border_radius=10)
                 pygame.draw.rect(self.screen, (255, 244, 217), toggle_rect, 1, border_radius=10)
                 self._draw_text_fit("전환", (self.font_tiny, self.font_micro), (12, 20, 31), toggle_rect.center, max_width=toggle_rect.width - 6, center=True)
@@ -5612,7 +5646,7 @@ class GameApp:
                     pygame.draw.rect(self.screen, (255, 244, 217), rect, 1, border_radius=10)
                     self._draw_text(label, self.font_small, (12, 20, 31), rect.center, center=True)
 
-        guide_rect = pygame.Rect(card_rect.x + 400, card_rect.y + 112, 276, 138)
+        guide_rect = pygame.Rect(card_rect.x + 400, card_rect.y + 112, 276, 154)
         pygame.draw.rect(self.screen, (16, 28, 40), guide_rect, border_radius=18)
         pygame.draw.rect(self.screen, (236, 218, 176), guide_rect, 1, border_radius=18)
         self._draw_text("키 안내", self.font_ui, (229, 210, 164), (guide_rect.x + 14, guide_rect.y + 12))
@@ -5622,6 +5656,7 @@ class GameApp:
             "Enter 진행/확정",
             "ESC 뒤로/닫기",
             "M/1/2/E 전투 조작",
+            "좌/우 또는 +/- 볼륨",
         )
         for index, line in enumerate(guide_lines):
             self._draw_text(line, self.font_tiny, (208, 219, 226), (guide_rect.x + 16, guide_rect.y + 42 + index * 18))
