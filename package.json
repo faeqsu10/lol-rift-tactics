@@ -13,7 +13,7 @@
     "native:test": ".venv/bin/python -m native_game.tests",
     "native:smoke": "SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy .venv/bin/python -m native_game --headless --frames 10",
     "native:capture": "SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy .venv/bin/python -m native_game --headless --frames 2 --screenshot /tmp/rift-tactics-native.png",
-    "native:package": ".venv/bin/python -m PyInstaller --clean --noconfirm --distpath release --workpath build/pyinstaller native_game.spec",
+    "native:package": ".venv/bin/python -m PyInstaller --clean --noconfirm --distpath release --workpath build/pyinstaller native_tactics.spec",
     "tactics:play": "LD_LIBRARY_PATH=\"$PWD/.vendor/pulse/extracted/usr/lib/x86_64-linux-gnu:$PWD/.vendor/pulse/extracted/usr/lib/x86_64-linux-gnu/pulseaudio:${LD_LIBRARY_PATH:-}\" SDL_AUDIODRIVER=\"${SDL_AUDIODRIVER:-pulseaudio}\" .venv/bin/python -m native_tactics",
     "tactics:test": ".venv/bin/python -m native_tactics.tests",
     "tactics:smoke": "SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy .venv/bin/python -m native_tactics --headless --frames 10",

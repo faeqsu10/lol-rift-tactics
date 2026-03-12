@@ -22,7 +22,10 @@ from .app import RUN_STAGE_COUNT
 from .app import StageModifier
 from .app import TACTICS_CUTOUT_ART_DIR
 from .data import ART_FILE_BY_UNIT_ID
+from .data import BOSS_PROFILES_BY_ID
 from .data import FINALE_VARIANTS_BY_ID
+from .data import GRID_HEIGHT
+from .data import GRID_WIDTH
 from .data import PASSIVE_BY_CHAMPION_ID
 from .data import TACTICAL_SPECIAL_ABILITY_IDS
 from .data import TACTICAL_BLUEPRINTS_BY_ID
@@ -938,9 +941,9 @@ class GameAppFlowTests(unittest.TestCase):
             self.assertIn("help_overlay_seen", payload)
             self.assertIn("master_volume", payload)
             self.assertIn("ambient_volume", payload)
-            self.assertEqual(payload["records"][0]["difficulty_label"], "Standard")
+            self.assertEqual(payload["records"][0]["difficulty_label"], "기본")
             self.assertEqual(payload["records"][0]["result_label"], "원정 성공")
-            self.assertEqual(app.run_summary.difficulty_label, "Standard")
+            self.assertEqual(app.run_summary.difficulty_label, "기본")
             self.assertIn("저장 기록 1런", app.run_summary.history_overview_lines[0])
 
             loaded_app = GameApp(headless=True, history_path=history_path)
@@ -1996,6 +1999,95 @@ class GameAppFlowTests(unittest.TestCase):
         self.assertEqual(app.screen_mode, "battle")
         self.assertIsNotNone(app.controller)
         self.assertIn((3, 2), app.controller.objective_tiles)
+
+    def test_frostsiege_boss_profile_exists_and_has_valid_data(self) -> None:
+        profile = BOSS_PROFILES_BY_ID.get("frostsiege")
+        self.assertIsNotNone(profile)
+        self.assertEqual(profile.id, "frostsiege")
+        self.assertEqual(profile.name, "서리 공성")
+        self.assertEqual(profile.finale_variant_id, "frozen-bastion")
+        self.assertTrue(len(profile.phase_name) > 0)
+        self.assertTrue(len(profile.surge_name) > 0)
+        variant = FINALE_VARIANTS_BY_ID.get("frozen-bastion")
+        self.assertIsNotNone(variant)
+        self.assertEqual(variant.id, "frozen-bastion")
+        self.assertEqual(variant.objective_target, 2)
+        self.assertEqual(variant.round_limit, 3)
+
+    def test_frozen_bastion_tiles_are_within_grid_bounds_and_non_overlapping(self) -> None:
+        variant = FINALE_VARIANTS_BY_ID["frozen-bastion"]
+        all_tiles: list[tuple[int, int]] = (
+            list(variant.blocked_tiles)
+            + list(variant.terrain_tiles.keys())
+            + list(variant.objective_tiles)
+        )
+        for col, row in all_tiles:
+            self.assertGreaterEqual(col, 0)
+            self.assertLess(col, GRID_WIDTH)
+            self.assertGreaterEqual(row, 0)
+            self.assertLess(row, GRID_HEIGHT)
+        blocked_set = set(variant.blocked_tiles)
+        terrain_set = set(variant.terrain_tiles.keys())
+        objective_set = set(variant.objective_tiles)
+        self.assertFalse(
+            blocked_set & terrain_set,
+            f"blocked_tiles overlaps terrain_tiles: {blocked_set & terrain_set}",
+        )
+        self.assertFalse(
+            blocked_set & objective_set,
+            f"blocked_tiles overlaps objective_tiles: {blocked_set & objective_set}",
+        )
+
+    def test_frostsiege_boss_phase_creates_brush_tiles(self) -> None:
+        controller = TacticsController(
+            ("blue-garen",), ("red-darius",), objective_tiles=((3, 3), (4, 2))
+        )
+        controller.blocked_tiles.clear()
+        boss = controller.get_unit("red-darius")
+        boss.position = (1, 1)
+        boss.hp = 35
+        boss.is_boss = True
+        boss.boss_profile_id = "frostsiege"
+        controller.get_unit("blue-garen").position = (0, 1)
+
+        result = controller.use_basic("red-darius")
+
+        self.assertIsNotNone(result)
+        self.assertTrue(boss.boss_phase_triggered)
+        self.assertEqual(boss.shield, 16)
+        self.assertTrue(any("빙결 장벽 발동." in note for note in result.notes))
+        self.assertTrue(
+            any(controller.terrain_tiles.get(tile) == "brush" for tile in controller.terrain_tiles)
+        )
+
+    def test_frostsiege_boss_phase_surge_hits_brush_pressure_tiles(self) -> None:
+        controller = TacticsController(
+            ("blue-garen",), ("red-darius",), objective_tiles=((0, 1),)
+        )
+        controller.blocked_tiles.clear()
+        boss = controller.get_unit("red-darius")
+        boss.position = (1, 1)
+        boss.hp = 35
+        boss.is_boss = True
+        boss.boss_profile_id = "frostsiege"
+        controller.terrain_tiles[(0, 1)] = "brush"
+        controller.get_unit("blue-garen").position = (0, 1)
+        controller.state.active_unit_id = "blue-garen"
+        controller.state.turn_queue = ["blue-garen"]
+
+        result = controller.use_basic("red-darius")
+
+        self.assertIsNotNone(result)
+        self.assertTrue(any("한파 쇄도 발동." in note for note in result.notes))
+        self.assertTrue(any(impact.target_id == "blue-garen" and impact.damage == 4 for impact in result.impacts))
+
+
+    def test_champion_boss_profile_override_maps_lissandra_sett_to_frostsiege(self) -> None:
+        from native_tactics.data import boss_profile_id_for_champion
+        self.assertEqual(boss_profile_id_for_champion("red-lissandra"), "frostsiege")
+        self.assertEqual(boss_profile_id_for_champion("red-sett"), "frostsiege")
+        self.assertEqual(boss_profile_id_for_champion("red-darius"), "warlord")
+        self.assertEqual(boss_profile_id_for_champion("red-brand"), "spellstorm")
 
 
 if __name__ == "__main__":

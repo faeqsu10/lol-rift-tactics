@@ -258,6 +258,10 @@ class TacticsController:
             pressure_tiles.update(tile for tile, terrain_id in self.terrain_tiles.items() if terrain_id == "rune")
             if resolved_awakened:
                 pressure_tiles.update(self._neighbors(boss.position))
+        elif profile.id == "frostsiege":
+            pressure_tiles.update(tile for tile, terrain_id in self.terrain_tiles.items() if terrain_id == "brush")
+            if resolved_awakened:
+                pressure_tiles.update(self._neighbors(boss.position))
         return self._unique_tiles(pressure_tiles)
 
     def get_reachable_tiles(self, unit_id: str | None = None) -> set[GridPos]:
@@ -1097,6 +1101,10 @@ class TacticsController:
             damage = 5
             notes = ["전선 붕괴 발동."]
             log_label = "전선 붕괴"
+        elif profile.id == "frostsiege":
+            damage = 4
+            notes = ["한파 쇄도 발동."]
+            log_label = "한파 쇄도"
         else:
             damage = 4
             notes = ["룬 폭풍 발동."]
@@ -1135,6 +1143,30 @@ class TacticsController:
             self._push_log(f"{target.name}, 화염 돌파로 전면 압박 강화.")
             if hazard_tiles:
                 self._push_log(f"{target.name}, 결전 파동으로 주변 {len(hazard_tiles)}칸이 화염 지대로 변함.")
+            surge_impacts, surge_notes = self._trigger_boss_phase_impacts(target)
+            notes.extend(surge_notes)
+            return notes, surge_impacts
+
+        if profile.id == "frostsiege":
+            target.shield += 16
+            target.speed += 1
+            target.move_range += 1
+            target.basic_ability = self._boost_ability_damage(target.basic_ability, 3)
+            target.special_ability = self._boost_ability_damage(target.special_ability, 3)
+            target.cooldowns[target.special_ability.id] = max(0, target.cooldowns.get(target.special_ability.id, 0) - 1)
+            brush_tiles: list[GridPos] = []
+            for tile in {target.position, *self._neighbors(target.position), *self.objective_tiles}:
+                if tile in self.blocked_tiles:
+                    continue
+                self.terrain_tiles[tile] = "brush"
+                brush_tiles.append(tile)
+            notes.append("빙결 장벽 발동.")
+            if brush_tiles:
+                notes.append(f"냉기 수풀 확장 {len(brush_tiles)}칸.")
+            self._push_log(f"{target.name}, 체력이 절반 이하가 되어 결전 각성 발동.")
+            self._push_log(f"{target.name}, 빙결 장벽으로 수풀 지대가 확장.")
+            if brush_tiles:
+                self._push_log(f"{target.name}, 냉기 수풀이 {len(brush_tiles)}칸에 전개됨.")
             surge_impacts, surge_notes = self._trigger_boss_phase_impacts(target)
             notes.extend(surge_notes)
             return notes, surge_impacts
@@ -1212,6 +1244,12 @@ class TacticsController:
                     actor.shield += 4
                     actor.temporary_damage_bonus += 2
                     self._push_log(f"{actor.name}, 비전 과부하 유지로 현재 칸이 룬 지대가 되고 보호막 4 · 피해 +2.")
+                elif profile.id == "frostsiege":
+                    if self._terrain_at(actor.position) != "brush":
+                        self.terrain_tiles[actor.position] = "brush"
+                    actor.shield += 4
+                    actor.temporary_damage_bonus += 1
+                    self._push_log(f"{actor.name}, 빙결 장벽 유지로 현재 칸이 수풀 지대가 되고 보호막 4 · 피해 +1.")
 
     def _terrain_at(self, position: GridPos) -> TerrainId | None:
         return self.terrain_tiles.get(position)
@@ -1477,6 +1515,12 @@ class TacticsController:
             if any(self.distance(tile, enemy.position) <= 1 for enemy in self.living_units() if enemy.team != actor.team):
                 return 2
             return 0
+        if actor.boss_profile_id == "frostsiege":
+            if tile in self.objective_tiles:
+                return 3
+            if self._terrain_at(tile) == "brush":
+                return 2
+            return 0
         if actor.boss_profile_id == "spellstorm":
             if self._terrain_at(tile) == "rune":
                 return 4
@@ -1506,6 +1550,11 @@ class TacticsController:
         if actor.is_boss and actor.boss_profile_id == "spellstorm":
             if terrain_id == "rune":
                 terrain_bonus += 4
+            elif can_attack:
+                terrain_bonus += 1
+        elif actor.is_boss and actor.boss_profile_id == "frostsiege":
+            if terrain_id == "brush":
+                terrain_bonus += 3
             elif can_attack:
                 terrain_bonus += 1
         return terrain_bonus
@@ -1553,4 +1602,6 @@ class TacticsController:
         pattern_bonus = 0
         if actor.is_boss and actor.boss_profile_id == "warlord":
             pattern_bonus = 3 if tile in self.objective_tiles else 1 if nearest_distance <= 1 else 0
+        elif actor.is_boss and actor.boss_profile_id == "frostsiege":
+            pattern_bonus = 3 if tile in self.objective_tiles else 2 if self._terrain_at(tile) == "brush" else 0
         return occupy_bonus + adjacency_bonus + target_bonus + pattern_bonus - ally_stack_penalty

@@ -15,7 +15,7 @@ from native_game.data import ChampionBlueprint
 GridPos = tuple[int, int]
 TacticalTargetMode = Literal["enemy", "self"]
 TerrainId = Literal["brush", "rune", "hazard"]
-BossProfileId = Literal["warlord", "spellstorm"]
+BossProfileId = Literal["warlord", "spellstorm", "frostsiege"]
 
 GRID_WIDTH = 8
 GRID_HEIGHT = 6
@@ -186,6 +186,16 @@ BOSS_PROFILES_BY_ID: dict[BossProfileId, BossProfile] = {
         surge_description="각성 순간 룬/목표 칸에 방전을 일으켜 즉시 4 피해를 줍니다.",
         finale_variant_id="runic-nexus",
     ),
+    "frostsiege": BossProfile(
+        id="frostsiege",
+        name="서리 공성",
+        description="수풀과 냉기 장벽으로 전장을 조이며 소모전을 강요하는 결전형 보스 패턴",
+        phase_name="빙결 장벽",
+        phase_description="체력 절반 이하에서 중앙에 냉기 장벽을 세우고 수풀 지대를 확장합니다.",
+        surge_name="한파 쇄도",
+        surge_description="각성 순간 수풀과 인접 칸에 냉기를 퍼뜨려 즉시 4 피해를 줍니다.",
+        finale_variant_id="frozen-bastion",
+    ),
 }
 
 FINALE_VARIANTS_BY_ID: dict[str, FinaleVariant] = {
@@ -242,6 +252,32 @@ FINALE_VARIANTS_BY_ID: dict[str, FinaleVariant] = {
         reward_label="과부하 차단",
         success_label="보스 과부하 약화",
         failure_label="보스 과부하 증폭",
+    ),
+    "frozen-bastion": FinaleVariant(
+        id="frozen-bastion",
+        name="빙결 요새",
+        description="수풀 장벽과 냉기 회랑이 깔린 소모전 결전 전장",
+        blocked_tiles=((2, 0), (5, 5), (3, 2), (4, 3)),
+        terrain_tiles={
+            (1, 1): "brush",
+            (1, 2): "brush",
+            (1, 4): "brush",
+            (6, 1): "brush",
+            (6, 3): "brush",
+            (6, 4): "brush",
+            (3, 1): "hazard",
+            (4, 4): "hazard",
+            (3, 4): "rune",
+            (4, 1): "rune",
+        },
+        objective_name="냉기 핵 봉쇄",
+        objective_description="목표: 냉기 핵심 칸 진입 2회로 보스 한파를 약화",
+        objective_target=2,
+        objective_tiles=((3, 3), (4, 2)),
+        round_limit=3,
+        reward_label="한파 차단",
+        success_label="보스 한파 약화",
+        failure_label="보스 한파 증폭",
     ),
 }
 
@@ -425,7 +461,16 @@ def _apply_tactical_override(champion_id: str, ability: TacticalAbility) -> Tact
     )
 
 
+CHAMPION_BOSS_PROFILE_OVERRIDE: dict[str, BossProfileId] = {
+    "red-lissandra": "frostsiege",
+    "red-sett": "frostsiege",
+}
+
+
 def boss_profile_id_for_champion(champion_id: str) -> BossProfileId:
+    override = CHAMPION_BOSS_PROFILE_OVERRIDE.get(champion_id)
+    if override is not None:
+        return override
     blueprint = BLUEPRINTS_BY_ID[champion_id]
     return ROLE_BOSS_PROFILE_ID.get(blueprint.role, "warlord")
 
