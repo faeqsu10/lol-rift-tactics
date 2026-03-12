@@ -610,15 +610,18 @@ class GameAppFlowTests(unittest.TestCase):
             self.assertEqual(app.history_store.master_volume, 1.0)
             self.assertEqual(app.history_store.ambient_volume, 0.45)
             self.assertFalse(app.history_store.fast_mode)
+            self.assertEqual(app.history_store.difficulty_id, "standard")
 
             app._adjust_master_volume(-0.2)
             app._adjust_ambient_volume(-0.15)
             app._toggle_fast_mode()
+            app._toggle_difficulty()
 
             reloaded = GameApp(headless=True, history_path=history_path)
             self.assertAlmostEqual(reloaded.history_store.master_volume, 0.8)
             self.assertAlmostEqual(reloaded.history_store.ambient_volume, 0.3)
             self.assertTrue(reloaded.history_store.fast_mode)
+            self.assertEqual(reloaded.history_store.difficulty_id, "veteran")
 
     def test_settings_overlay_is_modal_and_does_not_trigger_underlying_actions(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -935,7 +938,9 @@ class GameAppFlowTests(unittest.TestCase):
             self.assertIn("help_overlay_seen", payload)
             self.assertIn("master_volume", payload)
             self.assertIn("ambient_volume", payload)
+            self.assertEqual(payload["records"][0]["difficulty_label"], "Standard")
             self.assertEqual(payload["records"][0]["result_label"], "원정 성공")
+            self.assertEqual(app.run_summary.difficulty_label, "Standard")
             self.assertIn("저장 기록 1런", app.run_summary.history_overview_lines[0])
 
             loaded_app = GameApp(headless=True, history_path=history_path)

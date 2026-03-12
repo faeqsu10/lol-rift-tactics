@@ -544,6 +544,7 @@ class BattleRecap:
 class RunSummary:
     result_label: str
     stage_label: str
+    difficulty_label: str
     lineup_label: str
     total_rounds: int
     total_blue_damage: int
@@ -1454,6 +1455,7 @@ class GameApp:
         return RunSummary(
             result_label=result_label,
             stage_label=stage_label,
+            difficulty_label=self._difficulty_label(self.active_difficulty_id),
             lineup_label=self._current_lineup_label(),
             total_rounds=total_rounds,
             total_blue_damage=total_blue_damage,
@@ -3143,6 +3145,10 @@ class GameApp:
         ready_count = len(self.selected_blue_ids)
         ready_label = "출전 확정" if ready_count == 3 else "선택 진행 중"
         self._draw_text(f"{ready_count}/3 · {ready_label}", self.font_heading, (244, 239, 225), (strip_rect.x + 18, strip_rect.y + 38))
+        difficulty_chip = pygame.Rect(strip_rect.x + 172, strip_rect.y + 12, 124, 24)
+        pygame.draw.rect(self.screen, (18, 32, 46), difficulty_chip, border_radius=10)
+        pygame.draw.rect(self.screen, (214, 182, 112), difficulty_chip, 1, border_radius=10)
+        self._draw_text_fit(self._difficulty_label(), (self.font_tiny, self.font_micro), (223, 206, 164), difficulty_chip.center, max_width=difficulty_chip.width - 12, center=True)
 
         bar_rect = pygame.Rect(strip_rect.x + 274, strip_rect.y + 24, 210, 18)
         pygame.draw.rect(self.screen, (17, 28, 42), bar_rect, border_radius=9)
@@ -3651,6 +3657,10 @@ class GameApp:
         pygame.draw.rect(self.screen, accent, badge_rect, border_radius=12)
         pygame.draw.rect(self.screen, (10, 18, 29), badge_rect, 1, border_radius=12)
         self._draw_text(summary.result_label, self.font_small, (10, 18, 29), badge_rect.center, center=True)
+        difficulty_rect = pygame.Rect(result_rect.right - 146, result_rect.y + 18, 128, 28)
+        pygame.draw.rect(self.screen, (18, 32, 46), difficulty_rect, border_radius=10)
+        pygame.draw.rect(self.screen, (214, 182, 112), difficulty_rect, 1, border_radius=10)
+        self._draw_text_fit(summary.difficulty_label, (self.font_tiny, self.font_micro), (223, 206, 164), difficulty_rect.center, max_width=difficulty_rect.width - 10, center=True)
         self._draw_text_fit(summary.stage_label, (self.font_heading, self.font_ui, self.font_small), (244, 239, 225), (result_rect.x + 18, result_rect.y + 62), max_width=result_rect.width - 36)
         self._draw_wrapped_text_fit(f"출전 조합: {summary.lineup_label}", (self.font_small, self.font_tiny, self.font_micro), (208, 219, 226), pygame.Rect(result_rect.x + 18, result_rect.y + 96, result_rect.width - 36, 24), max_lines=1)
         self._draw_wrapped_text_fit(f"주력 강화: {summary.best_reward_line}", (self.font_small, self.font_tiny, self.font_micro), (255, 213, 150), pygame.Rect(result_rect.x + 18, result_rect.y + 120, result_rect.width - 36, 22), max_lines=1)

@@ -81,6 +81,7 @@ class PersistedRunRecord:
     total_blue_kills: int
     total_red_kills: int
     best_reward_line: str
+    difficulty_label: str = "Standard"
 
     @property
     def was_success(self) -> bool:
@@ -102,6 +103,7 @@ class PersistedRunRecord:
             lineup_label=summary.lineup_label,
             result_label=summary.result_label,
             stage_label=summary.stage_label,
+            difficulty_label=summary.difficulty_label,
             stage_number=stage_number,
             total_rounds=summary.total_rounds,
             total_blue_damage=summary.total_blue_damage,
@@ -275,7 +277,7 @@ class RunHistoryStore:
         overall_best = self.best_overall()
         lineup_best = self.best_for_lineup(current.lineup_label)
         lines = [
-            f"저장 기록 {len(self.records)}런 · 완주 {self.clear_count()}회",
+            f"저장 기록 {len(self.records)}런 · 완주 {self.clear_count()}회 · 난이도 {current.difficulty_label}",
         ]
         if overall_best is not None:
             lines.append(f"전체 최고 · {overall_best.stage_label} · {overall_best.lineup_label}")
