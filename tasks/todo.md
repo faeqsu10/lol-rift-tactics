@@ -66,6 +66,11 @@
 - [x] `native_tactics` 공격/피격/사망/승리 전용 전투 애니메이션 1차 추가
 - [x] `native_tactics` 스테이지/결전 테마 기반 배경 맵 아트와 장애물 렌더 1차 추가
 - [x] `native_tactics` 챔피언 선택 화면 대표 챔피언 패널과 가로형 적 조합 프리뷰/전술 행동 바로 2차 개편
+- [x] `native_tactics` 3번째 보스 프로필 서리 공성(frostsiege)과 빙결 요새 결전 변형 추가
+- [x] `native_tactics` 난이도 배지 헤더 노출과 한국어 라벨 전환
+- [x] `native_tactics` 색상 팔레트 상수 중앙화와 주요 화면 일괄 적용
+- [x] Linux `native:package`를 `native_tactics.spec`으로 전환
+- [x] 마일스톤 문서 M2 완료 상태 반영
 - [ ] 생성형 컷아웃을 손작업 또는 고품질 원본 기반 실컷아웃으로 순차 교체
 
 ## 검증
