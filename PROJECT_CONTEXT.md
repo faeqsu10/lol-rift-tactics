@@ -83,6 +83,7 @@
   - champion select now uses a featured-champion focus panel, horizontal enemy counter preview, and a separated action footer so right-panel overlap stays resolved
   - shared text-fitting helpers now keep route cards, reward buttons, summary buttons, battle side panels, and intro overlays from colliding when Korean labels run long
   - first-run contextual help overlay now appears on select and persists its dismissed state in the tactics history file, while `H/F1` reopens help on supported screens
+  - a modal settings overlay now opens with `F10` or the header settings chip and persists master volume, ambient volume, and combat pace in the tactics history file
   - battle presentation first pass with animated battlefield atmosphere, stronger unit emphasis, pulse rings, and attack trails
   - portrait-based tactical standees on deploy and battle screens to reduce the placeholder-token look
   - portrait-driven sprite standees now use scale-aware full-body silhouettes and accessory rendering so select, deploy, and battle units read more like character pieces than tokens

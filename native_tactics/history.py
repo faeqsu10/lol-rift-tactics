@@ -12,7 +12,7 @@ from native_game.runtime import project_root
 if TYPE_CHECKING:
     from .app import RunSummary
 
-HISTORY_VERSION = 2
+HISTORY_VERSION = 4
 MAX_HISTORY_RECORDS = 30
 
 
@@ -126,10 +126,16 @@ class RunHistoryStore:
         records: list[PersistedRunRecord] | None = None,
         *,
         help_overlay_seen: bool = False,
+        master_volume: float = 1.0,
+        ambient_volume: float = 0.45,
+        fast_mode: bool = False,
     ) -> None:
         self.path = path
         self.records = records or []
         self.help_overlay_seen = help_overlay_seen
+        self.master_volume = master_volume
+        self.ambient_volume = ambient_volume
+        self.fast_mode = fast_mode
 
     @staticmethod
     def default_path() -> Path:
@@ -147,7 +153,7 @@ class RunHistoryStore:
         except (OSError, json.JSONDecodeError):
             return cls(resolved_path, [])
         version = payload.get("version")
-        if version not in {1, HISTORY_VERSION}:
+        if version not in {1, 2, 3, HISTORY_VERSION}:
             return cls(resolved_path, [])
         records = [
             PersistedRunRecord(**record)
@@ -157,7 +163,10 @@ class RunHistoryStore:
         return cls(
             resolved_path,
             records,
-            help_overlay_seen=bool(payload.get("help_overlay_seen", False)) if version == HISTORY_VERSION else False,
+            help_overlay_seen=bool(payload.get("help_overlay_seen", False)) if version in {2, HISTORY_VERSION} else False,
+            master_volume=float(payload.get("master_volume", 1.0)) if version in {3, HISTORY_VERSION} else 1.0,
+            ambient_volume=float(payload.get("ambient_volume", 0.45)) if version in {3, HISTORY_VERSION} else 0.45,
+            fast_mode=bool(payload.get("fast_mode", False)) if version == HISTORY_VERSION else False,
         )
 
     def save(self) -> None:
@@ -169,6 +178,9 @@ class RunHistoryStore:
                 "version": HISTORY_VERSION,
                 "records": [asdict(record) for record in self.records[:MAX_HISTORY_RECORDS]],
                 "help_overlay_seen": self.help_overlay_seen,
+                "master_volume": self.master_volume,
+                "ambient_volume": self.ambient_volume,
+                "fast_mode": self.fast_mode,
             }
             self.path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         except OSError:
@@ -178,6 +190,21 @@ class RunHistoryStore:
         if self.help_overlay_seen:
             return
         self.help_overlay_seen = True
+        self.save()
+
+    def save_settings(
+        self,
+        *,
+        master_volume: float | None = None,
+        ambient_volume: float | None = None,
+        fast_mode: bool | None = None,
+    ) -> None:
+        if master_volume is not None:
+            self.master_volume = max(0.0, min(1.0, master_volume))
+        if ambient_volume is not None:
+            self.ambient_volume = max(0.0, min(1.0, ambient_volume))
+        if fast_mode is not None:
+            self.fast_mode = bool(fast_mode)
         self.save()
 
     def best_overall(self) -> PersistedRunRecord | None:

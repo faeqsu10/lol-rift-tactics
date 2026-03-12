@@ -109,6 +109,9 @@ class SoundBank:
         self.sounds: dict[str, pygame.mixer.Sound] = {}
         self.champion_sounds: dict[tuple[str, str], pygame.mixer.Sound] = {}
         self.ambient: pygame.mixer.Sound | None = None
+        self.ambient_channel: pygame.mixer.Channel | None = None
+        self.master_volume = 1.0
+        self.ambient_volume = 0.45
 
         try:
             if pygame.mixer.get_init() is None:
@@ -188,17 +191,34 @@ class SoundBank:
             if sound_id == "cast":
                 base_cast = self.sounds.get(sound_id)
                 if base_cast is not None:
-                    base_cast.play()
-            themed_sound.play()
+                    base_channel = base_cast.play()
+                    if base_channel is not None:
+                        base_channel.set_volume(self.master_volume)
+            themed_channel = themed_sound.play()
+            if themed_channel is not None:
+                themed_channel.set_volume(self.master_volume)
             return
 
         sound = self.sounds.get(sound_id)
         if sound is not None:
-            sound.play()
+            channel = sound.play()
+            if channel is not None:
+                channel.set_volume(self.master_volume)
 
     def start_ambient(self) -> None:
         if not self.enabled or self.ambient is None:
             return
-        channel = self.ambient.play(loops=-1)
-        if channel is not None:
-            channel.set_volume(0.45)
+        self.ambient_channel = self.ambient.play(loops=-1)
+        self._apply_ambient_volume()
+
+    def _apply_ambient_volume(self) -> None:
+        if self.ambient_channel is not None:
+            self.ambient_channel.set_volume(max(0.0, min(1.0, self.master_volume * self.ambient_volume)))
+
+    def set_master_volume(self, value: float) -> None:
+        self.master_volume = max(0.0, min(1.0, value))
+        self._apply_ambient_volume()
+
+    def set_ambient_volume(self, value: float) -> None:
+        self.ambient_volume = max(0.0, min(1.0, value))
+        self._apply_ambient_volume()

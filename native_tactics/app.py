@@ -587,6 +587,15 @@ class HelpOverlayCard:
     lines: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class SettingsOption:
+    label: str
+    value: str
+    action_key: str
+    decrement_key: str
+    increment_key: str
+
+
 HELP_OVERLAY_BY_MODE: dict[str, HelpOverlayCard] = {
     "select": HelpOverlayCard(
         title="원정 시작 안내",
@@ -763,7 +772,7 @@ class GameApp:
         self.selected_deploy_champion_id: str | None = None
 
         self.controller: TacticsController | None = None
-        self.ai_timer = 0.55
+        self.ai_timer = self._battle_ai_delay()
         self.last_active_id: str | None = None
         self.time_accumulator = 0.0
         self.floaters: list[FloatingText] = []
@@ -793,6 +802,9 @@ class GameApp:
         self.route_card_rects: dict[str, pygame.Rect] = {}
         self.help_overlay_visible = False
         self.help_overlay_source: Literal["auto", "manual"] | None = None
+        self.settings_overlay_visible = False
+        self.audio.set_master_volume(self.history_store.master_volume)
+        self.audio.set_ambient_volume(self.history_store.ambient_volume)
         self._refresh_doctrine_statuses()
         self.selection_message = "플레이어 팀 3명을 고른 뒤 배치 단계로 넘어가세요."
         if resolved_history_path is not None and not self.history_store.help_overlay_seen:
@@ -869,6 +881,7 @@ class GameApp:
         if self.help_overlay_visible:
             self._dismiss_help_overlay()
             return
+        self.settings_overlay_visible = False
         self._show_help_overlay(source="manual")
 
     def _flow_step_index(self) -> int | None:
@@ -880,6 +893,40 @@ class GameApp:
             "route": 4,
             "summary": 5,
         }.get(self.screen_mode)
+
+    def _toggle_settings_overlay(self) -> None:
+        if self.screen_mode == "battle" and self.battle_intro_card is not None:
+            return
+        if self.screen_mode == "battle" and self.controller and self.controller.state.winner:
+            return
+        self.settings_overlay_visible = not self.settings_overlay_visible
+        if self.settings_overlay_visible:
+            self.help_overlay_visible = False
+            self.help_overlay_source = None
+
+    def _adjust_master_volume(self, delta: float) -> None:
+        new_value = max(0.0, min(1.0, self.history_store.master_volume + delta))
+        self.history_store.save_settings(master_volume=new_value)
+        self.audio.set_master_volume(new_value)
+        self.selection_message = f"마스터 볼륨 {int(new_value * 100)}%"
+        self.audio.play("ui-confirm")
+
+    def _adjust_ambient_volume(self, delta: float) -> None:
+        new_value = max(0.0, min(1.0, self.history_store.ambient_volume + delta))
+        self.history_store.save_settings(ambient_volume=new_value)
+        self.audio.set_ambient_volume(new_value)
+        self.selection_message = f"앰비언트 볼륨 {int(new_value * 100)}%"
+        self.audio.play("ui-confirm")
+
+    def _toggle_fast_mode(self) -> None:
+        new_value = not self.history_store.fast_mode
+        self.history_store.save_settings(fast_mode=new_value)
+        self.selection_message = f"전투 속도 {'빠름' if new_value else '기본'}"
+        self.audio.play("ui-confirm")
+        self.ai_timer = self._battle_ai_delay()
+
+    def _battle_ai_delay(self) -> float:
+        return 0.32 if self.history_store.fast_mode else 0.55
 
     def _selected_doctrine(self) -> DoctrineStatus | None:
         return next(
@@ -1287,6 +1334,7 @@ class GameApp:
         self.audio.play("ui-confirm")
         if not self.history_store.help_overlay_seen:
             self._show_help_overlay("deploy", source="auto")
+        self.settings_overlay_visible = False
 
     def _advance_after_reward(self) -> None:
         if self.selected_reward_id is None:
@@ -2051,6 +2099,7 @@ class GameApp:
         self.screen_mode = "battle"
         self.status_text = "이동할 칸을 고르거나 스킬을 선택하세요."
         self.audio.play(self.battle_intro_card.sound_id if self.battle_intro_card is not None else "ui-confirm")
+        self.settings_overlay_visible = False
 
     def _return_to_select(self) -> None:
         self.screen_mode = "select"
@@ -2067,6 +2116,7 @@ class GameApp:
         self.audio.play("ui-select")
         self.help_overlay_visible = False
         self.help_overlay_source = None
+        self.settings_overlay_visible = False
 
     def _reset_selection(self) -> None:
         self.screen_mode = "select"
@@ -2078,6 +2128,7 @@ class GameApp:
         self.selected_deploy_champion_id = None
         self.selection_message = "기본 조합으로 되돌렸습니다."
         self.audio.play("reset")
+        self.settings_overlay_visible = False
 
     def _reset_battle(self) -> None:
         if self.controller is None:
@@ -2167,11 +2218,26 @@ class GameApp:
                 self._handle_click(event.pos)
 
     def _handle_keydown(self, key: int) -> None:
+        if self.settings_overlay_visible:
+            if key in {pygame.K_ESCAPE, pygame.K_F10}:
+                self.settings_overlay_visible = False
+                return
+            if key in {pygame.K_LEFT, pygame.K_MINUS, pygame.K_KP_MINUS}:
+                self._adjust_master_volume(-0.1)
+                return
+            if key in {pygame.K_RIGHT, pygame.K_EQUALS, pygame.K_KP_PLUS}:
+                self._adjust_master_volume(0.1)
+                return
+            return
+
         if self.help_overlay_visible:
             if key in {pygame.K_ESCAPE, pygame.K_RETURN, pygame.K_SPACE, pygame.K_h, pygame.K_F1}:
                 self._dismiss_help_overlay()
             return
 
+        if key == pygame.K_F10:
+            self._toggle_settings_overlay()
+            return
         if key in {pygame.K_h, pygame.K_F1}:
             self._toggle_help_overlay()
             return
@@ -2264,11 +2330,18 @@ class GameApp:
             self._end_turn()
 
     def _handle_click(self, position: tuple[int, int]) -> None:
+        if self.settings_overlay_visible:
+            self._handle_settings_click(position)
+            return
         if self.help_overlay_visible:
             self._dismiss_help_overlay()
             return
 
         header_action = self.button_rects.get("header-action")
+        header_settings = self.button_rects.get("header-settings")
+        if header_settings and header_settings.collidepoint(position):
+            self._toggle_settings_overlay()
+            return
         if header_action and header_action.collidepoint(position):
             if self.screen_mode == "battle":
                 self._reset_battle()
@@ -2305,6 +2378,31 @@ class GameApp:
             return
 
         self._handle_battle_click(position)
+
+    def _handle_settings_click(self, position: tuple[int, int]) -> None:
+        if self.button_rects.get("settings-close") and self.button_rects["settings-close"].collidepoint(position):
+            self.settings_overlay_visible = False
+            return
+        if self.button_rects.get("settings-help") and self.button_rects["settings-help"].collidepoint(position):
+            self.settings_overlay_visible = False
+            self._show_help_overlay(source="manual")
+            return
+        if self.button_rects.get("settings-master-down") and self.button_rects["settings-master-down"].collidepoint(position):
+            self._adjust_master_volume(-0.1)
+            return
+        if self.button_rects.get("settings-master-up") and self.button_rects["settings-master-up"].collidepoint(position):
+            self._adjust_master_volume(0.1)
+            return
+        if self.button_rects.get("settings-ambient-down") and self.button_rects["settings-ambient-down"].collidepoint(position):
+            self._adjust_ambient_volume(-0.1)
+            return
+        if self.button_rects.get("settings-ambient-up") and self.button_rects["settings-ambient-up"].collidepoint(position):
+            self._adjust_ambient_volume(0.1)
+            return
+        if self.button_rects.get("settings-fast-toggle") and self.button_rects["settings-fast-toggle"].collidepoint(position):
+            self._toggle_fast_mode()
+            return
+        self.settings_overlay_visible = False
 
     def _handle_select_click(self, position: tuple[int, int]) -> None:
         if self.button_rects.get("selection-start") and self.button_rects["selection-start"].collidepoint(position):
@@ -2506,7 +2604,7 @@ class GameApp:
             elif active and active.team == "red":
                 self.mode = "observe"
                 self.status_text = f"{active.name}가 행동을 고르는 중입니다."
-                self.ai_timer = 0.55
+                self.ai_timer = self._battle_ai_delay()
             self.last_active_id = active_id
 
         for unit in self.controller.units:
@@ -2556,7 +2654,7 @@ class GameApp:
                 results = self.controller.run_ai_turn()
                 for result in results:
                     self._apply_action_result(result)
-                self.ai_timer = 0.55
+                self.ai_timer = self._battle_ai_delay()
 
     def _spawn_battle_ring(
         self,
@@ -2801,6 +2899,7 @@ class GameApp:
         self._draw_finale_banner()
         self._draw_battle_intro()
         self._draw_help_overlay()
+        self._draw_settings_overlay()
 
     def _draw_flow_breadcrumb(self) -> None:
         step_index = self._flow_step_index()
@@ -2849,6 +2948,12 @@ class GameApp:
         pygame.draw.rect(self.screen, (91, 134, 166), status_rect, 1, border_radius=16)
         self._draw_text("현재 단계", self.font_tiny, (141, 173, 195), (status_rect.x + 16, status_rect.y + 7))
         self._draw_wrapped_text(center_text, self.font_small, (221, 231, 238), pygame.Rect(status_rect.x + 16, status_rect.y + 20, status_rect.width - 32, 18), max_lines=1)
+
+        settings_rect = pygame.Rect(HEADER_RECT.right - 282, HEADER_RECT.y + 16, 92, 38)
+        self.button_rects["header-settings"] = settings_rect
+        pygame.draw.rect(self.screen, (16, 28, 40), settings_rect, border_radius=12)
+        pygame.draw.rect(self.screen, (108, 192, 235), settings_rect, 1, border_radius=12)
+        self._draw_text_fit("설정 F10", (self.font_tiny, self.font_micro), (205, 220, 229), settings_rect.center, max_width=settings_rect.width - 10, center=True)
 
         action_rect = pygame.Rect(HEADER_RECT.right - 174, HEADER_RECT.y + 10, 152, 50)
         self.button_rects["header-action"] = action_rect
@@ -5457,6 +5562,80 @@ class GameApp:
             else "닫으면 이후 자동으로 다시 열리지 않습니다 · H/F1로 다시 보기"
         )
         self._draw_text_fit(footer, (self.font_small, self.font_tiny, self.font_micro), (176, 194, 206), (card_rect.centerx, card_rect.bottom - 20), max_width=card_rect.width - 48, center=True)
+
+    def _draw_settings_overlay(self) -> None:
+        if not self.settings_overlay_visible:
+            return
+
+        shade = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+        shade.fill((6, 12, 20, 164))
+        self.screen.blit(shade, (0, 0))
+
+        card_rect = pygame.Rect(WINDOW_WIDTH // 2 - 350, WINDOW_HEIGHT // 2 - 170, 700, 316)
+        panel = pygame.Surface(card_rect.size, pygame.SRCALPHA)
+        draw_vertical_gradient(panel, panel.get_rect(), (14, 24, 37), (18, 31, 47))
+        pygame.draw.rect(panel, (74, 157, 214, 24), panel.get_rect(), border_radius=28)
+        pygame.draw.rect(panel, (236, 218, 176), panel.get_rect(), 1, border_radius=28)
+        self.screen.blit(panel, card_rect.topleft)
+
+        self._draw_text("설정", self.font_title, (255, 244, 217), (card_rect.x + 24, card_rect.y + 26))
+        self._draw_text("볼륨과 전투 흐름, 키 안내를 여기서 확인할 수 있습니다.", self.font_small, (208, 219, 226), (card_rect.x + 24, card_rect.y + 78))
+
+        option_specs = [
+            SettingsOption("마스터 볼륨", f"{int(self.history_store.master_volume * 100)}%", "settings-master", "settings-master-down", "settings-master-up"),
+            SettingsOption("앰비언트 볼륨", f"{int(self.history_store.ambient_volume * 100)}%", "settings-ambient", "settings-ambient-down", "settings-ambient-up"),
+            SettingsOption("전투 속도", "빠름" if self.history_store.fast_mode else "기본", "settings-fast", "settings-fast-toggle", "settings-fast-toggle"),
+        ]
+        for index, option in enumerate(option_specs):
+            row_rect = pygame.Rect(card_rect.x + 24, card_rect.y + 112 + index * 48, 352, 38)
+            pygame.draw.rect(self.screen, (16, 28, 40), row_rect, border_radius=14)
+            pygame.draw.rect(self.screen, (236, 218, 176), row_rect, 1, border_radius=14)
+            self._draw_text(option.label, self.font_small, (229, 210, 164), (row_rect.x + 14, row_rect.y + 8))
+            value_rect = pygame.Rect(row_rect.right - 138, row_rect.y + 6, 64, 26)
+            pygame.draw.rect(self.screen, (24, 42, 58), value_rect, border_radius=10)
+            pygame.draw.rect(self.screen, (108, 192, 235), value_rect, 1, border_radius=10)
+            self._draw_text_fit(option.value, (self.font_small, self.font_tiny), (220, 231, 236), value_rect.center, max_width=value_rect.width - 8, center=True)
+
+            if option.action_key == "settings-fast":
+                toggle_rect = pygame.Rect(row_rect.right - 66, row_rect.y + 6, 52, 26)
+                self.button_rects["settings-fast-toggle"] = toggle_rect
+                pygame.draw.rect(self.screen, (214, 182, 112), toggle_rect, border_radius=10)
+                pygame.draw.rect(self.screen, (255, 244, 217), toggle_rect, 1, border_radius=10)
+                self._draw_text_fit("전환", (self.font_tiny, self.font_micro), (12, 20, 31), toggle_rect.center, max_width=toggle_rect.width - 6, center=True)
+            else:
+                down_rect = pygame.Rect(row_rect.right - 66, row_rect.y + 6, 24, 26)
+                up_rect = pygame.Rect(row_rect.right - 36, row_rect.y + 6, 24, 26)
+                self.button_rects[option.decrement_key] = down_rect
+                self.button_rects[option.increment_key] = up_rect
+                for rect, label in ((down_rect, "-"), (up_rect, "+")):
+                    pygame.draw.rect(self.screen, (214, 182, 112), rect, border_radius=10)
+                    pygame.draw.rect(self.screen, (255, 244, 217), rect, 1, border_radius=10)
+                    self._draw_text(label, self.font_small, (12, 20, 31), rect.center, center=True)
+
+        guide_rect = pygame.Rect(card_rect.x + 400, card_rect.y + 112, 276, 138)
+        pygame.draw.rect(self.screen, (16, 28, 40), guide_rect, border_radius=18)
+        pygame.draw.rect(self.screen, (236, 218, 176), guide_rect, 1, border_radius=18)
+        self._draw_text("키 안내", self.font_ui, (229, 210, 164), (guide_rect.x + 14, guide_rect.y + 12))
+        guide_lines = (
+            "H/F1 도움말",
+            "F10 설정",
+            "Enter 진행/확정",
+            "ESC 뒤로/닫기",
+            "M/1/2/E 전투 조작",
+        )
+        for index, line in enumerate(guide_lines):
+            self._draw_text(line, self.font_tiny, (208, 219, 226), (guide_rect.x + 16, guide_rect.y + 42 + index * 18))
+
+        tutorial_rect = pygame.Rect(card_rect.x + 400, card_rect.y + 264, 180, 34)
+        close_rect = pygame.Rect(card_rect.right - 122, card_rect.y + 264, 98, 34)
+        self.button_rects["settings-help"] = tutorial_rect
+        self.button_rects["settings-close"] = close_rect
+        pygame.draw.rect(self.screen, (16, 28, 40), tutorial_rect, border_radius=12)
+        pygame.draw.rect(self.screen, (108, 192, 235), tutorial_rect, 1, border_radius=12)
+        self._draw_text_fit("도움말 다시 보기", (self.font_tiny, self.font_micro), (205, 220, 229), tutorial_rect.center, max_width=tutorial_rect.width - 10, center=True)
+        pygame.draw.rect(self.screen, (214, 182, 112), close_rect, border_radius=12)
+        pygame.draw.rect(self.screen, (255, 244, 217), close_rect, 1, border_radius=12)
+        self._draw_text_fit("닫기", (self.font_small, self.font_tiny), (12, 20, 31), close_rect.center, max_width=close_rect.width - 8, center=True)
 
     def _draw_winner_overlay(self) -> None:
         if self.controller is None or not self.controller.state.winner:
