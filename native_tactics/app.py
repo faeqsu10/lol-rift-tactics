@@ -634,6 +634,7 @@ HELP_OVERLAY_BY_MODE: dict[str, HelpOverlayCard] = {
         ),
     ),
 }
+FLOW_STEPS: tuple[str, ...] = ("선택", "배치", "전투", "보상", "경로", "결산")
 
 
 def clamp(value: float, low: float, high: float) -> float:
@@ -869,6 +870,16 @@ class GameApp:
             self._dismiss_help_overlay()
             return
         self._show_help_overlay(source="manual")
+
+    def _flow_step_index(self) -> int | None:
+        return {
+            "select": 0,
+            "deploy": 1,
+            "battle": 2,
+            "reward": 3,
+            "route": 4,
+            "summary": 5,
+        }.get(self.screen_mode)
 
     def _selected_doctrine(self) -> DoctrineStatus | None:
         return next(
@@ -2786,9 +2797,42 @@ class GameApp:
             self._draw_deploy_screen()
         else:
             self._draw_battle_screen()
+        self._draw_flow_breadcrumb()
         self._draw_finale_banner()
         self._draw_battle_intro()
         self._draw_help_overlay()
+
+    def _draw_flow_breadcrumb(self) -> None:
+        step_index = self._flow_step_index()
+        if step_index is None or self.screen_mode in {"battle", "summary"} or self.help_overlay_visible:
+            return
+        strip_rect = pygame.Rect(WINDOW_WIDTH // 2 - 360, HEADER_RECT.bottom + 10, 720, 28)
+        strip = pygame.Surface(strip_rect.size, pygame.SRCALPHA)
+        draw_vertical_gradient(strip, strip.get_rect(), (12, 21, 31), (16, 28, 42))
+        pygame.draw.rect(strip, (236, 218, 176), strip.get_rect(), 1, border_radius=14)
+        self.screen.blit(strip, strip_rect.topleft)
+
+        chip_width = 102
+        gap = 12
+        total_width = chip_width * len(FLOW_STEPS) + gap * (len(FLOW_STEPS) - 1)
+        start_x = strip_rect.centerx - total_width // 2
+        for index, label in enumerate(FLOW_STEPS):
+            chip_rect = pygame.Rect(start_x + index * (chip_width + gap), strip_rect.y + 3, chip_width, 22)
+            if index == step_index:
+                fill = (214, 182, 112)
+                border = (255, 244, 217)
+                text_color = (12, 20, 31)
+            elif index < step_index:
+                fill = (22, 46, 58)
+                border = (108, 224, 203)
+                text_color = (206, 228, 221)
+            else:
+                fill = (16, 28, 40)
+                border = (91, 134, 166)
+                text_color = (166, 184, 198)
+            pygame.draw.rect(self.screen, fill, chip_rect, border_radius=11)
+            pygame.draw.rect(self.screen, border, chip_rect, 1, border_radius=11)
+            self._draw_text_fit(label, (self.font_tiny, self.font_micro), text_color, chip_rect.center, max_width=chip_rect.width - 10, center=True)
 
     def _draw_header(self, title: str, subtitle: str, center_text: str, action_label: str) -> None:
         panel = pygame.Surface(HEADER_RECT.size, pygame.SRCALPHA)

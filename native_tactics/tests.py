@@ -591,6 +591,16 @@ class GameAppFlowTests(unittest.TestCase):
             self.assertEqual(app.screen_mode, "select")
             self.assertFalse(app.help_overlay_visible)
 
+    def test_flow_step_index_matches_screen_mode(self) -> None:
+        app = GameApp(headless=True)
+
+        app.screen_mode = "select"
+        self.assertEqual(app._flow_step_index(), 0)
+        app.screen_mode = "deploy"
+        self.assertEqual(app._flow_step_index(), 1)
+        app.screen_mode = "summary"
+        self.assertEqual(app._flow_step_index(), 5)
+
     def test_reward_selection_advances_run_to_next_deploy(self) -> None:
         app = GameApp(headless=True)
         app._start_deploy()
