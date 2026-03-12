@@ -888,6 +888,8 @@ class GameApp:
         self.confirm_dialog_visible = False
         self.confirm_dialog_action: str | None = None  # "quit" or "abandon"
         self.hovered_button: str | None = None
+        self.pressed_button: str | None = None
+        self.pressed_button_timer: float = 0.0
         self._transition_alpha = 0
         self._transition_target_mode: str | None = None
         self.selected_difficulty_id = self.history_store.difficulty_id if self.history_store.difficulty_id in DIFFICULTY_LABEL_BY_ID else "standard"
@@ -2515,6 +2517,13 @@ class GameApp:
             self._end_turn()
 
     def _handle_click(self, position: tuple[int, int]) -> None:
+        # Visual click feedback
+        for key, rect in self.button_rects.items():
+            if rect.collidepoint(position):
+                self.pressed_button = key
+                self.pressed_button_timer = 0.12
+                break
+
         if self.confirm_dialog_visible:
             self._handle_confirm_dialog_click(position)
             return
@@ -2768,6 +2777,11 @@ class GameApp:
 
     def _update(self, dt: float) -> None:
         self.time_accumulator += dt
+        if self.pressed_button_timer > 0:
+            self.pressed_button_timer -= dt
+            if self.pressed_button_timer <= 0:
+                self.pressed_button = None
+                self.pressed_button_timer = 0.0
         self._update_transition(dt)
         if self.finale_banner_timer > 0:
             self.finale_banner_timer = max(0.0, self.finale_banner_timer - dt)
@@ -3135,8 +3149,8 @@ class GameApp:
         self.screen.blit(panel, HEADER_RECT.topleft)
         title_pos = (HEADER_RECT.x + 22, HEADER_RECT.y + 6)
         subtitle_pos = (HEADER_RECT.x + 24, HEADER_RECT.y + 44)
-        self._draw_text(title, self.font_large, TEXT_PRIMARY, title_pos)
-        self._draw_text(subtitle, self.font_small, ACCENT_GOLD_WARM, subtitle_pos)
+        self._draw_text_fit(title, (self.font_large, self.font_heading, self.font_ui), TEXT_PRIMARY, title_pos, max_width=HEADER_RECT.width - 420)
+        self._draw_text_fit(subtitle, (self.font_small, self.font_tiny, self.font_micro), ACCENT_GOLD_WARM, subtitle_pos, max_width=HEADER_RECT.width - 420)
 
         status_rect = pygame.Rect(HEADER_RECT.centerx - 148, HEADER_RECT.y + 12, 296, 46)
         pygame.draw.rect(self.screen, BG_PANEL_MID, status_rect, border_radius=RADIUS_CARD)
@@ -3257,8 +3271,8 @@ class GameApp:
 
         info_x = panel_rect.x + 224
         info_width = panel_rect.right - info_x - 18
-        self._draw_text(blueprint.name, self.font_title, TEXT_PRIMARY, (info_x, panel_rect.y + 22))
-        self._draw_wrapped_text(blueprint.title, self.font_ui, (192, 206, 216), pygame.Rect(info_x, panel_rect.y + 58, info_width, 22), max_lines=1)
+        self._draw_text_fit(blueprint.name, (self.font_title, self.font_heading, self.font_ui), TEXT_PRIMARY, (info_x, panel_rect.y + 22), max_width=info_width)
+        self._draw_wrapped_text_fit(blueprint.title, (self.font_ui, self.font_small, self.font_tiny), (192, 206, 216), pygame.Rect(info_x, panel_rect.y + 58, info_width, 22), max_lines=1)
         role_rect = pygame.Rect(info_x, panel_rect.y + 92, 122, 28)
         pygame.draw.rect(self.screen, (*accent, 36), role_rect, border_radius=RADIUS_CHIP)
         pygame.draw.rect(self.screen, accent, role_rect, 1, border_radius=RADIUS_CHIP)
@@ -3273,15 +3287,15 @@ class GameApp:
         self._draw_text(f"기본 사거리 {tactical.basic_ability.cast_range}", self.font_tiny, ACCENT_GOLD_SOFT, basic_chip.center, center=True)
 
         self._draw_text("패시브", self.font_tiny, accent, (info_x, panel_rect.y + 132))
-        passive_line = self._ellipsize_text(f"{tactical.passive_name} · {tactical.passive_description}", self.font_small, info_width)
-        self._draw_text(passive_line, self.font_small, TEXT_SECONDARY, (info_x, panel_rect.y + 148))
+        self._draw_text_fit(f"{tactical.passive_name} · {tactical.passive_description}", (self.font_small, self.font_tiny, self.font_micro), TEXT_SECONDARY, (info_x, panel_rect.y + 148), max_width=info_width)
         self._draw_text("특수기", self.font_tiny, ACCENT_GOLD, (info_x, panel_rect.y + 174))
-        special_line = self._ellipsize_text(
+        self._draw_text_fit(
             f"{tactical.special_ability.name} · 쿨다운 {tactical.special_ability.cooldown} · 사거리 {tactical.special_ability.cast_range}",
-            self.font_small,
-            info_width,
+            (self.font_small, self.font_tiny, self.font_micro),
+            ACCENT_GOLD_SOFT,
+            (info_x, panel_rect.y + 190),
+            max_width=info_width,
         )
-        self._draw_text(special_line, self.font_small, ACCENT_GOLD_SOFT, (info_x, panel_rect.y + 190))
 
         counts = self._selection_role_counts()
         chip_y = panel_rect.bottom - 34
@@ -3297,7 +3311,7 @@ class GameApp:
                 self._draw_text(f"{role[:3]} {count}", self.font_tiny, TEXT_SECONDARY, role_chip.center, center=True)
                 chip_x += 100
         else:
-            self._draw_text("아직 출전 조합이 없습니다. 후보 카드를 눌러 팀을 구성하세요.", self.font_tiny, TEXT_CAPTION, (info_x, chip_y + 4))
+            self._draw_text_fit("아직 출전 조합이 없습니다. 후보 카드를 눌러 팀을 구성하세요.", (self.font_tiny, self.font_micro), TEXT_CAPTION, (info_x, chip_y + 4), max_width=info_width)
 
     def _draw_selection_summary_strip(self) -> None:
         strip_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 18, SELECT_LEFT_PANEL.y + 86, SELECT_LEFT_PANEL.width - 36, 72)
@@ -3320,8 +3334,7 @@ class GameApp:
         progress = ready_count / 3
         pygame.draw.rect(self.screen, ACCENT_TEAL, (bar_rect.x, bar_rect.y, int(bar_rect.width * progress), bar_rect.height), border_radius=RADIUS_BADGE)
         pygame.draw.rect(self.screen, ACCENT_GOLD_PALE, bar_rect, 1, border_radius=RADIUS_BADGE)
-        detail = self._ellipsize_text(self.selection_message, self.font_tiny, 320)
-        self._draw_text(detail, self.font_tiny, TEXT_CAPTION, (bar_rect.right + 20, strip_rect.y + 30))
+        self._draw_text_fit(self.selection_message, (self.font_tiny, self.font_micro), TEXT_CAPTION, (bar_rect.right + 20, strip_rect.y + 30), max_width=strip_rect.right - bar_rect.right - 38)
 
     def _selection_enemy_preview_layout(self) -> tuple[list[pygame.Rect], pygame.Rect]:
         section_y = SELECT_RIGHT_PANEL.y + 496
@@ -3340,10 +3353,10 @@ class GameApp:
         self._draw_header("리그 오브 레전드: 리프트 택틱스", "3전 원정 준비", f"챔피언 선택 · 1/{RUN_STAGE_COUNT} 시작", "ESC 종료")
         self._draw_panel(SELECT_LEFT_PANEL, ACCENT_BLUE_DEEP)
         self._draw_panel(SELECT_RIGHT_PANEL, ACCENT_RED)
-        self._draw_text("플레이어 팀 선택", self.font_heading, TEXT_PRIMARY, (SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 18))
-        self._draw_text("핵심 챔피언을 정하고 출전 조합을 완성하세요", self.font_small, UI_MUTED, (SELECT_LEFT_PANEL.x + 24, SELECT_LEFT_PANEL.y + 52))
-        self._draw_text("적 카운터와 원정 교리", self.font_heading, TEXT_PRIMARY, (SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.y + 18))
-        self._draw_text("대표 챔피언, 교리, 적 조합을 한 화면에서 조율합니다", self.font_small, TEXT_LABEL, (SELECT_RIGHT_PANEL.x + 24, SELECT_RIGHT_PANEL.y + 52))
+        self._draw_text_fit("플레이어 팀 선택", (self.font_heading, self.font_ui, self.font_small), TEXT_PRIMARY, (SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 18), max_width=SELECT_LEFT_PANEL.width - 44)
+        self._draw_text_fit("핵심 챔피언을 정하고 출전 조합을 완성하세요", (self.font_small, self.font_tiny, self.font_micro), UI_MUTED, (SELECT_LEFT_PANEL.x + 24, SELECT_LEFT_PANEL.y + 52), max_width=SELECT_LEFT_PANEL.width - 48)
+        self._draw_text_fit("적 카운터와 원정 교리", (self.font_heading, self.font_ui, self.font_small), TEXT_PRIMARY, (SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.y + 18), max_width=SELECT_RIGHT_PANEL.width - 44)
+        self._draw_text_fit("대표 챔피언, 교리, 적 조합을 한 화면에서 조율합니다", (self.font_small, self.font_tiny, self.font_micro), TEXT_LABEL, (SELECT_RIGHT_PANEL.x + 24, SELECT_RIGHT_PANEL.y + 52), max_width=SELECT_RIGHT_PANEL.width - 48)
         self._draw_selection_summary_strip()
         self._draw_selection_focus_panel()
         self._draw_selection_slots()
@@ -3356,7 +3369,7 @@ class GameApp:
         self.selection_slot_rects = []
         self._draw_text("출전 라인업", self.font_ui, TEXT_LABEL, (rect.x, rect.y))
         readiness = "배치 가능" if len(self.selected_blue_ids) == 3 else "3명 필요"
-        self._draw_text(f"{len(self.selected_blue_ids)}/3 선택 · {readiness}", self.font_small, (128, 164, 188), (rect.right, rect.y + 4), align_right=True)
+        self._draw_text_fit(f"{len(self.selected_blue_ids)}/3 선택 · {readiness}", (self.font_small, self.font_tiny, self.font_micro), (128, 164, 188), (rect.right, rect.y + 4), max_width=rect.width // 2, align_right=True)
         slot_width = (rect.width - 36) // 3
         gap = 18
         for index in range(3):
@@ -3375,7 +3388,7 @@ class GameApp:
         rect = pygame.Rect(SELECT_LEFT_PANEL.x + 18, SELECT_LEFT_PANEL.y + 342, SELECT_LEFT_PANEL.width - 36, SELECT_LEFT_PANEL.height - 424)
         self.selection_card_rects.clear()
         self._draw_text("후보 로스터", self.font_ui, TEXT_LABEL, (rect.x, rect.y))
-        self._draw_text("역할과 패시브를 보고 마지막 한 자리를 고르세요", self.font_tiny, UI_MUTED, (rect.x + 2, rect.y + 28))
+        self._draw_text_fit("역할과 패시브를 보고 마지막 한 자리를 고르세요", (self.font_tiny, self.font_micro), UI_MUTED, (rect.x + 2, rect.y + 28), max_width=rect.width - 4)
         footer = pygame.Rect(rect.x, SELECT_LEFT_PANEL.bottom - 82, rect.width, 58)
         grid_bottom = footer.y - 14
         grid_rect = pygame.Rect(rect.x, rect.y + 52, rect.width, max(60, grid_bottom - (rect.y + 52)))
@@ -3452,7 +3465,7 @@ class GameApp:
     def _draw_selection_enemy_preview(self) -> None:
         section_y = SELECT_RIGHT_PANEL.y + 496
         self._draw_text("예상 적 조합", self.font_ui, TEXT_LABEL, (SELECT_RIGHT_PANEL.x + 22, section_y))
-        self._draw_text("상대 핵심 패시브를 보고 카운터 픽을 조정하세요", self.font_tiny, TEXT_LABEL, (SELECT_RIGHT_PANEL.x + 24, section_y + 28))
+        self._draw_text_fit("상대 핵심 패시브를 보고 카운터 픽을 조정하세요", (self.font_tiny, self.font_micro), TEXT_LABEL, (SELECT_RIGHT_PANEL.x + 24, section_y + 28), max_width=SELECT_RIGHT_PANEL.width - 48)
         card_rects, action_rect = self._selection_enemy_preview_layout()
 
         for champion_id, card_rect in zip(self.selected_red_ids, card_rects):
@@ -3470,9 +3483,8 @@ class GameApp:
         pygame.draw.rect(self.screen, BG_DEEP, label_rect, 1, border_radius=RADIUS_CHIP)
         self._draw_text("전술 행동", self.font_tiny, BG_DEEP, label_rect.center, center=True)
         ready_text = "출전 확정" if len(self.selected_blue_ids) == 3 else "아직 3명을 모두 선택하지 않았습니다"
-        self._draw_text(ready_text, self.font_small, TEXT_PRIMARY, (label_rect.right + 14, action_rect.y + 16))
-        doctrine_preview = self._ellipsize_text(doctrine_line, self.font_tiny, action_rect.width - 32)
-        self._draw_text(doctrine_preview, self.font_tiny, TEXT_CAPTION, (action_rect.x + 16, action_rect.y + 40))
+        self._draw_text_fit(ready_text, (self.font_small, self.font_tiny, self.font_micro), TEXT_PRIMARY, (label_rect.right + 14, action_rect.y + 16), max_width=action_rect.right - label_rect.right - 30)
+        self._draw_text_fit(doctrine_line, (self.font_tiny, self.font_micro), TEXT_CAPTION, (action_rect.x + 16, action_rect.y + 40), max_width=action_rect.width - 32)
 
         button_y = action_rect.bottom - 46
         button_gap = 18
@@ -3492,26 +3504,28 @@ class GameApp:
         )
         self._draw_panel(SELECT_LEFT_PANEL, ACCENT_BLUE_DEEP)
         self._draw_panel(SELECT_RIGHT_PANEL, ACCENT_GOLD)
-        self._draw_text("다음 전투 브리핑", self.font_heading, TEXT_PRIMARY, (SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 18))
+        self._draw_text_fit("다음 전투 브리핑", (self.font_heading, self.font_ui, self.font_small), TEXT_PRIMARY, (SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 18), max_width=SELECT_LEFT_PANEL.width - 44)
         self._draw_wrapped_text_fit(self.selection_message, (self.font_small, self.font_tiny, self.font_micro), UI_MUTED, pygame.Rect(SELECT_LEFT_PANEL.x + 24, SELECT_LEFT_PANEL.y + 52, SELECT_LEFT_PANEL.width - 48, 18), max_lines=1)
-        self._draw_text("전투 보상", self.font_heading, TEXT_PRIMARY, (SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.y + 18))
-        self._draw_text("보상 하나를 고르면 다음 전투로 진입할 수 있습니다", self.font_small, TEXT_LABEL, (SELECT_RIGHT_PANEL.x + 24, SELECT_RIGHT_PANEL.y + 52))
+        self._draw_text_fit("전투 보상", (self.font_heading, self.font_ui, self.font_small), TEXT_PRIMARY, (SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.y + 18), max_width=SELECT_RIGHT_PANEL.width - 44)
+        self._draw_text_fit("보상 하나를 고르면 다음 전투로 진입할 수 있습니다", (self.font_small, self.font_tiny, self.font_micro), TEXT_LABEL, (SELECT_RIGHT_PANEL.x + 24, SELECT_RIGHT_PANEL.y + 52), max_width=SELECT_RIGHT_PANEL.width - 48)
 
         progress_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 96, SELECT_LEFT_PANEL.width - 44, 96)
         pygame.draw.rect(self.screen, BG_PANEL_ALT, progress_rect, border_radius=RADIUS_PANEL)
         pygame.draw.rect(self.screen, ACCENT_GOLD_SOFT, progress_rect, 1, border_radius=RADIUS_PANEL)
         self._draw_text("원정 진행도", self.font_ui, TEXT_LABEL, (progress_rect.x + 18, progress_rect.y + 14))
-        self._draw_text(
+        self._draw_text_fit(
             f"{self._current_stage_label()} 승리 · 다음은 {RUN_STAGE_LABELS.get(self.run_stage + 1, '결산')}",
-            self.font_heading,
+            (self.font_heading, self.font_ui, self.font_small),
             TEXT_PRIMARY,
             (progress_rect.x + 18, progress_rect.y + 44),
+            max_width=progress_rect.width - 36,
         )
-        self._draw_text(
+        self._draw_text_fit(
             f"{self.run_stage}승 달성 / 총 {RUN_STAGE_COUNT}전",
-            self.font_small,
+            (self.font_small, self.font_tiny, self.font_micro),
             TEXT_CAPTION,
             (progress_rect.x + 18, progress_rect.y + 72),
+            max_width=progress_rect.width - 36,
         )
 
         bonus_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 216, SELECT_LEFT_PANEL.width - 44, 188)
@@ -3519,7 +3533,7 @@ class GameApp:
         pygame.draw.rect(self.screen, ACCENT_GOLD_SOFT, bonus_rect, 1, border_radius=RADIUS_PANEL)
         self._draw_text("현재 강화", self.font_ui, TEXT_LABEL, (bonus_rect.x + 18, bonus_rect.y + 14))
         for index, line in enumerate(self._run_bonus_lines()):
-            self._draw_text(line, self.font_small, TEXT_SECONDARY, (bonus_rect.x + 18, bonus_rect.y + 50 + index * 28))
+            self._draw_text_fit(line, (self.font_small, self.font_tiny, self.font_micro), TEXT_SECONDARY, (bonus_rect.x + 18, bonus_rect.y + 50 + index * 28), max_width=bonus_rect.width - 36)
 
         preview_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 432, SELECT_LEFT_PANEL.width - 44, 420)
         pygame.draw.rect(self.screen, BG_PANEL, preview_rect, border_radius=RADIUS_PANEL)
@@ -3563,10 +3577,10 @@ class GameApp:
         )
         self._draw_panel(SELECT_LEFT_PANEL, ACCENT_BLUE_DEEP)
         self._draw_panel(SELECT_RIGHT_PANEL, ACCENT_GOLD)
-        self._draw_text("전투 요약", self.font_heading, TEXT_PRIMARY, (SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 18))
+        self._draw_text_fit("전투 요약", (self.font_heading, self.font_ui, self.font_small), TEXT_PRIMARY, (SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 18), max_width=SELECT_LEFT_PANEL.width - 44)
         self._draw_wrapped_text_fit(self.selection_message, (self.font_small, self.font_tiny, self.font_micro), UI_MUTED, pygame.Rect(SELECT_LEFT_PANEL.x + 24, SELECT_LEFT_PANEL.y + 52, SELECT_LEFT_PANEL.width - 48, 18), max_lines=1)
-        self._draw_text("다음 경로 선택", self.font_heading, TEXT_PRIMARY, (SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.y + 18))
-        self._draw_text("경로와 노드 조합 3안 중 하나를 골라 다음 전투에 적용하세요", self.font_small, TEXT_LABEL, (SELECT_RIGHT_PANEL.x + 24, SELECT_RIGHT_PANEL.y + 52))
+        self._draw_text_fit("다음 경로 선택", (self.font_heading, self.font_ui, self.font_small), TEXT_PRIMARY, (SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.y + 18), max_width=SELECT_RIGHT_PANEL.width - 44)
+        self._draw_text_fit("경로와 노드 조합 3안 중 하나를 골라 다음 전투에 적용하세요", (self.font_small, self.font_tiny, self.font_micro), TEXT_LABEL, (SELECT_RIGHT_PANEL.x + 24, SELECT_RIGHT_PANEL.y + 52), max_width=SELECT_RIGHT_PANEL.width - 48)
 
         recap = self.last_battle_recap
         overview_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 96, SELECT_LEFT_PANEL.width - 44, 144)
@@ -3577,8 +3591,8 @@ class GameApp:
             pygame.draw.rect(self.screen, ACCENT_BLUE_DEEP, badge_rect, border_radius=RADIUS_CHIP)
             pygame.draw.rect(self.screen, BG_DEEP, badge_rect, 1, border_radius=RADIUS_CHIP)
             self._draw_text(recap.result_label, self.font_small, BG_DEEP, badge_rect.center, center=True)
-            self._draw_text(recap.stage_label, self.font_heading, TEXT_PRIMARY, (overview_rect.x + 18, overview_rect.y + 56))
-            self._draw_text(f"전투 라운드 {recap.rounds}", self.font_small, TEXT_LABEL, (overview_rect.right - 18, overview_rect.y + 60), align_right=True)
+            self._draw_text_fit(recap.stage_label, (self.font_heading, self.font_ui, self.font_small), TEXT_PRIMARY, (overview_rect.x + 18, overview_rect.y + 56), max_width=overview_rect.width - 200)
+            self._draw_text_fit(f"전투 라운드 {recap.rounds}", (self.font_small, self.font_tiny, self.font_micro), TEXT_LABEL, (overview_rect.right - 18, overview_rect.y + 60), max_width=160, align_right=True)
             highlight_rect = pygame.Rect(overview_rect.x + 18, overview_rect.y + 92, overview_rect.width - 36, 18)
             self._draw_wrapped_text(recap.highlight, self.font_small, TEXT_DIM, highlight_rect, max_lines=1)
             if recap.objective_summary:
@@ -3627,7 +3641,7 @@ class GameApp:
         pygame.draw.rect(self.screen, BG_PANEL, stage_rect, border_radius=RADIUS_PANEL)
         pygame.draw.rect(self.screen, ACCENT_GOLD_SOFT, stage_rect, 1, border_radius=RADIUS_PANEL)
         self._draw_text("다음 전투 프리뷰", self.font_ui, TEXT_LABEL, (stage_rect.x + 18, stage_rect.y + 14))
-        self._draw_text(f"{self._current_stage_label()} 준비", self.font_heading, TEXT_PRIMARY, (stage_rect.x + 18, stage_rect.y + 48))
+        self._draw_text_fit(f"{self._current_stage_label()} 준비", (self.font_heading, self.font_ui, self.font_small), TEXT_PRIMARY, (stage_rect.x + 18, stage_rect.y + 48), max_width=stage_rect.width - 36)
         selected_route = self.selected_route_id or self.current_route_id
         selected_node = self.route_node_by_route_id.get(selected_route) if self.selected_route_id else self.current_route_node
         selected_follow_up = self.node_follow_up_by_route_id.get(selected_route) if self.selected_route_id else self.current_node_follow_up
@@ -3774,22 +3788,23 @@ class GameApp:
         self._draw_header("리그 오브 레전드: 리프트 택틱스", "원정 결산", center_text, "선택으로")
         self._draw_panel(SELECT_LEFT_PANEL, ACCENT_BLUE_DEEP)
         self._draw_panel(SELECT_RIGHT_PANEL, accent)
-        self._draw_text("원정 결과", self.font_heading, TEXT_PRIMARY, (SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 18))
-        self._draw_text(
+        self._draw_text_fit("원정 결과", (self.font_heading, self.font_ui, self.font_small), TEXT_PRIMARY, (SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 18), max_width=SELECT_LEFT_PANEL.width - 44)
+        self._draw_text_fit(
             "같은 조합으로 바로 새 런을 시작하거나 챔피언을 다시 고를 수 있습니다.",
-            self.font_small,
+            (self.font_small, self.font_tiny, self.font_micro),
             UI_MUTED,
             (SELECT_LEFT_PANEL.x + 24, SELECT_LEFT_PANEL.y + 52),
+            max_width=SELECT_LEFT_PANEL.width - 48,
         )
-        self._draw_text("전투 타임라인", self.font_heading, TEXT_PRIMARY, (SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.y + 18))
-        self._draw_text("이번 런의 각 전투 기록과 핵심 선택을 한눈에 정리했습니다.", self.font_small, TEXT_LABEL, (SELECT_RIGHT_PANEL.x + 24, SELECT_RIGHT_PANEL.y + 52))
+        self._draw_text_fit("전투 타임라인", (self.font_heading, self.font_ui, self.font_small), TEXT_PRIMARY, (SELECT_RIGHT_PANEL.x + 22, SELECT_RIGHT_PANEL.y + 18), max_width=SELECT_RIGHT_PANEL.width - 44)
+        self._draw_text_fit("이번 런의 각 전투 기록과 핵심 선택을 한눈에 정리했습니다.", (self.font_small, self.font_tiny, self.font_micro), TEXT_LABEL, (SELECT_RIGHT_PANEL.x + 24, SELECT_RIGHT_PANEL.y + 52), max_width=SELECT_RIGHT_PANEL.width - 48)
 
         if summary is None:
             fallback_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 96, SELECT_LEFT_PANEL.width - 44, 200)
             pygame.draw.rect(self.screen, BG_SURFACE, fallback_rect, border_radius=RADIUS_PANEL)
             pygame.draw.rect(self.screen, ACCENT_GOLD_SOFT, fallback_rect, 1, border_radius=RADIUS_PANEL)
-            self._draw_text("결산 정보를 불러오는 중입니다.", self.font_heading, TEXT_PRIMARY, (fallback_rect.x + 18, fallback_rect.y + 26))
-            self._draw_text("Enter로 같은 조합 새 런 · ESC로 선택 화면", self.font_small, TEXT_SECONDARY, (fallback_rect.x + 18, fallback_rect.y + 72))
+            self._draw_text_fit("결산 정보를 불러오는 중입니다.", (self.font_heading, self.font_ui, self.font_small), TEXT_PRIMARY, (fallback_rect.x + 18, fallback_rect.y + 26), max_width=fallback_rect.width - 36)
+            self._draw_text_fit("Enter로 같은 조합 새 런 · ESC로 선택 화면", (self.font_small, self.font_tiny, self.font_micro), TEXT_SECONDARY, (fallback_rect.x + 18, fallback_rect.y + 72), max_width=fallback_rect.width - 36)
             return
 
         result_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 96, SELECT_LEFT_PANEL.width - 44, 150)
@@ -3818,7 +3833,7 @@ class GameApp:
             f"아군 처치 {summary.total_blue_kills} · 적 처치 {summary.total_red_kills}",
         ]
         for index, line in enumerate(stat_lines):
-            self._draw_text(line, self.font_small, TEXT_SECONDARY, (stats_rect.x + 18, stats_rect.y + 42 + index * 20))
+            self._draw_text_fit(line, (self.font_small, self.font_tiny, self.font_micro), TEXT_SECONDARY, (stats_rect.x + 18, stats_rect.y + 42 + index * 20), max_width=stats_rect.width - 36)
 
         build_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 402, SELECT_LEFT_PANEL.width - 44, 120)
         pygame.draw.rect(self.screen, BG_SURFACE, build_rect, border_radius=RADIUS_PANEL)
@@ -3830,7 +3845,7 @@ class GameApp:
         record_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 22, SELECT_LEFT_PANEL.y + 538, SELECT_LEFT_PANEL.width - 44, 150)
         pygame.draw.rect(self.screen, BG_SURFACE, record_rect, border_radius=RADIUS_PANEL)
         pygame.draw.rect(self.screen, ACCENT_GOLD_SOFT, record_rect, 1, border_radius=RADIUS_PANEL)
-        self._draw_text("저장 기록 · 해금 · 다음 추천", self.font_ui, TEXT_LABEL, (record_rect.x + 18, record_rect.y + 14))
+        self._draw_text_fit("저장 기록 · 해금 · 다음 추천", (self.font_ui, self.font_small, self.font_tiny), TEXT_LABEL, (record_rect.x + 18, record_rect.y + 14), max_width=record_rect.width - 36)
         history_lines = (
             [*summary.history_overview_lines[:1], *summary.history_comparison_lines[:1], *summary.unlock_lines[:2]]
             or ["저장 기록 없음"]
@@ -4048,9 +4063,9 @@ class GameApp:
             node_label = f"런 노드 · {self.current_route_node.name}"
             if self.current_node_follow_up is not None:
                 node_label += f" / {self.current_node_follow_up.name}"
-            self._draw_text(node_label, self.font_small, ACCENT_TEAL, (LEFT_PANEL.x + 18, LEFT_PANEL.y + 82))
+            self._draw_text_fit(node_label, (self.font_small, self.font_tiny, self.font_micro), ACCENT_TEAL, (LEFT_PANEL.x + 18, LEFT_PANEL.y + 82), max_width=LEFT_PANEL.width - 36)
         if self.current_route_event is not None:
-            self._draw_text(f"전술 이벤트 · {self.current_route_event.name}", self.font_small, TEXT_LABEL, (LEFT_PANEL.x + 18, LEFT_PANEL.y + 104))
+            self._draw_text_fit(f"전술 이벤트 · {self.current_route_event.name}", (self.font_small, self.font_tiny, self.font_micro), TEXT_LABEL, (LEFT_PANEL.x + 18, LEFT_PANEL.y + 104), max_width=LEFT_PANEL.width - 36)
         self._draw_text("선택한 챔피언", self.font_ui, TEXT_LABEL, (LEFT_PANEL.x + 18, LEFT_PANEL.y + 132))
         self.deploy_roster_rects.clear()
         for index, champion_id in enumerate(self.selected_blue_ids):
@@ -4070,11 +4085,11 @@ class GameApp:
             "5. 배치가 끝나면 전투 시작",
         ]
         for index, line in enumerate(guides):
-            self._draw_text(line, self.font_small, TEXT_SECONDARY, (guide_rect.x + 16, guide_rect.y + 48 + index * 28))
+            self._draw_text_fit(line, (self.font_small, self.font_tiny, self.font_micro), TEXT_SECONDARY, (guide_rect.x + 16, guide_rect.y + 48 + index * 28), max_width=guide_rect.width - 32)
 
     def _draw_deploy_right_panel(self) -> None:
-        self._draw_text("적 시작 위치", self.font_heading, TEXT_PRIMARY, (RIGHT_PANEL.x + 18, RIGHT_PANEL.y + 18))
-        self._draw_text("적은 자동으로 배치되며 순서가 바뀔 수 있습니다", self.font_small, TEXT_LABEL, (RIGHT_PANEL.x + 18, RIGHT_PANEL.y + 52))
+        self._draw_text_fit("적 시작 위치", (self.font_heading, self.font_ui, self.font_small), TEXT_PRIMARY, (RIGHT_PANEL.x + 18, RIGHT_PANEL.y + 18), max_width=RIGHT_PANEL.width - 36)
+        self._draw_text_fit("적은 자동으로 배치되며 순서가 바뀔 수 있습니다", (self.font_small, self.font_tiny, self.font_micro), TEXT_LABEL, (RIGHT_PANEL.x + 18, RIGHT_PANEL.y + 52), max_width=RIGHT_PANEL.width - 36)
         boss_id = self._boss_enemy_id_for_stage()
         boss_profile = self._boss_profile_for_stage()
         finale_variant = self._finale_variant_for_stage()
@@ -4105,15 +4120,15 @@ class GameApp:
         self._draw_button(start_rect, "전투 시작", "deploy-start", radius=RADIUS_CARD, font=self.font_ui)
         self._draw_text("현재 선택", self.font_small, TEXT_LABEL, (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 18))
         champion_name = BLUEPRINTS_BY_ID[self.selected_deploy_champion_id].name if self.selected_deploy_champion_id else "없음"
-        self._draw_text(champion_name, self.font_heading, TEXT_PRIMARY, (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 38))
+        self._draw_text_fit(champion_name, (self.font_heading, self.font_ui, self.font_small), TEXT_PRIMARY, (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 38), max_width=BOTTOM_PANEL.width - 340)
         deploy_preview_objective = self._preview_battle_objective()
         combined_node_effect = self._node_effect_preview_label(self.current_route_node, self.current_node_follow_up)
         if self.current_route_node is not None:
-            self._draw_text(f"노드 · {self.current_route_node.name}", self.font_tiny, ACCENT_TEAL, (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 46))
+            self._draw_text_fit(f"노드 · {self.current_route_node.name}", (self.font_tiny, self.font_micro), ACCENT_TEAL, (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 46), max_width=BOTTOM_PANEL.width - 340)
         elif self.current_route_event is not None:
-            self._draw_text(f"이벤트 · {self._route_event_effect_label(self.current_route_event, self.current_route_node)}", self.font_tiny, ACCENT_TEAL, (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 46))
+            self._draw_text_fit(f"이벤트 · {self._route_event_effect_label(self.current_route_event, self.current_route_node)}", (self.font_tiny, self.font_micro), ACCENT_TEAL, (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 46), max_width=BOTTOM_PANEL.width - 340)
         else:
-            self._draw_text("파란 시작 칸을 눌러 위치를 바꾸세요", self.font_small, TEXT_SECONDARY, (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 46))
+            self._draw_text_fit("파란 시작 칸을 눌러 위치를 바꾸세요", (self.font_small, self.font_tiny, self.font_micro), TEXT_SECONDARY, (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 46), max_width=BOTTOM_PANEL.width - 340)
         penalty_line = (
             f"적용 페널티 · {self.active_stage_penalty.description}"
             if self.active_stage_penalty is not None
@@ -4132,7 +4147,8 @@ class GameApp:
             )
         )
         penalty_color = ACCENT_RED if self.active_stage_penalty is not None else ACCENT_BLUE
-        self._draw_text(penalty_line, self.font_tiny if self.active_stage_penalty is not None else self.font_small, penalty_color, (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 68))
+        penalty_fonts = (self.font_tiny, self.font_micro) if self.active_stage_penalty is not None else (self.font_small, self.font_tiny, self.font_micro)
+        self._draw_text_fit(penalty_line, penalty_fonts, penalty_color, (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 68), max_width=BOTTOM_PANEL.width - 340)
 
     def _draw_battle_screen(self) -> None:
         self._draw_header("리그 오브 레전드: 리프트 택틱스", "원정 진행 중", f"{self._current_stage_label()} · {self.run_stage}/{RUN_STAGE_COUNT} · 8x6 전술 전투", "R 리셋")
@@ -4562,12 +4578,12 @@ class GameApp:
         pygame.draw.rect(self.screen, (*accent, 110), nameplate_rect, 1, border_radius=RADIUS_CHIP)
         name_color = TEXT_PRIMARY if unit.hp > 0 else (198, 176, 176)
         label = unit.name if unit.hp > 0 else f"{unit.name} DOWN"
-        self._draw_text(label, self.font_small, name_color, nameplate_rect.center, center=True)
+        self._draw_text_fit(label, (self.font_small, self.font_tiny, self.font_micro), name_color, nameplate_rect.center, max_width=nameplate_rect.width - 6, center=True)
 
     def _draw_battle_left_panel(self) -> None:
         active = self.controller.get_active_unit() if self.controller else None
         intent = self.controller.preview_ai_intent() if self.controller and active and active.team == "red" else None
-        self._draw_text("전술 브리핑", self.font_heading, TEXT_PRIMARY, (LEFT_PANEL.x + 18, LEFT_PANEL.y + 18))
+        self._draw_text_fit("전술 브리핑", (self.font_heading, self.font_ui, self.font_small), TEXT_PRIMARY, (LEFT_PANEL.x + 18, LEFT_PANEL.y + 18), max_width=LEFT_PANEL.width - 36)
         status_rect = pygame.Rect(LEFT_PANEL.x + 16, LEFT_PANEL.y + 46, LEFT_PANEL.width - 32, 58)
         self._draw_battle_card(status_rect, ACCENT_BLUE_DEEP)
         self._draw_wrapped_text(self.status_text, self.font_small, UI_MUTED, pygame.Rect(status_rect.x + 12, status_rect.y + 11, status_rect.width - 24, 38), max_lines=2)
@@ -5598,8 +5614,8 @@ class GameApp:
         pygame.draw.rect(banner, ACCENT_GOLD_PALE, banner.get_rect(), 1, border_radius=RADIUS_PANEL)
         banner.set_alpha(alpha)
         self.screen.blit(banner, banner_rect.topleft)
-        self._draw_text(self.finale_banner_title, self.font_heading, ACCENT_GOLD_PALE, (banner_rect.centerx, banner_rect.y + 16), center=True)
-        self._draw_text(self.finale_banner_subtitle, self.font_small, (223, 231, 238), (banner_rect.centerx, banner_rect.y + 48), center=True)
+        self._draw_text_fit(self.finale_banner_title, (self.font_heading, self.font_ui, self.font_small), ACCENT_GOLD_PALE, (banner_rect.centerx, banner_rect.y + 16), max_width=banner_rect.width - 40, center=True)
+        self._draw_text_fit(self.finale_banner_subtitle, (self.font_small, self.font_tiny, self.font_micro), (223, 231, 238), (banner_rect.centerx, banner_rect.y + 48), max_width=banner_rect.width - 40, center=True)
 
     def _draw_battle_intro(self) -> None:
         if self.screen_mode != "battle" or self.battle_intro_card is None:
@@ -5704,13 +5720,13 @@ class GameApp:
             return
 
         shade = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
-        shade.fill((6, 12, 20, 158))
+        shade.fill((6, 12, 20, 220))
         self.screen.blit(shade, (0, 0))
 
         card_rect = pygame.Rect(WINDOW_WIDTH // 2 - 350, WINDOW_HEIGHT // 2 - 170, 700, 300)
         panel = pygame.Surface(card_rect.size, pygame.SRCALPHA)
         draw_vertical_gradient(panel, panel.get_rect(), BG_SURFACE, BG_ELEVATED)
-        pygame.draw.rect(panel, (74, 157, 214, 28), panel.get_rect(), border_radius=RADIUS_PANEL)
+        pygame.draw.rect(panel, (74, 157, 214, 50), panel.get_rect(), border_radius=RADIUS_PANEL)
         pygame.draw.rect(panel, ACCENT_GOLD_SOFT, panel.get_rect(), 1, border_radius=RADIUS_PANEL)
         self.screen.blit(panel, card_rect.topleft)
 
@@ -5741,18 +5757,18 @@ class GameApp:
             return
 
         shade = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
-        shade.fill((6, 12, 20, 164))
+        shade.fill((6, 12, 20, 220))
         self.screen.blit(shade, (0, 0))
 
         card_rect = pygame.Rect(WINDOW_WIDTH // 2 - 350, WINDOW_HEIGHT // 2 - 170, 700, 316)
         panel = pygame.Surface(card_rect.size, pygame.SRCALPHA)
         draw_vertical_gradient(panel, panel.get_rect(), BG_SURFACE, BG_ELEVATED)
-        pygame.draw.rect(panel, (74, 157, 214, 24), panel.get_rect(), border_radius=RADIUS_PANEL)
+        pygame.draw.rect(panel, (74, 157, 214, 50), panel.get_rect(), border_radius=RADIUS_PANEL)
         pygame.draw.rect(panel, ACCENT_GOLD_SOFT, panel.get_rect(), 1, border_radius=RADIUS_PANEL)
         self.screen.blit(panel, card_rect.topleft)
 
         self._draw_text("설정", self.font_title, ACCENT_GOLD_PALE, (card_rect.x + 24, card_rect.y + 26))
-        self._draw_text("볼륨과 전투 흐름, 키 안내를 여기서 확인할 수 있습니다.", self.font_small, TEXT_SECONDARY, (card_rect.x + 24, card_rect.y + 78))
+        self._draw_text_fit("볼륨과 전투 흐름, 키 안내를 여기서 확인할 수 있습니다.", (self.font_small, self.font_tiny, self.font_micro), TEXT_SECONDARY, (card_rect.x + 24, card_rect.y + 78), max_width=card_rect.width - 48)
 
         option_specs = [
             SettingsOption("마스터 볼륨", f"{int(self.history_store.master_volume * 100)}%", "settings-master", "settings-master-down", "settings-master-up"),
@@ -5764,7 +5780,7 @@ class GameApp:
             row_rect = pygame.Rect(card_rect.x + 24, card_rect.y + 112 + index * 48, 352, 38)
             pygame.draw.rect(self.screen, BG_ELEVATED, row_rect, border_radius=RADIUS_CHIP)
             pygame.draw.rect(self.screen, ACCENT_GOLD_SOFT, row_rect, 1, border_radius=RADIUS_CHIP)
-            self._draw_text(option.label, self.font_small, TEXT_LABEL, (row_rect.x + 14, row_rect.y + 8))
+            self._draw_text_fit(option.label, (self.font_small, self.font_tiny, self.font_micro), TEXT_LABEL, (row_rect.x + 14, row_rect.y + 8), max_width=row_rect.width - 220)
             value_rect = pygame.Rect(row_rect.right - 138, row_rect.y + 6, 64, 26)
             pygame.draw.rect(self.screen, (24, 42, 58), value_rect, border_radius=RADIUS_CHIP)
             pygame.draw.rect(self.screen, ACCENT_BLUE, value_rect, 1, border_radius=RADIUS_CHIP)
@@ -5799,7 +5815,7 @@ class GameApp:
             "좌/우 또는 +/- 볼륨",
         )
         for index, line in enumerate(guide_lines):
-            self._draw_text(line, self.font_tiny, TEXT_SECONDARY, (guide_rect.x + 16, guide_rect.y + 42 + index * 18))
+            self._draw_text_fit(line, (self.font_tiny, self.font_micro), TEXT_SECONDARY, (guide_rect.x + 16, guide_rect.y + 42 + index * 18), max_width=guide_rect.width - 32)
 
         tutorial_rect = pygame.Rect(card_rect.x + 400, card_rect.y + 264, 180, 34)
         close_rect = pygame.Rect(card_rect.right - 122, card_rect.y + 264, 98, 34)
@@ -5810,7 +5826,7 @@ class GameApp:
         if self.controller is None or not self.controller.state.winner:
             return
         overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
-        overlay.fill((5, 8, 13, 180))
+        overlay.fill((5, 8, 13, 220))
         self.screen.blit(overlay, (0, 0))
         if self.controller.state.winner == "blue":
             if self.run_stage == RUN_STAGE_COUNT:
@@ -5825,10 +5841,10 @@ class GameApp:
             title = "원정 실패"
             subtitle = "같은 전투에 다시 도전하거나 챔피언 선택으로 돌아갈 수 있습니다."
             rematch_label = "같은 전투 재도전"
-        self._draw_text(title, self.font_title, ACCENT_GOLD_PALE, (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 62), center=True)
-        self._draw_text(subtitle, self.font_ui, TEXT_SECONDARY, (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 4), center=True)
+        self._draw_text_fit(title, (self.font_title, self.font_heading, self.font_ui), ACCENT_GOLD_PALE, (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 62), max_width=WINDOW_WIDTH - 200, center=True)
+        self._draw_text_fit(subtitle, (self.font_ui, self.font_small, self.font_tiny), TEXT_SECONDARY, (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 4), max_width=WINDOW_WIDTH - 200, center=True)
         if self.run_stage == RUN_STAGE_COUNT and self.last_objective_summary:
-            self._draw_text(self.last_objective_summary, self.font_small, ACCENT_GOLD_WARM, (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 22), center=True)
+            self._draw_text_fit(self.last_objective_summary, (self.font_small, self.font_tiny, self.font_micro), ACCENT_GOLD_WARM, (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 22), max_width=WINDOW_WIDTH - 200, center=True)
 
         button_y = WINDOW_HEIGHT // 2 + 58 if self.run_stage == RUN_STAGE_COUNT and self.last_objective_summary else WINDOW_HEIGHT // 2 + 44
         rematch_rect = pygame.Rect(WINDOW_WIDTH // 2 - 238, button_y, 220, 56)
@@ -5842,13 +5858,13 @@ class GameApp:
             shortcut_line = "Enter로 다음 단계 · R로 재대결 · ESC로 원정 포기"
         else:
             shortcut_line = "Enter로 선택 화면 · R로 즉시 재대결"
-        self._draw_text(shortcut_line, self.font_small, TEXT_SECONDARY, (WINDOW_WIDTH // 2, button_y + 72), center=True)
+        self._draw_text_fit(shortcut_line, (self.font_small, self.font_tiny, self.font_micro), TEXT_SECONDARY, (WINDOW_WIDTH // 2, button_y + 72), max_width=WINDOW_WIDTH - 200, center=True)
 
     def _draw_confirm_dialog(self) -> None:
         if not self.confirm_dialog_visible:
             return
         overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
-        overlay.fill((5, 8, 13, 200))
+        overlay.fill((5, 8, 13, 220))
         self.screen.blit(overlay, (0, 0))
 
         if self.confirm_dialog_action == "quit":
@@ -5858,9 +5874,9 @@ class GameApp:
             title = "원정을 포기하시겠습니까?"
             subtitle = "모든 진행이 초기화됩니다."
 
-        self._draw_text(title, self.font_heading, ACCENT_GOLD_PALE, (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 48), center=True)
+        self._draw_text_fit(title, (self.font_heading, self.font_ui, self.font_small), ACCENT_GOLD_PALE, (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 48), max_width=WINDOW_WIDTH - 200, center=True)
         if subtitle:
-            self._draw_text(subtitle, self.font_small, TEXT_DIM, (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 16), center=True)
+            self._draw_text_fit(subtitle, (self.font_small, self.font_tiny, self.font_micro), TEXT_DIM, (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 16), max_width=WINDOW_WIDTH - 200, center=True)
 
         btn_y = WINDOW_HEIGHT // 2 + 20
         yes_rect = pygame.Rect(WINDOW_WIDTH // 2 - 228, btn_y, 200, 52)
@@ -5905,6 +5921,11 @@ class GameApp:
         if is_hovered and enabled:
             fill = tuple(min(c + 20, 255) for c in fill)
 
+        is_pressed = self.pressed_button == key
+        if is_pressed and enabled:
+            fill = tuple(max(c - 40, 0) for c in fill)
+            border = tuple(min(c + 30, 255) for c in border)
+
         pygame.draw.rect(self.screen, fill, rect, border_radius=radius)
         pygame.draw.rect(self.screen, border, rect, 2, border_radius=radius)
         if fit_fonts is not None:
@@ -5944,17 +5965,22 @@ class GameApp:
     def _draw_hover_overlay(self) -> None:
         if self.confirm_dialog_visible or self.settings_overlay_visible or self.help_overlay_visible:
             return
-        if self.hovered_button is None:
-            return
-        rect = self.button_rects.get(self.hovered_button)
-        if rect is None:
-            return
-        overlay = pygame.Surface(rect.size, pygame.SRCALPHA)
-        overlay.fill((255, 255, 255, 35))
-        self.screen.blit(overlay, rect.topleft)
-        glow_rect = rect.inflate(4, 4)
-        glow_radius = self.button_radii.get(self.hovered_button, RADIUS_CHIP)
-        pygame.draw.rect(self.screen, (*ACCENT_GOLD_PALE, 60), glow_rect, 2, border_radius=glow_radius)
+        if self.hovered_button is not None:
+            rect = self.button_rects.get(self.hovered_button)
+            if rect is not None:
+                overlay = pygame.Surface(rect.size, pygame.SRCALPHA)
+                overlay.fill((255, 255, 255, 35))
+                self.screen.blit(overlay, rect.topleft)
+                glow_rect = rect.inflate(4, 4)
+                glow_radius = self.button_radii.get(self.hovered_button, RADIUS_CHIP)
+                pygame.draw.rect(self.screen, (*ACCENT_GOLD_PALE, 60), glow_rect, 2, border_radius=glow_radius)
+        if self.pressed_button is not None and self.pressed_button_timer > 0:
+            pressed_rect = self.button_rects.get(self.pressed_button)
+            if pressed_rect is not None:
+                flash_alpha = int(self.pressed_button_timer / 0.12 * 80)
+                flash = pygame.Surface(pressed_rect.size, pygame.SRCALPHA)
+                flash.fill((255, 255, 255, flash_alpha))
+                self.screen.blit(flash, pressed_rect.topleft)
 
     def _draw_terrain_legend(self) -> None:
         if self.screen_mode not in {"deploy", "battle"}:
