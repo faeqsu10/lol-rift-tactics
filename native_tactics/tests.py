@@ -1619,6 +1619,14 @@ class GameAppFlowTests(unittest.TestCase):
 
         app._handle_keydown(pygame.K_ESCAPE)
 
+        # ESC now shows confirm dialog first
+        self.assertTrue(app.confirm_dialog_visible)
+        self.assertEqual(app.confirm_dialog_action, "abandon")
+        self.assertEqual(app.screen_mode, "deploy")
+
+        # Confirm via Enter to actually return to select
+        app._handle_keydown(pygame.K_RETURN)
+        self.assertFalse(app.confirm_dialog_visible)
         self.assertEqual(app.screen_mode, "select")
         self.assertEqual(app.run_stage, 1)
         self.assertIsNone(app.current_route_id)
@@ -1654,6 +1662,14 @@ class GameAppFlowTests(unittest.TestCase):
 
         app._handle_click(app.button_rects["header-action"].center)
 
+        # Header action now shows confirm dialog first
+        self.assertTrue(app.confirm_dialog_visible)
+        self.assertEqual(app.confirm_dialog_action, "abandon")
+        self.assertEqual(app.screen_mode, "deploy")
+
+        # Confirm via Enter to actually return to select
+        app._handle_keydown(pygame.K_RETURN)
+        self.assertFalse(app.confirm_dialog_visible)
         self.assertEqual(app.screen_mode, "select")
         self.assertEqual(app.run_stage, 1)
         self.assertIsNone(app.current_route_id)

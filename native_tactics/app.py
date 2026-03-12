@@ -859,6 +859,9 @@ class GameApp:
         self.help_overlay_visible = False
         self.help_overlay_source: Literal["auto", "manual"] | None = None
         self.settings_overlay_visible = False
+        self.confirm_dialog_visible = False
+        self.confirm_dialog_action: str | None = None  # "quit" or "abandon"
+        self.hovered_button: str | None = None
         self.selected_difficulty_id = self.history_store.difficulty_id if self.history_store.difficulty_id in DIFFICULTY_LABEL_BY_ID else "standard"
         self.active_difficulty_id = self.selected_difficulty_id
         self.audio.set_master_volume(self.history_store.master_volume)
@@ -951,6 +954,28 @@ class GameApp:
             "route": 4,
             "summary": 5,
         }.get(self.screen_mode)
+
+    def _show_confirm_dialog(self, action: str) -> None:
+        self.confirm_dialog_visible = True
+        self.confirm_dialog_action = action
+
+    def _confirm_dialog_accept(self) -> None:
+        action = self.confirm_dialog_action
+        self.confirm_dialog_visible = False
+        self.confirm_dialog_action = None
+        if action == "quit":
+            self.running = False
+        elif action == "abandon":
+            self._return_to_select()
+
+    def _handle_confirm_dialog_click(self, position: tuple[int, int]) -> None:
+        confirm_btn = self.button_rects.get("confirm-yes")
+        cancel_btn = self.button_rects.get("confirm-no")
+        if confirm_btn and confirm_btn.collidepoint(position):
+            self._confirm_dialog_accept()
+        elif cancel_btn and cancel_btn.collidepoint(position):
+            self.confirm_dialog_visible = False
+            self.confirm_dialog_action = None
 
     def _toggle_settings_overlay(self) -> None:
         if self.screen_mode == "battle" and self.battle_intro_card is not None:
@@ -2299,8 +2324,27 @@ class GameApp:
                 self._handle_keydown(event.key)
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 self._handle_click(event.pos)
+            elif event.type == pygame.MOUSEMOTION:
+                self._handle_mouse_move(event.pos)
+
+    def _handle_mouse_move(self, position: tuple[int, int]) -> None:
+        hit: str | None = None
+        for key, rect in self.button_rects.items():
+            if rect.collidepoint(position):
+                hit = key
+                break
+        if hit != self.hovered_button:
+            self.hovered_button = hit
 
     def _handle_keydown(self, key: int) -> None:
+        if self.confirm_dialog_visible:
+            if key == pygame.K_RETURN:
+                self._confirm_dialog_accept()
+            elif key == pygame.K_ESCAPE:
+                self.confirm_dialog_visible = False
+                self.confirm_dialog_action = None
+            return
+
         if self.settings_overlay_visible:
             if key in {pygame.K_ESCAPE, pygame.K_F10}:
                 self.settings_overlay_visible = False
@@ -2330,15 +2374,13 @@ class GameApp:
                 self._start_run_with_current_lineup()
                 return
             if key == pygame.K_ESCAPE:
+                # summary는 런 종료 후 자연 정지점이므로 확인 없이 바로 복귀
                 self._return_to_select()
                 return
 
         if self.screen_mode == "route":
             if key in {pygame.K_ESCAPE}:
-                self._return_to_select()
-                return
-            if key == pygame.K_r:
-                self._return_to_select()
+                self._show_confirm_dialog("abandon")
                 return
             if key in {pygame.K_RETURN, pygame.K_SPACE}:
                 self._advance_after_route()
@@ -2346,10 +2388,7 @@ class GameApp:
 
         if self.screen_mode == "reward":
             if key in {pygame.K_ESCAPE}:
-                self._return_to_select()
-                return
-            if key == pygame.K_r:
-                self._return_to_select()
+                self._show_confirm_dialog("abandon")
                 return
             if key in {pygame.K_RETURN, pygame.K_SPACE}:
                 self._advance_after_reward()
@@ -2361,6 +2400,8 @@ class GameApp:
             if key in {pygame.K_RETURN, pygame.K_SPACE}:
                 if self.controller.state.winner == "blue" and self.run_stage == RUN_STAGE_COUNT:
                     self._start_run_with_current_lineup()
+                elif self.controller.state.winner == "blue":
+                    self._prepare_reward_phase()
                 else:
                     self._return_to_select()
                 return
@@ -2371,14 +2412,14 @@ class GameApp:
                     self._reset_battle()
                 return
             if key == pygame.K_ESCAPE:
-                self._return_to_select()
+                self._show_confirm_dialog("abandon")
                 return
 
         if key == pygame.K_ESCAPE:
-            if self.screen_mode == "battle":
-                self._return_to_select()
-            elif self.screen_mode == "deploy":
-                self._return_to_select()
+            if self.screen_mode in {"battle", "deploy"}:
+                self._show_confirm_dialog("abandon")
+            elif self.screen_mode == "select":
+                self._show_confirm_dialog("quit")
             else:
                 self.running = False
             return
@@ -2413,6 +2454,9 @@ class GameApp:
             self._end_turn()
 
     def _handle_click(self, position: tuple[int, int]) -> None:
+        if self.confirm_dialog_visible:
+            self._handle_confirm_dialog_click(position)
+            return
         if self.settings_overlay_visible:
             self._handle_settings_click(position)
             return
@@ -2428,16 +2472,12 @@ class GameApp:
         if header_action and header_action.collidepoint(position):
             if self.screen_mode == "battle":
                 self._reset_battle()
-            elif self.screen_mode == "route":
-                self._return_to_select()
-            elif self.screen_mode == "reward":
-                self._return_to_select()
+            elif self.screen_mode in {"route", "reward", "deploy"}:
+                self._show_confirm_dialog("abandon")
             elif self.screen_mode == "summary":
                 self._return_to_select()
-            elif self.screen_mode == "deploy":
-                self._return_to_select()
             else:
-                self.running = False
+                self._show_confirm_dialog("quit")
             return
 
         if self.screen_mode == "select":
@@ -2584,6 +2624,8 @@ class GameApp:
             if rematch_rect and rematch_rect.collidepoint(position):
                 if controller.state.winner == "blue" and self.run_stage == RUN_STAGE_COUNT:
                     self._start_run_with_current_lineup()
+                elif controller.state.winner == "blue":
+                    self._prepare_reward_phase()
                 else:
                     self._reset_battle()
                 return
@@ -2982,10 +3024,13 @@ class GameApp:
         else:
             self._draw_battle_screen()
         self._draw_flow_breadcrumb()
+        self._draw_terrain_legend()
+        self._draw_hover_overlay()
         self._draw_finale_banner()
         self._draw_battle_intro()
         self._draw_help_overlay()
         self._draw_settings_overlay()
+        self._draw_confirm_dialog()
 
     def _draw_flow_breadcrumb(self) -> None:
         step_index = self._flow_step_index()
@@ -5751,9 +5796,14 @@ class GameApp:
         overlay.fill((5, 8, 13, 180))
         self.screen.blit(overlay, (0, 0))
         if self.controller.state.winner == "blue":
-            title = "원정 성공" if self.run_stage == RUN_STAGE_COUNT else "블루 팀 승리"
-            subtitle = "같은 조합으로 새 런을 시작하거나 챔피언 선택으로 돌아갈 수 있습니다." if self.run_stage == RUN_STAGE_COUNT else "다음 행동을 선택하세요."
-            rematch_label = "같은 조합 새 런" if self.run_stage == RUN_STAGE_COUNT else "같은 전투 재도전"
+            if self.run_stage == RUN_STAGE_COUNT:
+                title = "원정 성공"
+                subtitle = "같은 조합으로 새 런을 시작하거나 챔피언 선택으로 돌아갈 수 있습니다."
+                rematch_label = "같은 조합 새 런"
+            else:
+                title = "블루 팀 승리"
+                subtitle = "보상을 선택하고 다음 전투로 진행합니다."
+                rematch_label = "다음 단계로"
         else:
             title = "원정 실패"
             subtitle = "같은 전투에 다시 도전하거나 챔피언 선택으로 돌아갈 수 있습니다."
@@ -5777,8 +5827,79 @@ class GameApp:
         pygame.draw.rect(self.screen, (255, 244, 217), select_rect, 1, border_radius=18)
         self._draw_text("캐릭터 다시 선택", self.font_ui, (13, 21, 31), select_rect.center, center=True)
 
-        shortcut_line = "Enter 또는 ESC로 선택 화면 복귀 · R로 즉시 새 런" if self.controller.state.winner == "blue" and self.run_stage == RUN_STAGE_COUNT else "Enter 또는 ESC로 선택 화면 복귀 · R로 즉시 재대결"
+        if self.controller.state.winner == "blue" and self.run_stage == RUN_STAGE_COUNT:
+            shortcut_line = "Enter로 새 런 · ESC로 선택 화면 · R로 즉시 새 런"
+        elif self.controller.state.winner == "blue":
+            shortcut_line = "Enter로 다음 단계 · R로 재대결 · ESC로 원정 포기"
+        else:
+            shortcut_line = "Enter로 선택 화면 · R로 즉시 재대결"
         self._draw_text(shortcut_line, self.font_small, (208, 219, 226), (WINDOW_WIDTH // 2, button_y + 72), center=True)
+
+    def _draw_confirm_dialog(self) -> None:
+        if not self.confirm_dialog_visible:
+            return
+        overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((5, 8, 13, 200))
+        self.screen.blit(overlay, (0, 0))
+
+        if self.confirm_dialog_action == "quit":
+            title = "게임을 종료하시겠습니까?"
+            subtitle = ""
+        else:
+            title = "원정을 포기하시겠습니까?"
+            subtitle = "모든 진행이 초기화됩니다."
+
+        self._draw_text(title, self.font_heading, ACCENT_GOLD_PALE, (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 48), center=True)
+        if subtitle:
+            self._draw_text(subtitle, self.font_small, TEXT_DIM, (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 16), center=True)
+
+        btn_y = WINDOW_HEIGHT // 2 + 20
+        yes_rect = pygame.Rect(WINDOW_WIDTH // 2 - 228, btn_y, 200, 52)
+        no_rect = pygame.Rect(WINDOW_WIDTH // 2 + 28, btn_y, 200, 52)
+        self.button_rects["confirm-yes"] = yes_rect
+        self.button_rects["confirm-no"] = no_rect
+
+        pygame.draw.rect(self.screen, ACCENT_RED, yes_rect, border_radius=16)
+        pygame.draw.rect(self.screen, ACCENT_GOLD_PALE, yes_rect, 1, border_radius=16)
+        self._draw_text("확인", self.font_ui, ACCENT_GOLD_PALE, yes_rect.center, center=True)
+
+        pygame.draw.rect(self.screen, UI_DISABLED, no_rect, border_radius=16)
+        pygame.draw.rect(self.screen, ACCENT_GOLD_PALE, no_rect, 1, border_radius=16)
+        self._draw_text("취소", self.font_ui, (231, 236, 240), no_rect.center, center=True)
+
+        self._draw_text("Enter 확인 · ESC 취소", self.font_tiny, TEXT_DIM, (WINDOW_WIDTH // 2, btn_y + 70), center=True)
+
+    def _draw_hover_overlay(self) -> None:
+        if self.hovered_button is None:
+            return
+        if self.confirm_dialog_visible or self.settings_overlay_visible or self.help_overlay_visible:
+            return
+        rect = self.button_rects.get(self.hovered_button)
+        if rect is None:
+            return
+        hover_surf = pygame.Surface(rect.size, pygame.SRCALPHA)
+        hover_surf.fill((255, 255, 255, 28))
+        self.screen.blit(hover_surf, rect.topleft)
+
+    def _draw_terrain_legend(self) -> None:
+        if self.screen_mode not in {"deploy", "battle"}:
+            return
+        legend_x = GRID_RECT.right - 234
+        legend_y = GRID_RECT.bottom + 6
+        legend_rect = pygame.Rect(legend_x, legend_y, 234, 24)
+        legend_surf = pygame.Surface(legend_rect.size, pygame.SRCALPHA)
+        legend_surf.fill((10, 18, 29, 200))
+        self.screen.blit(legend_surf, legend_rect.topleft)
+        items = [
+            ((88, 176, 118), "수풀 보호막"),
+            ((148, 118, 208), "룬 피해+3"),
+            ((224, 142, 78), "화염 이동피해"),
+        ]
+        x = legend_x + 6
+        for color, label in items:
+            pygame.draw.rect(self.screen, color, (x, legend_y + 6, 12, 12), border_radius=3)
+            self._draw_text(label, self.font_micro, (200, 215, 225), (x + 16, legend_y + 4))
+            x += 76
 
     def _tile_center(self, tile: tuple[int, int]) -> tuple[int, int]:
         return (
