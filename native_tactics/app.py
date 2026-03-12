@@ -783,6 +783,7 @@ class GameApp:
         else:
             self._display = pygame.display.set_mode(self._window_size)
         self.screen = pygame.Surface((DESIGN_WIDTH, DESIGN_HEIGHT))
+        self._scratch_alpha = pygame.Surface((DESIGN_WIDTH, DESIGN_HEIGHT), pygame.SRCALPHA)
         self.clock = pygame.time.Clock()
         self.running = True
         self.headless = headless
@@ -874,6 +875,7 @@ class GameApp:
 
         self.tile_rects: dict[tuple[int, int], pygame.Rect] = {}
         self.button_rects: dict[str, pygame.Rect] = {}
+        self.button_radii: dict[str, int] = {}
         self.selection_card_rects: dict[str, pygame.Rect] = {}
         self.selection_slot_rects: list[pygame.Rect] = []
         self.doctrine_card_rects: dict[str, pygame.Rect] = {}
@@ -3068,6 +3070,7 @@ class GameApp:
     def _draw(self) -> None:
         self.screen.blit(self.background_cache, (0, 0))
         self.button_rects.clear()
+        self.button_radii.clear()
         self.tile_rects.clear()
         self.reward_card_rects.clear()
         self.route_card_rects.clear()
@@ -4294,11 +4297,11 @@ class GameApp:
     def _draw_battle_rings(self) -> None:
         for ring in self.battle_rings:
             progress = clamp(ring.lifetime / max(ring.duration, 0.001), 0.0, 1.0)
-            surface = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+            self._scratch_alpha.fill((0, 0, 0, 0))
             alpha = int(140 * progress)
-            pygame.draw.circle(surface, (*ring.color, alpha), (int(ring.center[0]), int(ring.center[1])), int(ring.radius), ring.width)
-            pygame.draw.circle(surface, (*mix(ring.color, ACCENT_GOLD_PALE, 0.45), min(255, alpha + 40)), (int(ring.center[0]), int(ring.center[1])), max(8, int(ring.radius * 0.55)), 1)
-            self.screen.blit(surface, (0, 0))
+            pygame.draw.circle(self._scratch_alpha, (*ring.color, alpha), (int(ring.center[0]), int(ring.center[1])), int(ring.radius), ring.width)
+            pygame.draw.circle(self._scratch_alpha, (*mix(ring.color, ACCENT_GOLD_PALE, 0.45), min(255, alpha + 40)), (int(ring.center[0]), int(ring.center[1])), max(8, int(ring.radius * 0.55)), 1)
+            self.screen.blit(self._scratch_alpha, (0, 0))
 
     def _draw_battle_trails(self) -> None:
         for trail in self.battle_trails:
@@ -4306,19 +4309,19 @@ class GameApp:
             start = pygame.Vector2(trail.start)
             end = pygame.Vector2(trail.end)
             current = start.lerp(end, progress)
-            surface = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
-            pygame.draw.line(surface, (*trail.color, 66), start, current, trail.width + 8)
-            pygame.draw.line(surface, (*mix(trail.color, ACCENT_GOLD_PALE, 0.35), 220), start, current, trail.width)
+            self._scratch_alpha.fill((0, 0, 0, 0))
+            pygame.draw.line(self._scratch_alpha, (*trail.color, 66), start, current, trail.width + 8)
+            pygame.draw.line(self._scratch_alpha, (*mix(trail.color, ACCENT_GOLD_PALE, 0.35), 220), start, current, trail.width)
             if trail.style == "orb":
-                pygame.draw.circle(surface, (*trail.color, 230), (int(current.x), int(current.y)), trail.width + 4)
-                pygame.draw.circle(surface, (*mix(trail.color, ACCENT_GOLD_PALE, 0.45), 255), (int(current.x), int(current.y)), max(3, trail.width // 2))
+                pygame.draw.circle(self._scratch_alpha, (*trail.color, 230), (int(current.x), int(current.y)), trail.width + 4)
+                pygame.draw.circle(self._scratch_alpha, (*mix(trail.color, ACCENT_GOLD_PALE, 0.45), 255), (int(current.x), int(current.y)), max(3, trail.width // 2))
             elif trail.style == "slash":
                 slash_rect = pygame.Rect(0, 0, trail.width * 4, trail.width * 2)
                 slash_rect.center = (int(current.x), int(current.y))
-                pygame.draw.ellipse(surface, (*trail.color, 220), slash_rect)
+                pygame.draw.ellipse(self._scratch_alpha, (*trail.color, 220), slash_rect)
             else:
-                pygame.draw.circle(surface, (*mix(trail.color, ACCENT_GOLD_PALE, 0.3), 255), (int(current.x), int(current.y)), max(4, trail.width))
-            self.screen.blit(surface, (0, 0))
+                pygame.draw.circle(self._scratch_alpha, (*mix(trail.color, ACCENT_GOLD_PALE, 0.3), 255), (int(current.x), int(current.y)), max(4, trail.width))
+            self.screen.blit(self._scratch_alpha, (0, 0))
 
     def _attack_afterimage_offsets(self, vector: tuple[float, float], amount: float) -> list[tuple[int, int, int]]:
         amount = clamp(amount, 0.0, 1.0)
@@ -5910,6 +5913,7 @@ class GameApp:
             use_font = font if font is not None else self.font_small
             self._draw_text(label, use_font, text_color, rect.center, center=True)
         self.button_rects[key] = rect
+        self.button_radii[key] = radius
 
     def _start_transition(self, target_mode: str | None = None) -> None:
         """Start a fade transition visual effect.
@@ -5949,7 +5953,8 @@ class GameApp:
         overlay.fill((255, 255, 255, 35))
         self.screen.blit(overlay, rect.topleft)
         glow_rect = rect.inflate(4, 4)
-        pygame.draw.rect(self.screen, (*ACCENT_GOLD_PALE, 60), glow_rect, 2, border_radius=RADIUS_CHIP)
+        glow_radius = self.button_radii.get(self.hovered_button, RADIUS_CHIP)
+        pygame.draw.rect(self.screen, (*ACCENT_GOLD_PALE, 60), glow_rect, 2, border_radius=glow_radius)
 
     def _draw_terrain_legend(self) -> None:
         if self.screen_mode not in {"deploy", "battle"}:
