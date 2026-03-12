@@ -5946,6 +5946,8 @@ class GameApp:
         """
         self._transition_alpha = 255
         self._transition_target_mode = target_mode
+        self.pressed_button = None
+        self.pressed_button_timer = 0.0
 
     def _update_transition(self, dt: float) -> None:
         """Update transition fade."""
