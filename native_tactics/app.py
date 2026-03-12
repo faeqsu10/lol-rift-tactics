@@ -37,17 +37,20 @@ from .engine import TacticsController
 from .history import DoctrineStatus
 from .history import RunHistoryStore
 
-WINDOW_WIDTH = 1600
-WINDOW_HEIGHT = 960
+DESIGN_WIDTH = 1920
+DESIGN_HEIGHT = 1080
+# Keep these aliases for backward compat in the file
+WINDOW_WIDTH = DESIGN_WIDTH
+WINDOW_HEIGHT = DESIGN_HEIGHT
 GRID_CELL = 100
-GRID_ORIGIN = pygame.Vector2(360, 130)
+GRID_ORIGIN = pygame.Vector2(412, 164)
 GRID_RECT = pygame.Rect(int(GRID_ORIGIN.x), int(GRID_ORIGIN.y), GRID_WIDTH * GRID_CELL, GRID_HEIGHT * GRID_CELL)
-LEFT_PANEL = pygame.Rect(36, 120, 284, 694)
-RIGHT_PANEL = pygame.Rect(1180, 120, 384, 694)
-BOTTOM_PANEL = pygame.Rect(36, 832, WINDOW_WIDTH - 72, 92)
-HEADER_RECT = pygame.Rect(36, 28, WINDOW_WIDTH - 72, 72)
-SELECT_LEFT_PANEL = pygame.Rect(36, 120, 920, 784)
-SELECT_RIGHT_PANEL = pygame.Rect(982, 120, 582, 784)
+LEFT_PANEL = pygame.Rect(44, 136, 340, 780)
+RIGHT_PANEL = pygame.Rect(1240, 136, 636, 780)
+BOTTOM_PANEL = pygame.Rect(44, 916, 1832, 120)
+HEADER_RECT = pygame.Rect(44, 32, 1832, 80)
+SELECT_LEFT_PANEL = pygame.Rect(44, 136, 1100, 900)
+SELECT_RIGHT_PANEL = pygame.Rect(1172, 136, 704, 900)
 
 # ---------------------------------------------------------------------------
 # Visual Design Palette
@@ -757,21 +760,26 @@ class GameApp:
         pygame.mixer.pre_init(44100, -16, 2, 512)
         pygame.init()
         pygame.display.set_caption("리프트 택틱스: 전술 실험")
-        flags = pygame.HIDDEN if headless else 0
-        self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), flags)
+        self._window_size = (DESIGN_WIDTH, DESIGN_HEIGHT)
+        self._fullscreen = False
+        if headless:
+            self._display = pygame.display.set_mode((DESIGN_WIDTH, DESIGN_HEIGHT), pygame.HIDDEN)
+        else:
+            self._display = pygame.display.set_mode(self._window_size)
+        self.screen = pygame.Surface((DESIGN_WIDTH, DESIGN_HEIGHT))
         self.clock = pygame.time.Clock()
         self.running = True
         self.headless = headless
         resolved_history_path = history_path if history_path is not None else (None if headless else RunHistoryStore.default_path())
         self.history_store = RunHistoryStore.load(resolved_history_path)
 
-        self.font_tiny = load_font(13)
-        self.font_micro = load_font(12)
-        self.font_small = load_font(16)
+        self.font_micro = load_font(12, bold=True)
+        self.font_tiny = load_font(15)
+        self.font_small = self.font_tiny
         self.font_ui = load_font(20)
-        self.font_heading = load_font(26, bold=True)
-        self.font_large = load_font(34, bold=True)
-        self.font_title = load_font(42, bold=True)
+        self.font_heading = load_font(28, bold=True)
+        self.font_large = self.font_heading
+        self.font_title = load_font(44, bold=True)
 
         self.audio = SoundBank()
         self.audio.start_ambient()
@@ -878,6 +886,12 @@ class GameApp:
             self._handle_events()
             self._update(dt)
             self._draw()
+            # Scale render surface to display
+            display_size = self._display.get_size()
+            if (DESIGN_WIDTH, DESIGN_HEIGHT) != display_size:
+                pygame.transform.smoothscale(self.screen, display_size, self._display)
+            else:
+                self._display.blit(self.screen, (0, 0))
             pygame.display.flip()
             frames += 1
             if max_frames is not None and frames >= max_frames:
@@ -904,14 +918,14 @@ class GameApp:
         return cutouts
 
     def _build_background(self) -> pygame.Surface:
-        surface = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
+        surface = pygame.Surface((DESIGN_WIDTH, DESIGN_HEIGHT))
         draw_vertical_gradient(surface, surface.get_rect(), BG_BASE, BG_BASE_BOT)
-        for index in range(14):
+        for index in range(18):
             color = (214, 184, 114) if index % 2 == 0 else (78, 119, 155)
             alpha = 20 if index % 2 == 0 else 14
-            circle = pygame.Surface((340, 340), pygame.SRCALPHA)
-            pygame.draw.circle(circle, (*color, alpha), (170, 170), 170)
-            surface.blit(circle, (index * 110 - 120, (index % 3) * 210 - 90))
+            circle = pygame.Surface((380, 380), pygame.SRCALPHA)
+            pygame.draw.circle(circle, (*color, alpha), (190, 190), 190)
+            surface.blit(circle, (index * 120 - 120, (index % 3) * 240 - 100))
         return surface
 
     def _current_stage_label(self) -> str:
@@ -2316,6 +2330,17 @@ class GameApp:
         self.selection_message = f"{BLUEPRINTS_BY_ID[selected_id].name}의 시작 위치를 변경했습니다."
         self.audio.play("ui-confirm", champion_id=selected_id)
 
+    def _to_design_coords(self, pos: tuple[int, int]) -> tuple[int, int]:
+        dw, dh = self._display.get_size()
+        return (pos[0] * DESIGN_WIDTH // dw, pos[1] * DESIGN_HEIGHT // dh)
+
+    def _toggle_fullscreen(self) -> None:
+        self._fullscreen = not self._fullscreen
+        if self._fullscreen:
+            self._display = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+        else:
+            self._display = pygame.display.set_mode(self._window_size)
+
     def _handle_events(self) -> None:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -2323,9 +2348,9 @@ class GameApp:
             elif event.type == pygame.KEYDOWN:
                 self._handle_keydown(event.key)
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                self._handle_click(event.pos)
+                self._handle_click(self._to_design_coords(event.pos))
             elif event.type == pygame.MOUSEMOTION:
-                self._handle_mouse_move(event.pos)
+                self._handle_mouse_move(self._to_design_coords(event.pos))
 
     def _handle_mouse_move(self, position: tuple[int, int]) -> None:
         hit: str | None = None
@@ -2360,6 +2385,10 @@ class GameApp:
         if self.help_overlay_visible:
             if key in {pygame.K_ESCAPE, pygame.K_RETURN, pygame.K_SPACE, pygame.K_h, pygame.K_F1}:
                 self._dismiss_help_overlay()
+            return
+
+        if key == pygame.K_F11 and not self.headless:
+            self._toggle_fullscreen()
             return
 
         if key == pygame.K_F10:

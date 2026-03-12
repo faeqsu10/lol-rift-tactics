@@ -19,6 +19,7 @@ from .app import RouteEvent
 from .app import NodeFollowUp
 from .app import RunNode
 from .app import RUN_STAGE_COUNT
+from .app import SELECT_LEFT_PANEL
 from .app import StageModifier
 from .app import TACTICS_CUTOUT_ART_DIR
 from .data import ART_FILE_BY_UNIT_ID
@@ -247,7 +248,7 @@ class TacticsControllerTests(unittest.TestCase):
         app._draw_selection_pool()
 
         last_card_bottom = max(rect.bottom for rect in app.selection_card_rects.values())
-        message_strip_y = 120 + 784 - 82
+        message_strip_y = SELECT_LEFT_PANEL.y + SELECT_LEFT_PANEL.height - 82
         self.assertLess(last_card_bottom, message_strip_y)
 
     def test_riven_dash_passive_adds_damage(self) -> None:
