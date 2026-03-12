@@ -886,6 +886,8 @@ class GameApp:
         self.confirm_dialog_visible = False
         self.confirm_dialog_action: str | None = None  # "quit" or "abandon"
         self.hovered_button: str | None = None
+        self._transition_alpha = 0
+        self._transition_target_mode: str | None = None
         self.selected_difficulty_id = self.history_store.difficulty_id if self.history_store.difficulty_id in DIFFICULTY_LABEL_BY_ID else "standard"
         self.active_difficulty_id = self.selected_difficulty_id
         self.audio.set_master_volume(self.history_store.master_volume)
@@ -1326,6 +1328,7 @@ class GameApp:
         self.active_stage_penalty = None
         self.current_objective = None
         self.screen_mode = "reward"
+        self._start_transition()
         objective_line = self.last_objective_summary
         penalty_line = self.last_penalty_summary
         node_line = self.last_node_summary
@@ -1369,6 +1372,7 @@ class GameApp:
         self._roll_route_choices()
         self.current_objective = None
         self.screen_mode = "route"
+        self._start_transition()
         if self.pending_stage_penalty is not None:
             self.selection_message = f"전투 요약을 보고 경로를 고르세요. 예약 페널티: {self.pending_stage_penalty.description}"
         else:
@@ -1421,6 +1425,7 @@ class GameApp:
         self.selected_route_id = None
         self._seed_deployment()
         self.screen_mode = "deploy"
+        self._start_transition()
         route_name = self.route_options[self.current_route_id].name
         node_line = "" if self.current_route_node is None else f" · 노드 {self.current_route_node.name}"
         follow_up_line = "" if self.current_node_follow_up is None else f" · 후속 {self.current_node_follow_up.name}"
@@ -1453,6 +1458,7 @@ class GameApp:
         self.selected_deploy_champion_id = None
         self._seed_deployment()
         self.screen_mode = "deploy"
+        self._start_transition()
         doctrine = self._active_doctrine()
         doctrine_line = f" · 교리 {doctrine.name}" if doctrine is not None else ""
         self.selection_message = f"{self._current_stage_label()} 시작 위치를 조정하세요{doctrine_line} · 난이도 {self._difficulty_label(self.active_difficulty_id)}."
@@ -1588,6 +1594,7 @@ class GameApp:
         self.run_summary.unlock_lines = history_summary.unlock_lines
         self.battle_intro_card = None
         self.screen_mode = "summary"
+        self._start_transition()
         self.mode = "move"
         self.finale_banner_title = None
         self.finale_banner_subtitle = None
@@ -2211,6 +2218,7 @@ class GameApp:
         self._activate_selected_doctrine()
         self._seed_deployment()
         self.screen_mode = "deploy"
+        self._start_transition()
         doctrine = self._active_doctrine()
         doctrine_line = f" · 교리 {doctrine.name}" if doctrine is not None else ""
         self.selection_message = f"{self._current_stage_label()} 시작 위치를 조정한 뒤 전투를 시작하세요{doctrine_line}."
@@ -2235,6 +2243,7 @@ class GameApp:
         self._attach_controller(controller)
         self._trigger_battle_intro()
         self.screen_mode = "battle"
+        self._start_transition()
         self.status_text = "이동할 칸을 고르거나 스킬을 선택하세요."
         self.audio.play(self.battle_intro_card.sound_id if self.battle_intro_card is not None else "ui-confirm")
         self.settings_overlay_visible = False
@@ -2376,6 +2385,11 @@ class GameApp:
                 break
         if hit != self.hovered_button:
             self.hovered_button = hit
+            if not self.headless:
+                if hit is not None:
+                    pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_HAND)
+                else:
+                    pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_ARROW)
 
     def _handle_keydown(self, key: int) -> None:
         if self.confirm_dialog_visible:
@@ -2752,6 +2766,7 @@ class GameApp:
 
     def _update(self, dt: float) -> None:
         self.time_accumulator += dt
+        self._update_transition(dt)
         if self.finale_banner_timer > 0:
             self.finale_banner_timer = max(0.0, self.finale_banner_timer - dt)
         if self.battle_intro_card is not None:
@@ -3076,6 +3091,7 @@ class GameApp:
         self._draw_help_overlay()
         self._draw_settings_overlay()
         self._draw_confirm_dialog()
+        self._draw_transition()
 
     def _draw_flow_breadcrumb(self) -> None:
         step_index = self._flow_step_index()
@@ -3137,16 +3153,10 @@ class GameApp:
         self._draw_text_fit(diff_label, (self.font_tiny, self.font_micro), diff_text_color, diff_badge_rect.center, max_width=diff_badge_rect.width - 10, center=True)
 
         settings_rect = pygame.Rect(HEADER_RECT.right - 282, HEADER_RECT.y + 16, 92, 38)
-        self.button_rects["header-settings"] = settings_rect
-        pygame.draw.rect(self.screen, BG_ELEM, settings_rect, border_radius=RADIUS_CHIP)
-        pygame.draw.rect(self.screen, ACCENT_BLUE, settings_rect, 1, border_radius=RADIUS_CHIP)
-        self._draw_text_fit("설정 F10", (self.font_tiny, self.font_micro), TEXT_SECONDARY, settings_rect.center, max_width=settings_rect.width - 10, center=True)
+        self._draw_button(settings_rect, "설정 F10", "header-settings", style="secondary", fit_fonts=(self.font_tiny, self.font_micro))
 
         action_rect = pygame.Rect(HEADER_RECT.right - 174, HEADER_RECT.y + 10, 152, 50)
-        self.button_rects["header-action"] = action_rect
-        pygame.draw.rect(self.screen, ACCENT_GOLD, action_rect, border_radius=RADIUS_CHIP)
-        pygame.draw.rect(self.screen, ACCENT_GOLD_PALE, action_rect, 1, border_radius=RADIUS_CHIP)
-        self._draw_text(action_label, self.font_ui, BG_DEEP, action_rect.center, center=True)
+        self._draw_button(action_rect, action_label, "header-action", font=self.font_ui)
 
     def _draw_panel(self, rect: pygame.Rect, glow_color: tuple[int, int, int]) -> None:
         panel = pygame.Surface(rect.size, pygame.SRCALPHA)
@@ -3466,17 +3476,9 @@ class GameApp:
         button_width = (action_rect.width - 32 - button_gap) // 2
         reroll_rect = pygame.Rect(action_rect.x + 16, button_y, button_width, 34)
         start_rect = pygame.Rect(reroll_rect.right + button_gap, button_y, button_width, 34)
-        self.button_rects["selection-reroll"] = reroll_rect
-        self.button_rects["selection-start"] = start_rect
-        pygame.draw.rect(self.screen, ACCENT_GOLD, reroll_rect, border_radius=RADIUS_CHIP)
-        pygame.draw.rect(self.screen, ACCENT_GOLD_PALE, reroll_rect, 1, border_radius=RADIUS_CHIP)
-        self._draw_text_fit("적 재추첨", (self.font_ui, self.font_small, self.font_tiny), BG_SURFACE, reroll_rect.center, max_width=reroll_rect.width - 18, center=True)
         enabled = len(self.selected_blue_ids) == 3
-        fill = ACCENT_GOLD if enabled else UI_DISABLED
-        text_color = BG_SURFACE if enabled else TEXT_CAPTION
-        pygame.draw.rect(self.screen, fill, start_rect, border_radius=RADIUS_CHIP)
-        pygame.draw.rect(self.screen, ACCENT_GOLD_PALE, start_rect, 1, border_radius=RADIUS_CHIP)
-        self._draw_text_fit("배치 시작", (self.font_ui, self.font_small, self.font_tiny), text_color, start_rect.center, max_width=start_rect.width - 18, center=True)
+        self._draw_button(reroll_rect, "적 재추첨", "selection-reroll", fit_fonts=(self.font_ui, self.font_small, self.font_tiny))
+        self._draw_button(start_rect, "배치 시작", "selection-start", enabled=enabled, fit_fonts=(self.font_ui, self.font_small, self.font_tiny))
 
     def _draw_reward_screen(self) -> None:
         self._draw_header(
@@ -3545,15 +3547,9 @@ class GameApp:
 
         select_rect = pygame.Rect(SELECT_RIGHT_PANEL.x + 32, SELECT_RIGHT_PANEL.bottom - 118, 190, 48)
         next_rect = pygame.Rect(SELECT_RIGHT_PANEL.right - 242, SELECT_RIGHT_PANEL.bottom - 118, 190, 48)
-        self.button_rects["reward-select"] = select_rect
-        self.button_rects["reward-next"] = next_rect
-        pygame.draw.rect(self.screen, UI_DISABLED_ALT, select_rect, border_radius=RADIUS_CHIP)
-        pygame.draw.rect(self.screen, ACCENT_GOLD_PALE, select_rect, 1, border_radius=RADIUS_CHIP)
-        self._draw_text_fit("선택 화면으로", (self.font_ui, self.font_small, self.font_tiny), TEXT_SECONDARY, select_rect.center, max_width=select_rect.width - 20, center=True)
         enabled = self.selected_reward_id is not None
-        pygame.draw.rect(self.screen, ACCENT_GOLD if enabled else UI_DISABLED, next_rect, border_radius=RADIUS_CHIP)
-        pygame.draw.rect(self.screen, ACCENT_GOLD_PALE, next_rect, 1, border_radius=RADIUS_CHIP)
-        self._draw_text_fit("경로 선택", (self.font_ui, self.font_small, self.font_tiny), BG_SURFACE if enabled else TEXT_CAPTION, next_rect.center, max_width=next_rect.width - 20, center=True)
+        self._draw_button(select_rect, "선택 화면으로", "reward-select", style="ghost", fit_fonts=(self.font_ui, self.font_small, self.font_tiny))
+        self._draw_button(next_rect, "경로 선택", "reward-next", enabled=enabled, fit_fonts=(self.font_ui, self.font_small, self.font_tiny))
 
     def _draw_route_screen(self) -> None:
         self._draw_header(
@@ -3761,20 +3757,11 @@ class GameApp:
         select_rect = pygame.Rect(SELECT_RIGHT_PANEL.x + 24, SELECT_RIGHT_PANEL.bottom - 70, 160, 48)
         reroll_rect = pygame.Rect(SELECT_RIGHT_PANEL.x + 201, SELECT_RIGHT_PANEL.bottom - 70, 168, 48)
         next_rect = pygame.Rect(SELECT_RIGHT_PANEL.right - 184, SELECT_RIGHT_PANEL.bottom - 70, 160, 48)
-        self.button_rects["route-select"] = select_rect
-        self.button_rects["route-reroll"] = reroll_rect
-        self.button_rects["route-next"] = next_rect
-        pygame.draw.rect(self.screen, UI_DISABLED_ALT, select_rect, border_radius=RADIUS_CHIP)
-        pygame.draw.rect(self.screen, ACCENT_GOLD_PALE, select_rect, 1, border_radius=RADIUS_CHIP)
-        self._draw_text_fit("선택 화면으로", (self.font_ui, self.font_small, self.font_tiny), TEXT_SECONDARY, select_rect.center, max_width=select_rect.width - 20, center=True)
         reroll_enabled = self.route_reroll_charges > 0
-        pygame.draw.rect(self.screen, ACCENT_GOLD if reroll_enabled else UI_DISABLED, reroll_rect, border_radius=RADIUS_CHIP)
-        pygame.draw.rect(self.screen, ACCENT_GOLD_PALE, reroll_rect, 1, border_radius=RADIUS_CHIP)
-        self._draw_text_fit(f"경로 재추첨 {self.route_reroll_charges}", (self.font_ui, self.font_small, self.font_tiny), BG_SURFACE if reroll_enabled else TEXT_CAPTION, reroll_rect.center, max_width=reroll_rect.width - 20, center=True)
         enabled = self.selected_route_id is not None
-        pygame.draw.rect(self.screen, ACCENT_GOLD if enabled else UI_DISABLED, next_rect, border_radius=RADIUS_CHIP)
-        pygame.draw.rect(self.screen, ACCENT_GOLD_PALE, next_rect, 1, border_radius=RADIUS_CHIP)
-        self._draw_text_fit("다음 전투 배치", (self.font_ui, self.font_small, self.font_tiny), BG_SURFACE if enabled else TEXT_CAPTION, next_rect.center, max_width=next_rect.width - 20, center=True)
+        self._draw_button(select_rect, "선택 화면으로", "route-select", style="ghost", fit_fonts=(self.font_ui, self.font_small, self.font_tiny))
+        self._draw_button(reroll_rect, f"경로 재추첨 {self.route_reroll_charges}", "route-reroll", enabled=reroll_enabled, fit_fonts=(self.font_ui, self.font_small, self.font_tiny))
+        self._draw_button(next_rect, "다음 전투 배치", "route-next", enabled=enabled, fit_fonts=(self.font_ui, self.font_small, self.font_tiny))
 
     def _draw_summary_screen(self) -> None:
         summary = self.run_summary
@@ -3854,14 +3841,8 @@ class GameApp:
 
         rerun_rect = pygame.Rect(SELECT_LEFT_PANEL.x + 32, SELECT_LEFT_PANEL.bottom - 70, 246, 48)
         select_rect = pygame.Rect(SELECT_LEFT_PANEL.right - 278, SELECT_LEFT_PANEL.bottom - 70, 246, 48)
-        self.button_rects["summary-rerun"] = rerun_rect
-        self.button_rects["summary-select"] = select_rect
-        pygame.draw.rect(self.screen, accent, rerun_rect, border_radius=RADIUS_CARD)
-        pygame.draw.rect(self.screen, ACCENT_GOLD_PALE, rerun_rect, 1, border_radius=RADIUS_CARD)
-        self._draw_text_fit("같은 조합 새 원정", (self.font_ui, self.font_small, self.font_tiny), BG_SURFACE, rerun_rect.center, max_width=rerun_rect.width - 20, center=True)
-        pygame.draw.rect(self.screen, UI_DISABLED_ALT, select_rect, border_radius=RADIUS_CARD)
-        pygame.draw.rect(self.screen, ACCENT_GOLD_PALE, select_rect, 1, border_radius=RADIUS_CARD)
-        self._draw_text_fit("캐릭터 다시 선택", (self.font_ui, self.font_small, self.font_tiny), TEXT_SECONDARY, select_rect.center, max_width=select_rect.width - 20, center=True)
+        self._draw_button(rerun_rect, "같은 조합 새 원정", "summary-rerun", radius=RADIUS_CARD, fit_fonts=(self.font_ui, self.font_small, self.font_tiny))
+        self._draw_button(select_rect, "캐릭터 다시 선택", "summary-select", style="ghost", radius=RADIUS_CARD, fit_fonts=(self.font_ui, self.font_small, self.font_tiny))
         self._draw_text_fit("Enter 또는 R로 즉시 새 원정 · ESC로 캐릭터 선택", (self.font_small, self.font_tiny, self.font_micro), TEXT_SECONDARY, (SELECT_LEFT_PANEL.centerx, SELECT_LEFT_PANEL.bottom - 16), max_width=SELECT_LEFT_PANEL.width - 80, center=True)
 
         if not summary.recap_entries:
@@ -4118,10 +4099,7 @@ class GameApp:
 
     def _draw_deploy_bottom_panel(self) -> None:
         start_rect = pygame.Rect(BOTTOM_PANEL.x + 26, BOTTOM_PANEL.y + 18, 220, 56)
-        self.button_rects["deploy-start"] = start_rect
-        pygame.draw.rect(self.screen, ACCENT_GOLD, start_rect, border_radius=RADIUS_CARD)
-        pygame.draw.rect(self.screen, ACCENT_GOLD_PALE, start_rect, 1, border_radius=RADIUS_CARD)
-        self._draw_text("전투 시작", self.font_ui, BG_SURFACE, start_rect.center, center=True)
+        self._draw_button(start_rect, "전투 시작", "deploy-start", radius=RADIUS_CARD, font=self.font_ui)
         self._draw_text("현재 선택", self.font_small, TEXT_LABEL, (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 18))
         champion_name = BLUEPRINTS_BY_ID[self.selected_deploy_champion_id].name if self.selected_deploy_champion_id else "없음"
         self._draw_text(champion_name, self.font_heading, TEXT_PRIMARY, (BOTTOM_PANEL.x + 290, BOTTOM_PANEL.y + 38))
@@ -5746,10 +5724,7 @@ class GameApp:
             self._draw_wrapped_text_fit(line, (self.font_small, self.font_tiny, self.font_micro), (220, 229, 235), pygame.Rect(card_rect.x + 50, card_rect.y + 156 + index * 30, card_rect.width - 78, 24), max_lines=1)
 
         dismiss_rect = pygame.Rect(card_rect.right - 192, card_rect.bottom - 58, 168, 36)
-        self.button_rects["help-close"] = dismiss_rect
-        pygame.draw.rect(self.screen, ACCENT_GOLD, dismiss_rect, border_radius=RADIUS_CHIP)
-        pygame.draw.rect(self.screen, ACCENT_GOLD_PALE, dismiss_rect, 1, border_radius=RADIUS_CHIP)
-        self._draw_text_fit("닫기", (self.font_ui, self.font_small), BG_SURFACE, dismiss_rect.center, max_width=dismiss_rect.width - 20, center=True)
+        self._draw_button(dismiss_rect, "닫기", "help-close", fit_fonts=(self.font_ui, self.font_small))
 
         footer = (
             "Enter, Esc, 클릭으로 닫기 · H/F1로 다시 보기"
@@ -5825,14 +5800,8 @@ class GameApp:
 
         tutorial_rect = pygame.Rect(card_rect.x + 400, card_rect.y + 264, 180, 34)
         close_rect = pygame.Rect(card_rect.right - 122, card_rect.y + 264, 98, 34)
-        self.button_rects["settings-help"] = tutorial_rect
-        self.button_rects["settings-close"] = close_rect
-        pygame.draw.rect(self.screen, BG_ELEVATED, tutorial_rect, border_radius=RADIUS_CHIP)
-        pygame.draw.rect(self.screen, ACCENT_BLUE, tutorial_rect, 1, border_radius=RADIUS_CHIP)
-        self._draw_text_fit("도움말 다시 보기", (self.font_tiny, self.font_micro), TEXT_SECONDARY, tutorial_rect.center, max_width=tutorial_rect.width - 10, center=True)
-        pygame.draw.rect(self.screen, ACCENT_GOLD, close_rect, border_radius=RADIUS_CHIP)
-        pygame.draw.rect(self.screen, ACCENT_GOLD_PALE, close_rect, 1, border_radius=RADIUS_CHIP)
-        self._draw_text_fit("닫기", (self.font_small, self.font_tiny), BG_SURFACE, close_rect.center, max_width=close_rect.width - 8, center=True)
+        self._draw_button(tutorial_rect, "도움말 다시 보기", "settings-help", style="secondary", fit_fonts=(self.font_tiny, self.font_micro))
+        self._draw_button(close_rect, "닫기", "settings-close", fit_fonts=(self.font_small, self.font_tiny))
 
     def _draw_winner_overlay(self) -> None:
         if self.controller is None or not self.controller.state.winner:
@@ -5861,16 +5830,8 @@ class GameApp:
         button_y = WINDOW_HEIGHT // 2 + 58 if self.run_stage == RUN_STAGE_COUNT and self.last_objective_summary else WINDOW_HEIGHT // 2 + 44
         rematch_rect = pygame.Rect(WINDOW_WIDTH // 2 - 238, button_y, 220, 56)
         select_rect = pygame.Rect(WINDOW_WIDTH // 2 + 18, button_y, 220, 56)
-        self.button_rects["winner-rematch"] = rematch_rect
-        self.button_rects["winner-select"] = select_rect
-
-        pygame.draw.rect(self.screen, UI_DISABLED_ALT, rematch_rect, border_radius=RADIUS_CARD)
-        pygame.draw.rect(self.screen, ACCENT_GOLD_PALE, rematch_rect, 1, border_radius=RADIUS_CARD)
-        self._draw_text(rematch_label, self.font_ui, TEXT_SECONDARY, rematch_rect.center, center=True)
-
-        pygame.draw.rect(self.screen, ACCENT_GOLD, select_rect, border_radius=RADIUS_CARD)
-        pygame.draw.rect(self.screen, ACCENT_GOLD_PALE, select_rect, 1, border_radius=RADIUS_CARD)
-        self._draw_text("캐릭터 다시 선택", self.font_ui, BG_SURFACE, select_rect.center, center=True)
+        self._draw_button(rematch_rect, rematch_label, "winner-rematch", style="ghost", radius=RADIUS_CARD, font=self.font_ui)
+        self._draw_button(select_rect, "캐릭터 다시 선택", "winner-select", radius=RADIUS_CARD, font=self.font_ui)
 
         if self.controller.state.winner == "blue" and self.run_stage == RUN_STAGE_COUNT:
             shortcut_line = "Enter로 새 런 · ESC로 선택 화면 · R로 즉시 새 런"
@@ -5901,30 +5862,94 @@ class GameApp:
         btn_y = WINDOW_HEIGHT // 2 + 20
         yes_rect = pygame.Rect(WINDOW_WIDTH // 2 - 228, btn_y, 200, 52)
         no_rect = pygame.Rect(WINDOW_WIDTH // 2 + 28, btn_y, 200, 52)
-        self.button_rects["confirm-yes"] = yes_rect
-        self.button_rects["confirm-no"] = no_rect
-
-        pygame.draw.rect(self.screen, ACCENT_RED, yes_rect, border_radius=RADIUS_CARD)
-        pygame.draw.rect(self.screen, ACCENT_GOLD_PALE, yes_rect, 1, border_radius=RADIUS_CARD)
-        self._draw_text("확인", self.font_ui, ACCENT_GOLD_PALE, yes_rect.center, center=True)
-
-        pygame.draw.rect(self.screen, UI_DISABLED, no_rect, border_radius=RADIUS_CARD)
-        pygame.draw.rect(self.screen, ACCENT_GOLD_PALE, no_rect, 1, border_radius=RADIUS_CARD)
-        self._draw_text("취소", self.font_ui, TEXT_SECONDARY, no_rect.center, center=True)
+        self._draw_button(yes_rect, "확인", "confirm-yes", style="danger", radius=RADIUS_CARD, font=self.font_ui)
+        self._draw_button(no_rect, "취소", "confirm-no", style="ghost", radius=RADIUS_CARD, font=self.font_ui)
 
         self._draw_text("Enter 확인 · ESC 취소", self.font_tiny, TEXT_DIM, (WINDOW_WIDTH // 2, btn_y + 70), center=True)
 
+    def _draw_button(
+        self,
+        rect: pygame.Rect,
+        label: str,
+        key: str,
+        *,
+        enabled: bool = True,
+        style: str = "primary",
+        radius: int = RADIUS_CHIP,
+        font: pygame.font.Font | None = None,
+        fit_fonts: tuple[pygame.font.Font, ...] | None = None,
+    ) -> None:
+        """Draw a styled button and register it in button_rects."""
+        is_hovered = self.hovered_button == key
+
+        if style == "primary":
+            fill = ACCENT_GOLD if enabled else UI_DISABLED
+            border = ACCENT_GOLD_PALE if enabled else UI_MUTED
+            text_color = BG_DEEP if enabled else TEXT_SECONDARY
+        elif style == "secondary":
+            fill = ACCENT_BLUE_DEEP if enabled else UI_DISABLED
+            border = ACCENT_BLUE if enabled else UI_MUTED
+            text_color = ACCENT_GOLD_PALE if enabled else TEXT_SECONDARY
+        elif style == "danger":
+            fill = ACCENT_RED if enabled else UI_DISABLED
+            border = (255, 180, 160) if enabled else UI_MUTED
+            text_color = ACCENT_GOLD_PALE if enabled else TEXT_SECONDARY
+        else:  # ghost
+            fill = BG_ELEVATED if enabled else UI_DISABLED
+            border = UI_MUTED
+            text_color = TEXT_PRIMARY if enabled else TEXT_SECONDARY
+
+        if is_hovered and enabled:
+            fill = tuple(min(c + 20, 255) for c in fill)
+
+        pygame.draw.rect(self.screen, fill, rect, border_radius=radius)
+        pygame.draw.rect(self.screen, border, rect, 2, border_radius=radius)
+        if fit_fonts is not None:
+            self._draw_text_fit(label, fit_fonts, text_color, rect.center, max_width=rect.width - 20, center=True)
+        else:
+            use_font = font if font is not None else self.font_small
+            self._draw_text(label, use_font, text_color, rect.center, center=True)
+        self.button_rects[key] = rect
+
+    def _start_transition(self, target_mode: str | None = None) -> None:
+        """Start a fade transition visual effect.
+
+        If *target_mode* is given, the actual screen_mode switch is deferred
+        until the overlay fades past the midpoint.  When ``None``, the
+        caller is expected to set ``screen_mode`` directly and this method
+        only triggers the fade-in overlay so that tests keep working.
+        """
+        self._transition_alpha = 255
+        self._transition_target_mode = target_mode
+
+    def _update_transition(self, dt: float) -> None:
+        """Update transition fade."""
+        if self._transition_alpha > 0:
+            self._transition_alpha = max(0, self._transition_alpha - int(dt * 850))
+            if self._transition_alpha < 128 and self._transition_target_mode:
+                self.screen_mode = self._transition_target_mode
+                self._transition_target_mode = None
+
+    def _draw_transition(self) -> None:
+        """Draw transition overlay."""
+        if self._transition_alpha > 0:
+            overlay = pygame.Surface((DESIGN_WIDTH, DESIGN_HEIGHT), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, self._transition_alpha))
+            self.screen.blit(overlay, (0, 0))
+
     def _draw_hover_overlay(self) -> None:
-        if self.hovered_button is None:
-            return
         if self.confirm_dialog_visible or self.settings_overlay_visible or self.help_overlay_visible:
+            return
+        if self.hovered_button is None:
             return
         rect = self.button_rects.get(self.hovered_button)
         if rect is None:
             return
-        hover_surf = pygame.Surface(rect.size, pygame.SRCALPHA)
-        hover_surf.fill((255, 255, 255, 28))
-        self.screen.blit(hover_surf, rect.topleft)
+        overlay = pygame.Surface(rect.size, pygame.SRCALPHA)
+        overlay.fill((255, 255, 255, 35))
+        self.screen.blit(overlay, rect.topleft)
+        glow_rect = rect.inflate(4, 4)
+        pygame.draw.rect(self.screen, (*ACCENT_GOLD_PALE, 60), glow_rect, 2, border_radius=RADIUS_CHIP)
 
     def _draw_terrain_legend(self) -> None:
         if self.screen_mode not in {"deploy", "battle"}:
