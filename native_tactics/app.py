@@ -4314,8 +4314,9 @@ class GameApp:
             if intent.phase_focus_target_id is not None:
                 focus_unit = self.controller.get_unit(intent.phase_focus_target_id)
                 if focus_unit is not None and focus_unit.hp > 0:
-                    focus_rect = self.tile_rects[focus_unit.position]
-                    pygame.draw.rect(self.screen, (255, 92, 92), focus_rect.inflate(-10, -10), 3, border_radius=RADIUS_CARD)
+                    focus_rect = self.tile_rects.get(focus_unit.position)
+                    if focus_rect is not None:
+                        pygame.draw.rect(self.screen, (255, 92, 92), focus_rect.inflate(-10, -10), 3, border_radius=RADIUS_CARD)
 
         for unit in self.controller.units:
             if not self._should_draw_battle_unit(unit):
@@ -5018,7 +5019,9 @@ class GameApp:
 
     def _draw_static_unit(self, champion_id: str, tile: tuple[int, int], *, selected: bool) -> None:
         center = self._tile_center(tile)
-        rect = self.tile_rects[tile]
+        rect = self.tile_rects.get(tile)
+        if rect is None:
+            return
         blueprint = BLUEPRINTS_BY_ID[champion_id]
         accent = hex_to_rgb(blueprint.accent)
         badge_text, badge_color = self._encounter_badge_for_champion(champion_id)
