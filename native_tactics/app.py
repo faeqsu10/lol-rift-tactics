@@ -53,6 +53,15 @@ SELECT_LEFT_PANEL = pygame.Rect(44, 136, 1100, 900)
 SELECT_RIGHT_PANEL = pygame.Rect(1172, 136, 704, 900)
 
 # ---------------------------------------------------------------------------
+# Font sizes (design-resolution-relative)
+FONT_MICRO = 20
+FONT_TINY = 24
+FONT_SMALL = 26
+FONT_UI = 30
+FONT_HEADING = 42
+FONT_TITLE = 56
+
+# ---------------------------------------------------------------------------
 # Visual Design Palette
 # ---------------------------------------------------------------------------
 # Backgrounds — 14종 → 5종 축소
@@ -797,13 +806,13 @@ class GameApp:
         resolved_history_path = history_path if history_path is not None else (None if headless else RunHistoryStore.default_path())
         self.history_store = RunHistoryStore.load(resolved_history_path)
 
-        self.font_micro = load_font(20, bold=True)
-        self.font_tiny = load_font(24)
-        self.font_small = load_font(26)
-        self.font_ui = load_font(30)
-        self.font_heading = load_font(42, bold=True)
+        self.font_micro = load_font(FONT_MICRO, bold=True)
+        self.font_tiny = load_font(FONT_TINY)
+        self.font_small = load_font(FONT_SMALL)
+        self.font_ui = load_font(FONT_UI)
+        self.font_heading = load_font(FONT_HEADING, bold=True)
         self.font_large = self.font_heading
-        self.font_title = load_font(56, bold=True)
+        self.font_title = load_font(FONT_TITLE, bold=True)
 
         self.audio = SoundBank()
         self.audio.start_ambient()
@@ -4316,22 +4325,6 @@ class GameApp:
         self._draw_battle_rings()
         self._draw_battle_trails()
         pygame.draw.rect(self.screen, ACCENT_GOLD_SOFT, GRID_RECT, 1, border_radius=RADIUS_PANEL)
-
-    def _draw_battle_atmosphere(self) -> None:
-        overlay = pygame.Surface(GRID_RECT.size, pygame.SRCALPHA)
-        pulse = (math.sin(self.time_accumulator * 1.4) + 1) * 0.5
-        blue_alpha = int(44 + pulse * 28)
-        red_alpha = int(38 + (1 - pulse) * 34)
-        gold_alpha = int(16 + pulse * 18)
-        pygame.draw.ellipse(overlay, (58, 123, 190, blue_alpha), pygame.Rect(12, GRID_RECT.height - 184, 316, 156))
-        pygame.draw.ellipse(overlay, (172, 71, 55, red_alpha), pygame.Rect(GRID_RECT.width - 332, 34, 312, 156))
-        pygame.draw.ellipse(overlay, (214, 184, 114, gold_alpha), pygame.Rect(GRID_RECT.width // 2 - 160, GRID_RECT.height // 2 - 72, 320, 144))
-        for index in range(5):
-            radius = 118 + index * 28 + math.sin(self.time_accumulator * 0.9 + index) * 6
-            ring_rect = pygame.Rect(0, 0, int(radius * 2.1), int(radius * 0.88))
-            ring_rect.center = (GRID_RECT.width // 2, GRID_RECT.height // 2 + 4)
-            pygame.draw.ellipse(overlay, (214, 184, 114, max(8, 28 - index * 4)), ring_rect, 1)
-        self.screen.blit(overlay, GRID_RECT.topleft)
 
     def _draw_battle_rings(self) -> None:
         for ring in self.battle_rings:

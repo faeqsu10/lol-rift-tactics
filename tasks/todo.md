@@ -71,6 +71,14 @@
 - [x] `native_tactics` 색상 팔레트 상수 중앙화와 주요 화면 일괄 적용
 - [x] Linux `native:package`를 `native_tactics.spec`으로 전환
 - [x] 마일스톤 문서 M2 완료 상태 반영
+- [x] `native_tactics` P0 크래시 방지 — KeyError 3건, ZeroDivisionError 1건, falsy-zero 7건 수정
+- [x] `native_tactics` P1 엔진 캡슐화 — _push_log/_build_turn_queue/_prime_next_turn public API 전환
+- [x] `native_tactics` P2 폰트 사이즈 상수화 — 매직 넘버를 FONT_* 상수로 교체
+- [ ] `native_tactics` P2 인라인 색상 튜플 정리 — 반복 튜플을 팔레트 상수로 교체
+- [ ] `native_tactics` P2 Surface 캐싱 — 매 프레임 할당을 초기화 시 재사용으로 전환
+- [ ] `native_tactics` P2 중복 목표 표시 코드 추출
+- [ ] `native_tactics` P3 Screen 클래스 추출 (SelectionScreen, DeployScreen 등)
+- [ ] `native_tactics` P3 RunState/CampaignManager 추출
 - [ ] 생성형 컷아웃을 손작업 또는 고품질 원본 기반 실컷아웃으로 순차 교체
 
 ## 검증

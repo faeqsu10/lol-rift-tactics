@@ -1,5 +1,17 @@
 # Devlog
 
+## 2026-03-13
+
+### 전문가 코드 리뷰 및 P0-P2 리팩토링
+
+- 3명의 전문 에이전트(security, quality, code reviewer)가 `native_tactics/app.py` 전수검사 실시
+- 발견: CRITICAL 2건, HIGH 6건, MEDIUM 12건, God Object 확인(6180줄, 212메서드)
+- P0 CRITICAL 수정: KeyError 크래시 3건(unit_visual_positions/tile_rects bare `[]`→`.get()` + None 가드), ZeroDivisionError 1건(`_to_design_coords` 윈도우 크기 0 방어), falsy-zero 버그 7건(`stage or self.run_stage`→`if stage is None else stage`)
+- P1 엔진 캡슐화: `_push_log`/`_build_turn_queue`/`_prime_next_turn` private→public API 전환, app.py/engine.py/tests.py 일괄 적용
+- P2 폰트 상수화: 매직 넘버 6개를 `FONT_MICRO`~`FONT_TITLE` 상수로 교체
+- P2 인라인 색상 분석: 최대 2회 반복으로 상수화 효과 미미, 스킵
+- 검증: `py_compile` 통과, `tactics:test` 103건 전체 통과, `tactics:smoke` 통과
+
 ## 2026-03-11
 
 ### 난이도 2단계 1차
