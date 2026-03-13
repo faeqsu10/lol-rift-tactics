@@ -4856,31 +4856,27 @@ class GameApp:
             action_line = self._ellipsize_text(f"이동 {move_state} · 행동 {action_state}", self.font_tiny, info_width)
             self._draw_text_fit(action_line, (self.font_tiny, self.font_micro), TEXT_SECONDARY, (info_x, info_rect.y + 56), max_width=info_width)
             if objective is not None:
-                objective_status = "달성" if objective.completed else "실패" if objective.failed else f"{objective.progress}/{objective.target}"
-                objective_color = ACCENT_TEAL if objective.completed else ACCENT_RED if objective.failed else ACCENT_GOLD_WARM
-                objective_line = self._ellipsize_text(
-                    f"목표 · {objective.description.replace('목표: ', '')} · {objective_status}",
-                    self.font_tiny,
-                    info_width,
-                )
-                self._draw_text_fit(objective_line, (self.font_tiny, self.font_micro), objective_color, (info_x, info_rect.y + 78), max_width=info_width)
+                self._draw_objective_status_line(objective, info_x, info_rect.y + 78, info_width)
             else:
                 terrain_line = self._ellipsize_text("수풀=보호막 · 룬=피해 +3 · 화염=이동 피해", self.font_tiny, info_width)
                 self._draw_text_fit(terrain_line, (self.font_tiny, self.font_micro), ACCENT_BLUE, (info_x, info_rect.y + 78), max_width=info_width)
         else:
             self._draw_text_fit("적 AI가 경로와 타겟을 계산 중", (self.font_tiny, self.font_micro), TEXT_LABEL, (info_x, info_rect.y + 56), max_width=info_width)
             if objective is not None:
-                objective_status = "달성" if objective.completed else "실패" if objective.failed else f"{objective.progress}/{objective.target}"
-                objective_color = ACCENT_TEAL if objective.completed else ACCENT_RED if objective.failed else ACCENT_GOLD_WARM
-                objective_line = self._ellipsize_text(
-                    f"목표 · {objective.description.replace('목표: ', '')} · {objective_status}",
-                    self.font_tiny,
-                    info_width,
-                )
-                self._draw_text_fit(objective_line, (self.font_tiny, self.font_micro), objective_color, (info_x, info_rect.y + 78), max_width=info_width)
+                self._draw_objective_status_line(objective, info_x, info_rect.y + 78, info_width)
             else:
                 tip_line = self._ellipsize_text("위협 칸과 예상 피해를 보고 대응하세요", self.font_tiny, info_width)
                 self._draw_text_fit(tip_line, (self.font_tiny, self.font_micro), ACCENT_GOLD_WARM, (info_x, info_rect.y + 78), max_width=info_width)
+
+    def _draw_objective_status_line(self, objective, x: int, y: int, max_width: int) -> None:
+        status = "달성" if objective.completed else "실패" if objective.failed else f"{objective.progress}/{objective.target}"
+        color = ACCENT_TEAL if objective.completed else ACCENT_RED if objective.failed else ACCENT_GOLD_WARM
+        line = self._ellipsize_text(
+            f"목표 · {objective.description.replace('목표: ', '')} · {status}",
+            self.font_tiny,
+            max_width,
+        )
+        self._draw_text_fit(line, (self.font_tiny, self.font_micro), color, (x, y), max_width=max_width)
 
     def _draw_champion_card(
         self,
@@ -6045,12 +6041,21 @@ class GameApp:
         return None
 
     def _masked_art_surface(self, art: pygame.Surface, size: tuple[int, int], *, border_radius: int = 18) -> pygame.Surface:
+        cache_key = (id(art), size, border_radius)
+        cached = getattr(self, '_masked_art_cache', None)
+        if cached is None:
+            self._masked_art_cache: dict = {}
+            cached = self._masked_art_cache
+        result = cached.get(cache_key)
+        if result is not None:
+            return result
         scaled = pygame.transform.smoothscale(art, size)
         mask = pygame.Surface(size, pygame.SRCALPHA)
         pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=border_radius)
         output = pygame.Surface(size, pygame.SRCALPHA)
         output.blit(scaled, (0, 0))
         output.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        cached[cache_key] = output
         return output
 
     def _fit_font_for_width(
