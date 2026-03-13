@@ -1100,7 +1100,7 @@ class GameApp:
         route_id: str | None = None,
         enemy_ids: list[str] | None = None,
     ) -> dict[tuple[int, int], str]:
-        resolved_stage = stage or self.run_stage
+        resolved_stage = self.run_stage if stage is None else stage
         finale_variant = self._finale_variant_for_stage(stage=resolved_stage, lineup=enemy_ids)
         tiles = dict(finale_variant.terrain_tiles if finale_variant is not None else STAGE_TERRAIN_TILES.get(resolved_stage, {}))
         resolved_route_id = route_id if route_id is not None else self.current_route_id
@@ -1110,7 +1110,7 @@ class GameApp:
         return tiles
 
     def _blocked_tiles_for_stage(self, stage: int | None = None, enemy_ids: list[str] | None = None) -> tuple[GridPos, ...]:
-        resolved_stage = stage or self.run_stage
+        resolved_stage = self.run_stage if stage is None else stage
         finale_variant = self._finale_variant_for_stage(stage=resolved_stage, lineup=enemy_ids)
         if finale_variant is not None:
             return finale_variant.blocked_tiles
@@ -1210,7 +1210,7 @@ class GameApp:
         )
 
     def _boss_enemy_id_for_stage(self, stage: int | None = None, lineup: list[str] | None = None) -> str | None:
-        current_stage = stage or self.run_stage
+        current_stage = self.run_stage if stage is None else stage
         enemy_ids = tuple(lineup or self.selected_red_ids)
         if current_stage < RUN_STAGE_COUNT or not enemy_ids:
             return None
@@ -1223,7 +1223,7 @@ class GameApp:
         return BOSS_PROFILES_BY_ID[boss_profile_id_for_champion(boss_id)]
 
     def _finale_variant_for_stage(self, stage: int | None = None, lineup: list[str] | None = None):
-        resolved_stage = stage or self.run_stage
+        resolved_stage = self.run_stage if stage is None else stage
         if resolved_stage < RUN_STAGE_COUNT:
             return None
         boss_profile = self._boss_profile_for_stage(stage=resolved_stage, lineup=lineup)
@@ -1237,7 +1237,7 @@ class GameApp:
         lineup: list[str] | None = None,
         route_node: RunNode | None = None,
     ) -> tuple[str, ...]:
-        current_stage = stage or self.run_stage
+        current_stage = self.run_stage if stage is None else stage
         enemy_ids = tuple(lineup or self.selected_red_ids)
         if current_stage <= 1 or not enemy_ids:
             return ()
@@ -1270,7 +1270,7 @@ class GameApp:
         return ROLE_ELITE_TRAIT_ID.get(blueprint.role)
 
     def _random_enemy_lineup(self, stage: int | None = None) -> list[str]:
-        current_stage = stage or self.run_stage
+        current_stage = self.run_stage if stage is None else stage
         return random.sample(list(self._enemy_pool_for_stage(current_stage)), 3)
 
     def _reset_run_progress(self) -> None:
@@ -1850,7 +1850,7 @@ class GameApp:
         route_id: str | None = None,
         enemy_ids: list[str] | None = None,
     ) -> BattleObjective | None:
-        resolved_stage = stage or self.run_stage
+        resolved_stage = self.run_stage if stage is None else stage
         resolved_route_id = route_id if route_id is not None else self.current_route_id
         resolved_enemy_ids = enemy_ids if enemy_ids is not None else self.selected_red_ids
         if resolved_stage == RUN_STAGE_COUNT:
@@ -2041,7 +2041,7 @@ class GameApp:
                 boss.special_ability = replace(boss.special_ability, cast_range=max(1, boss.special_ability.cast_range - 1))
             elif boss.boss_profile_id == "frostsiege":
                 boss.shield = max(0, boss.shield - 6)
-            self.controller._push_log(f"{self.current_objective.name} 성공 · {boss.name}의 결전 각성이 약화됨.")
+            self.controller.push_log(f"{self.current_objective.name} 성공 · {boss.name}의 결전 각성이 약화됨.")
             self.status_text = f"{self.current_objective.name} 성공. {boss.name}의 결전 각성이 약화됩니다."
             self._trigger_finale_banner(f"{self.current_objective.name} 성공", f"{boss.name} 각성 약화", ACCENT_TEAL)
             if anchor is not None:
@@ -2055,7 +2055,7 @@ class GameApp:
                 boss.special_ability = replace(boss.special_ability, cast_range=boss.special_ability.cast_range + 1)
             elif boss.boss_profile_id == "frostsiege":
                 boss.shield += 6
-            self.controller._push_log(f"{self.current_objective.name} 실패 · {boss.name}의 결전 각성이 증폭됨.")
+            self.controller.push_log(f"{self.current_objective.name} 실패 · {boss.name}의 결전 각성이 증폭됨.")
             self.status_text = f"{self.current_objective.name} 실패. {boss.name}의 결전 각성이 증폭됩니다."
             self._trigger_finale_banner("결전 각성 증폭", f"{boss.name} 각성 강화", ACCENT_RED)
             if anchor is not None:
@@ -2105,11 +2105,11 @@ class GameApp:
         if boss_unit is not None:
             boss_profile = self._boss_profile_for_stage(lineup=[unit.id for unit in controller.units if unit.team == "red"])
             finale_variant = self._finale_variant_for_stage(lineup=[unit.id for unit in controller.units if unit.team == "red"])
-            controller._push_log(f"{boss_unit.name} 보스 개체 등장 · 체력 절반 이하 시 결전 각성.")
+            controller.push_log(f"{boss_unit.name} 보스 개체 등장 · 체력 절반 이하 시 결전 각성.")
             if boss_profile is not None:
-                controller._push_log(f"보스 패턴 · {boss_profile.name} · {boss_profile.phase_description}.")
+                controller.push_log(f"보스 패턴 · {boss_profile.name} · {boss_profile.phase_description}.")
             if finale_variant is not None:
-                controller._push_log(f"결전 지형 · {finale_variant.name} · {finale_variant.description}.")
+                controller.push_log(f"결전 지형 · {finale_variant.name} · {finale_variant.description}.")
             if self.run_stage == RUN_STAGE_COUNT and self.current_objective is not None and self.current_objective.is_finale:
                 subtitle = f"{boss_unit.name} · {self.current_objective.description.replace('목표: ', '')}"
                 if boss_profile is not None:
@@ -2118,13 +2118,13 @@ class GameApp:
         for elite_unit in [unit for unit in controller.units if unit.team == "red" and unit.is_elite and not unit.is_boss]:
             trait = ELITE_TRAITS_BY_ID.get(elite_unit.elite_trait_id or "")
             if trait is not None:
-                controller._push_log(f"{elite_unit.name} 엘리트 특성 · {trait.name}.")
+                controller.push_log(f"{elite_unit.name} 엘리트 특성 · {trait.name}.")
         if self.current_route_node is not None:
-            controller._push_log(f"{self.current_route_node.name} 적용 · {self.current_route_node.effect_label}.")
+            controller.push_log(f"{self.current_route_node.name} 적용 · {self.current_route_node.effect_label}.")
         if self.current_node_follow_up is not None:
-            controller._push_log(f"{self.current_node_follow_up.name} 발동 · {self.current_node_follow_up.effect_label}.")
+            controller.push_log(f"{self.current_node_follow_up.name} 발동 · {self.current_node_follow_up.effect_label}.")
         if self.current_route_event is not None:
-            controller._push_log(f"{self.current_route_event.name} 적용 · {self._route_event_effect_label(self.current_route_event, self.current_route_node)}.")
+            controller.push_log(f"{self.current_route_event.name} 적용 · {self._route_event_effect_label(self.current_route_event, self.current_route_node)}.")
         self._reset_battle_stats()
         self.battle_rings.clear()
         self.battle_trails.clear()
@@ -2216,9 +2216,9 @@ class GameApp:
                     unit.basic_ability = self._boost_damage_effects(unit.basic_ability, 3 if self.run_stage == 2 else 5)
                     unit.special_ability = self._boost_damage_effects(unit.special_ability, 3 if self.run_stage == 2 else 5)
 
-        controller.state.turn_queue = controller._build_turn_queue()
+        controller.state.turn_queue = controller.build_turn_queue()
         controller.state.active_unit_id = None
-        controller._prime_next_turn()
+        controller.prime_next_turn()
 
     def _start_deploy(self) -> None:
         if len(self.selected_blue_ids) != 3:
@@ -2368,6 +2368,8 @@ class GameApp:
 
     def _to_design_coords(self, pos: tuple[int, int]) -> tuple[int, int]:
         dw, dh = self._display.get_size()
+        if dw == 0 or dh == 0:
+            return (0, 0)
         return (pos[0] * DESIGN_WIDTH // dw, pos[1] * DESIGN_HEIGHT // dh)
 
     def _toggle_fullscreen(self) -> None:
@@ -3000,7 +3002,9 @@ class GameApp:
             unit = self.controller.get_unit(impact.target_id)
             if unit is None:
                 continue
-            anchor = self.unit_visual_positions[unit.id]
+            anchor = self.unit_visual_positions.get(unit.id)
+            if anchor is None:
+                continue
             if actor is not None:
                 if actor.team == "blue":
                     self.battle_stats["blue_damage"] += impact.damage
@@ -4236,7 +4240,9 @@ class GameApp:
             unit = self.controller.get_unit(target_id)
             if unit is None:
                 continue
-            rect = self.tile_rects[unit.position]
+            rect = self.tile_rects.get(unit.position)
+            if rect is None:
+                continue
             color = (255, 183, 88) if target_id in basic_targets else (255, 129, 129)
             pygame.draw.rect(self.screen, color, rect.inflate(-8, -8), 3, border_radius=RADIUS_CARD)
 
@@ -4246,7 +4252,9 @@ class GameApp:
             for threat_tile in intent.phase_threat_tiles:
                 if threat_tile in current_threats or threat_tile in follow_up_threats:
                     continue
-                rect = self.tile_rects[threat_tile]
+                rect = self.tile_rects.get(threat_tile)
+                if rect is None:
+                    continue
                 overlay = pygame.Surface(rect.size, pygame.SRCALPHA)
                 overlay.fill((198, 113, 255, 20))
                 self.screen.blit(overlay, rect.topleft)
@@ -4256,35 +4264,44 @@ class GameApp:
                     continue
                 pygame.draw.rect(self.screen, ACCENT_RED, rect.inflate(-26, -26), 2, border_radius=RADIUS_CHIP)
             for threat_tile in intent.threat_tiles:
-                rect = self.tile_rects[threat_tile]
+                rect = self.tile_rects.get(threat_tile)
+                if rect is None:
+                    continue
                 overlay = pygame.Surface(rect.size, pygame.SRCALPHA)
                 overlay.fill((255, 86, 86, 38))
                 self.screen.blit(overlay, rect.topleft)
             for threat_tile in intent.follow_up_threat_tiles:
-                rect = self.tile_rects[threat_tile]
+                rect = self.tile_rects.get(threat_tile)
+                if rect is None:
+                    continue
                 overlay = pygame.Surface(rect.size, pygame.SRCALPHA)
                 overlay.fill((255, 196, 92, 26))
                 self.screen.blit(overlay, rect.topleft)
             if intent.move_to is not None:
-                move_rect = self.tile_rects[intent.move_to]
-                pygame.draw.rect(self.screen, (140, 196, 255), move_rect.inflate(-14, -14), 3, border_radius=RADIUS_CARD)
+                move_rect = self.tile_rects.get(intent.move_to)
+                if move_rect is not None:
+                    pygame.draw.rect(self.screen, (140, 196, 255), move_rect.inflate(-14, -14), 3, border_radius=RADIUS_CARD)
             if intent.follow_up_move_to is not None:
-                follow_rect = self.tile_rects[intent.follow_up_move_to]
-                pygame.draw.rect(self.screen, (240, 205, 120), follow_rect.inflate(-20, -20), 2, border_radius=RADIUS_CARD)
+                follow_rect = self.tile_rects.get(intent.follow_up_move_to)
+                if follow_rect is not None:
+                    pygame.draw.rect(self.screen, (240, 205, 120), follow_rect.inflate(-20, -20), 2, border_radius=RADIUS_CARD)
             if intent.target_tile is not None:
-                target_rect = self.tile_rects[intent.target_tile]
-                pygame.draw.rect(self.screen, ACCENT_RED, target_rect.inflate(-8, -8), 3, border_radius=RADIUS_CARD)
-                source_tile = intent.move_to or active.position
-                pygame.draw.line(
-                    self.screen,
-                    (255, 208, 151),
-                    self._tile_center(source_tile),
-                    self._tile_center(intent.target_tile),
-                    3,
-                )
+                target_rect = self.tile_rects.get(intent.target_tile)
+                if target_rect is not None:
+                    pygame.draw.rect(self.screen, ACCENT_RED, target_rect.inflate(-8, -8), 3, border_radius=RADIUS_CARD)
+                if target_rect is not None:
+                    source_tile = intent.move_to or active.position
+                    pygame.draw.line(
+                        self.screen,
+                        (255, 208, 151),
+                        self._tile_center(source_tile),
+                        self._tile_center(intent.target_tile),
+                        3,
+                    )
             if intent.follow_up_target_tile is not None:
-                target_rect = self.tile_rects[intent.follow_up_target_tile]
-                pygame.draw.rect(self.screen, (255, 204, 117), target_rect.inflate(-16, -16), 2, border_radius=RADIUS_CARD)
+                target_rect = self.tile_rects.get(intent.follow_up_target_tile)
+                if target_rect is not None:
+                    pygame.draw.rect(self.screen, (255, 204, 117), target_rect.inflate(-16, -16), 2, border_radius=RADIUS_CARD)
             if intent.phase_focus_target_id is not None:
                 focus_unit = self.controller.get_unit(intent.phase_focus_target_id)
                 if focus_unit is not None and focus_unit.hp > 0:
@@ -4431,8 +4448,10 @@ class GameApp:
         self._draw_text(self.last_action_banner_text, self.font_ui, ACCENT_GOLD_PALE, banner_rect.center, center=True)
 
     def _draw_battle_unit(self, unit, is_active: bool) -> None:
-        center = self.unit_visual_positions[unit.id]
-        tile_rect = self.tile_rects[unit.position]
+        center = self.unit_visual_positions.get(unit.id)
+        tile_rect = self.tile_rects.get(unit.position)
+        if center is None or tile_rect is None:
+            return
         accent = hex_to_rgb(unit.accent)
         animation = self._animation_state_for_unit(unit.id)
         pulse = 0.2 + 0.2 * self.hit_flash.get(unit.id, 0.0)

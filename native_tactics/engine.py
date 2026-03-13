@@ -194,13 +194,13 @@ class TacticsController:
         self.objective_tiles = set(self.initial_objective_tiles)
         self.state = TacticalState(
             round=1,
-            turn_queue=self._build_turn_queue(),
+            turn_queue=self.build_turn_queue(),
             active_unit_id=None,
             winner=None,
             log=["전술 전투 개시. 이동과 행동을 조합하세요."],
         )
         self._log_counter = count(1)
-        self._prime_next_turn()
+        self.prime_next_turn()
 
     def reset(self) -> None:
         self.__init__(
@@ -322,9 +322,9 @@ class TacticsController:
             result.impacts.append(terrain_impact)
         if terrain_note:
             result.notes.append(terrain_note)
-        self._push_log(f"{actor.name}, {start} -> {destination} 이동.")
+        self.push_log(f"{actor.name}, {start} -> {destination} 이동.")
         if terrain_note:
-            self._push_log(terrain_note)
+            self.push_log(terrain_note)
         self._check_winner()
         self._auto_finish_turn_if_needed()
         return result
@@ -345,7 +345,7 @@ class TacticsController:
             return None
         self.state.turn_queue = self.state.turn_queue[1:]
         result = TacticalActionResult(actor_id=actor.id, kind="end")
-        self._prime_next_turn()
+        self.prime_next_turn()
         return result
 
     def run_ai_turn(self) -> list[TacticalActionResult]:
@@ -675,7 +675,7 @@ class TacticsController:
             None,
         )
         if next_red_id is None:
-            next_round_queue = self._build_turn_queue()
+            next_round_queue = self.build_turn_queue()
             next_red_id = next(
                 (
                     unit_id
@@ -704,7 +704,7 @@ class TacticsController:
         if blue_found or self.state.winner:
             return phase_actors
 
-        for unit_id in self._build_turn_queue():
+        for unit_id in self.build_turn_queue():
             unit = self.get_unit(unit_id)
             if unit is None or unit.hp <= 0:
                 continue
@@ -786,7 +786,7 @@ class TacticsController:
         log_line = f"{actor.name}, {ability.name} 사용. {summary}".strip()
         if notes:
             log_line = f"{log_line} {' '.join(notes)}".strip()
-        self._push_log(log_line)
+        self.push_log(log_line)
         self._check_winner()
         result = TacticalActionResult(
             actor_id=actor.id,
@@ -1117,7 +1117,7 @@ class TacticsController:
             impacts.append(self._apply_effects(unit.id, (AbilityEffect(kind="damage", amount=damage, turns=0),)))
         if impacts:
             notes.append(f"{log_label} {len(impacts)}명.")
-            self._push_log(f"{target.name}, {log_label}로 적 {len(impacts)}명에게 즉시 피해.")
+            self.push_log(f"{target.name}, {log_label}로 적 {len(impacts)}명에게 즉시 피해.")
         return impacts, notes
 
     def _trigger_boss_phase(self, target: TacticalUnit) -> tuple[list[str], list[TacticalImpact]]:
@@ -1139,10 +1139,10 @@ class TacticsController:
             notes.append("화염 돌파 발동.")
             if hazard_tiles:
                 notes.append(f"결전 파동 확산 {len(hazard_tiles)}칸.")
-            self._push_log(f"{target.name}, 체력이 절반 이하가 되어 결전 각성 발동.")
-            self._push_log(f"{target.name}, 화염 돌파로 전면 압박 강화.")
+            self.push_log(f"{target.name}, 체력이 절반 이하가 되어 결전 각성 발동.")
+            self.push_log(f"{target.name}, 화염 돌파로 전면 압박 강화.")
             if hazard_tiles:
-                self._push_log(f"{target.name}, 결전 파동으로 주변 {len(hazard_tiles)}칸이 화염 지대로 변함.")
+                self.push_log(f"{target.name}, 결전 파동으로 주변 {len(hazard_tiles)}칸이 화염 지대로 변함.")
             surge_impacts, surge_notes = self._trigger_boss_phase_impacts(target)
             notes.extend(surge_notes)
             return notes, surge_impacts
@@ -1163,10 +1163,10 @@ class TacticsController:
             notes.append("빙결 장벽 발동.")
             if brush_tiles:
                 notes.append(f"냉기 수풀 확장 {len(brush_tiles)}칸.")
-            self._push_log(f"{target.name}, 체력이 절반 이하가 되어 결전 각성 발동.")
-            self._push_log(f"{target.name}, 빙결 장벽으로 수풀 지대가 확장.")
+            self.push_log(f"{target.name}, 체력이 절반 이하가 되어 결전 각성 발동.")
+            self.push_log(f"{target.name}, 빙결 장벽으로 수풀 지대가 확장.")
             if brush_tiles:
-                self._push_log(f"{target.name}, 냉기 수풀이 {len(brush_tiles)}칸에 전개됨.")
+                self.push_log(f"{target.name}, 냉기 수풀이 {len(brush_tiles)}칸에 전개됨.")
             surge_impacts, surge_notes = self._trigger_boss_phase_impacts(target)
             notes.extend(surge_notes)
             return notes, surge_impacts
@@ -1188,10 +1188,10 @@ class TacticsController:
         notes.append("비전 과부하 발동.")
         if rune_tiles:
             notes.append(f"룬 장막 전개 {len(rune_tiles)}칸.")
-        self._push_log(f"{target.name}, 체력이 절반 이하가 되어 결전 각성 발동.")
-        self._push_log(f"{target.name}, 비전 과부하로 사거리와 룬 장악이 강화.")
+        self.push_log(f"{target.name}, 체력이 절반 이하가 되어 결전 각성 발동.")
+        self.push_log(f"{target.name}, 비전 과부하로 사거리와 룬 장악이 강화.")
         if rune_tiles:
-            self._push_log(f"{target.name}, 룬 장막이 {len(rune_tiles)}칸에 전개됨.")
+            self.push_log(f"{target.name}, 룬 장막이 {len(rune_tiles)}칸에 전개됨.")
         surge_impacts, surge_notes = self._trigger_boss_phase_impacts(target)
         notes.extend(surge_notes)
         return notes, surge_impacts
@@ -1218,38 +1218,38 @@ class TacticsController:
     def _apply_turn_start_passives(self, actor: TacticalUnit) -> None:
         if actor.id == "blue-leona":
             actor.shield += 8
-            self._push_log(f"{actor.name}, {actor.passive_name}으로 보호막 8 획득.")
+            self.push_log(f"{actor.name}, {actor.passive_name}으로 보호막 8 획득.")
         elif actor.id == "blue-braum":
             actor.shield += 12
-            self._push_log(f"{actor.name}, {actor.passive_name}으로 보호막 12 획득.")
+            self.push_log(f"{actor.name}, {actor.passive_name}으로 보호막 12 획득.")
         if actor.is_elite and actor.elite_trait_id == "bulwark":
             actor.shield += 6
-            self._push_log(f"{actor.name}, 엘리트 특성 철벽으로 보호막 6 획득.")
+            self.push_log(f"{actor.name}, 엘리트 특성 철벽으로 보호막 6 획득.")
         elif actor.is_elite and actor.elite_trait_id == "spellburst":
             actor.temporary_damage_bonus += 2
-            self._push_log(f"{actor.name}, 엘리트 특성 비전 폭주로 이번 턴 피해 +2.")
+            self.push_log(f"{actor.name}, 엘리트 특성 비전 폭주로 이번 턴 피해 +2.")
         if actor.is_boss:
             actor.temporary_damage_bonus += 2
-            self._push_log(f"{actor.name}, 보스 압박으로 이번 턴 피해 +2.")
+            self.push_log(f"{actor.name}, 보스 압박으로 이번 턴 피해 +2.")
             profile = self._boss_profile(actor)
             if profile is not None and actor.boss_phase_triggered:
                 if profile.id == "warlord":
                     if actor.position in self.objective_tiles:
                         actor.shield += 4
                         actor.temporary_damage_bonus += 2
-                        self._push_log(f"{actor.name}, 화염 돌파 유지로 목표 점거 중 보호막 4 · 피해 +2.")
+                        self.push_log(f"{actor.name}, 화염 돌파 유지로 목표 점거 중 보호막 4 · 피해 +2.")
                 elif profile.id == "spellstorm":
                     if self._terrain_at(actor.position) != "rune":
                         self.terrain_tiles[actor.position] = "rune"
                     actor.shield += 4
                     actor.temporary_damage_bonus += 2
-                    self._push_log(f"{actor.name}, 비전 과부하 유지로 현재 칸이 룬 지대가 되고 보호막 4 · 피해 +2.")
+                    self.push_log(f"{actor.name}, 비전 과부하 유지로 현재 칸이 룬 지대가 되고 보호막 4 · 피해 +2.")
                 elif profile.id == "frostsiege":
                     if self._terrain_at(actor.position) != "brush":
                         self.terrain_tiles[actor.position] = "brush"
                     actor.shield += 4
                     actor.temporary_damage_bonus += 1
-                    self._push_log(f"{actor.name}, 빙결 장벽 유지로 현재 칸이 수풀 지대가 되고 보호막 4 · 피해 +1.")
+                    self.push_log(f"{actor.name}, 빙결 장벽 유지로 현재 칸이 수풀 지대가 되고 보호막 4 · 피해 +1.")
 
     def _terrain_at(self, position: GridPos) -> TerrainId | None:
         return self.terrain_tiles.get(position)
@@ -1259,10 +1259,10 @@ class TacticsController:
         terrain_id = self._terrain_at(actor.position)
         if terrain_id == "brush":
             actor.shield += 4
-            self._push_log(f"{actor.name}, 수풀에서 보호막 4 획득.")
+            self.push_log(f"{actor.name}, 수풀에서 보호막 4 획득.")
         elif terrain_id == "rune":
             actor.temporary_damage_bonus = 3
-            self._push_log(f"{actor.name}, 룬 지대의 힘으로 이번 턴 피해 +3.")
+            self.push_log(f"{actor.name}, 룬 지대의 힘으로 이번 턴 피해 +3.")
 
     def _apply_move_terrain(self, actor: TacticalUnit) -> tuple[TacticalImpact | None, str | None]:
         terrain_id = self._terrain_at(actor.position)
@@ -1359,7 +1359,7 @@ class TacticsController:
             self.state.winner = next(iter(living_teams))
             self.state.active_unit_id = None
             self.state.turn_queue = []
-            self._push_log("블루 팀 승리." if self.state.winner == "blue" else "레드 팀 승리.")
+            self.push_log("블루 팀 승리." if self.state.winner == "blue" else "레드 팀 승리.")
 
     def _auto_finish_turn_if_needed(self) -> None:
         actor = self.get_active_unit()
@@ -1368,10 +1368,10 @@ class TacticsController:
         if actor.has_moved and actor.has_acted:
             self.end_turn()
 
-    def _push_log(self, text: str) -> None:
+    def push_log(self, text: str) -> None:
         self.state.log = [f"[{next(self._log_counter):02d}] {text}", *self.state.log[:9]]
 
-    def _build_turn_queue(self) -> list[str]:
+    def build_turn_queue(self) -> list[str]:
         return [
             unit.id
             for unit in sorted(
@@ -1380,7 +1380,7 @@ class TacticsController:
             )
         ]
 
-    def _prime_next_turn(self) -> None:
+    def prime_next_turn(self) -> None:
         while True:
             if self.state.winner:
                 return
@@ -1388,8 +1388,8 @@ class TacticsController:
             self.state.turn_queue = [unit_id for unit_id in self.state.turn_queue if (unit := self.get_unit(unit_id)) and unit.hp > 0]
             if not self.state.turn_queue:
                 self.state.round += 1
-                self.state.turn_queue = self._build_turn_queue()
-                self._push_log(f"라운드 {self.state.round} 시작.")
+                self.state.turn_queue = self.build_turn_queue()
+                self.push_log(f"라운드 {self.state.round} 시작.")
 
             actor = self.get_unit(self.state.turn_queue[0] if self.state.turn_queue else None)
             if actor is None:
@@ -1404,7 +1404,7 @@ class TacticsController:
             if actor.stun_turns > 0:
                 actor.stun_turns -= 1
                 self.state.turn_queue = self.state.turn_queue[1:]
-                self._push_log(f"{actor.name}, 기절 상태로 턴을 넘긴다.")
+                self.push_log(f"{actor.name}, 기절 상태로 턴을 넘긴다.")
                 continue
 
             self._apply_turn_start_terrain(actor)

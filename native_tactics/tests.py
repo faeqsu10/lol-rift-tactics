@@ -117,7 +117,7 @@ class TacticsControllerTests(unittest.TestCase):
         controller.state.turn_queue = ["red-darius"]
         controller.state.active_unit_id = None
 
-        controller._prime_next_turn()
+        controller.prime_next_turn()
 
         self.assertEqual(controller.get_active_unit().id, "red-darius")
         self.assertEqual(darius.shield, 6)
