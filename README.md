@@ -2,8 +2,28 @@
 
 > 3명을 골라라. 배치하라. 살아남아라.
 
+![챔피언 배너](docs/screenshots/banner.png)
+
 LoL 세계관 기반 팬메이드 턴제 전술 게임.
 Pygame으로 만든 네이티브 클라이언트 — 브라우저 없이 바로 플레이.
+
+---
+
+## 스크린샷
+
+### 전술 원정 모드 — 팀 선택 & 원정 교리
+
+![전술 모드 팀 선택](docs/screenshots/tactics-team-select.png)
+
+11인 풀에서 3명을 골라 출전 확정. 오른쪽에서 적 카운터와 원정 교리를 확인하고, 배치 전략을 세운 뒤 전투에 돌입합니다.
+
+### 아레나 모드 — 챔피언 선택 & 적 조합 미리보기
+
+![아레나 모드 챔피언 선택](docs/screenshots/arena-champion-select.png)
+
+3v3 아레나에서는 적 조합을 미리 본 뒤 전투를 시작합니다. 챔피언마다 고유 역할과 스킬이 있어 팀 구성이 승패를 가릅니다.
+
+---
 
 ## 게임 흐름
 
@@ -19,6 +39,8 @@ Pygame으로 만든 네이티브 클라이언트 — 브라우저 없이 바로 
 ```
 
 3전 원정을 완주하면 결산. 기록을 쌓으면 **원정 교리**가 해금되어 다음 런이 달라집니다.
+
+---
 
 ## 뭐가 있나
 
@@ -45,11 +67,49 @@ Pygame으로 만든 네이티브 클라이언트 — 브라우저 없이 바로 
 - 스테이지별 맵 테마 (초원 / 룬 / 결전)
 - 전투 시작 컷인 + 모티프 배지 + 테마 사운드
 
+---
+
+## 챔피언 풀 (22명)
+
+<table>
+<tr>
+<td align="center"><img src="assets/tactics-cutouts/Garen.png" width="48"><br><sub>가렌</sub></td>
+<td align="center"><img src="assets/tactics-cutouts/Ahri.png" width="48"><br><sub>아리</sub></td>
+<td align="center"><img src="assets/tactics-cutouts/Jinx.png" width="48"><br><sub>징크스</sub></td>
+<td align="center"><img src="assets/tactics-cutouts/Lux.png" width="48"><br><sub>럭스</sub></td>
+<td align="center"><img src="assets/tactics-cutouts/Vi.png" width="48"><br><sub>바이</sub></td>
+<td align="center"><img src="assets/tactics-cutouts/Ezreal.png" width="48"><br><sub>이즈리얼</sub></td>
+<td align="center"><img src="assets/tactics-cutouts/Leona.png" width="48"><br><sub>레오나</sub></td>
+<td align="center"><img src="assets/tactics-cutouts/Ashe.png" width="48"><br><sub>애쉬</sub></td>
+<td align="center"><img src="assets/tactics-cutouts/Riven.png" width="48"><br><sub>리븐</sub></td>
+<td align="center"><img src="assets/tactics-cutouts/Akali.png" width="48"><br><sub>아칼리</sub></td>
+<td align="center"><img src="assets/tactics-cutouts/Braum.png" width="48"><br><sub>브라움</sub></td>
+</tr>
+<tr>
+<td align="center"><img src="assets/tactics-cutouts/Darius.png" width="48"><br><sub>다리우스</sub></td>
+<td align="center"><img src="assets/tactics-cutouts/Annie.png" width="48"><br><sub>애니</sub></td>
+<td align="center"><img src="assets/tactics-cutouts/Caitlyn.png" width="48"><br><sub>케이틀린</sub></td>
+<td align="center"><img src="assets/tactics-cutouts/Morgana.png" width="48"><br><sub>모르가나</sub></td>
+<td align="center"><img src="assets/tactics-cutouts/Yasuo.png" width="48"><br><sub>야스오</sub></td>
+<td align="center"><img src="assets/tactics-cutouts/Zed.png" width="48"><br><sub>제드</sub></td>
+<td align="center"><img src="assets/tactics-cutouts/Lissandra.png" width="48"><br><sub>리산드라</sub></td>
+<td align="center"><img src="assets/tactics-cutouts/Katarina.png" width="48"><br><sub>카타리나</sub></td>
+<td align="center"><img src="assets/tactics-cutouts/Brand.png" width="48"><br><sub>브랜드</sub></td>
+<td align="center"><img src="assets/tactics-cutouts/Orianna.png" width="48"><br><sub>오리아나</sub></td>
+<td align="center"><img src="assets/tactics-cutouts/Sett.png" width="48"><br><sub>세트</sub></td>
+</tr>
+</table>
+
+> 윗줄: 블루 팀 (11명) / 아랫줄: 레드 팀 (11명)
+
+---
+
 ## 바로 플레이
 
 ```bash
 npm run native:setup   # 처음 한 번
-npm run tactics:play   # 게임 시작
+npm run tactics:play   # 전술 원정 모드
+npm run native:play    # 아레나 3v3 모드
 ```
 
 ## 조작
@@ -63,23 +123,20 @@ npm run tactics:play   # 게임 시작
 | `H` / `F1` | 도움말 |
 | `F10` | 설정 (볼륨, 전투 속도, 난이도) |
 
-## 챔피언 풀 (22명)
-
-| 블루 (11) | 레드 (11) |
-|-----------|-----------|
-| 가렌, 아리, 징크스, 럭스, 바이 | 다리우스, 애니, 케이틀린, 모르가나, 야스오 |
-| 이즈리얼, 레오나, 애쉬, 리븐, 아칼리, 브라움 | 제드, 리산드라, 카타리나, 브랜드, 오리아나, 세트 |
+---
 
 ## 테스트 & 빌드
 
 ```bash
-npm run tactics:test      # 전술 엔진 103개 테스트
+npm run tactics:test      # 전술 엔진 테스트
 npm run tactics:smoke     # 헤드리스 스모크
 npm run tactics:capture   # 스크린샷 캡처
 npm run native:package    # Linux 실행 파일 빌드
 ```
 
 Windows `.exe`는 GitHub Actions 아티팩트에서 다운로드.
+
+---
 
 ## 기술 스택
 
